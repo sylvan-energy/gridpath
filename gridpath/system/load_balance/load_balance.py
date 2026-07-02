@@ -145,6 +145,11 @@ def add_model_components(
     m.Meet_Load_Constraint = Constraint(m.LOAD_ZONES, m.TMPS, rule=meet_load_rule)
 
     def use_limit_constraint_rule(mod, lz):
+        # No limit specified (defaults to +inf): skip the constraint entirely
+        # rather than build a row with an infinite (or huge) RHS, which would
+        # be a free row that only hurts solver scaling.
+        if mod.unserved_energy_limit_mwh[lz] == float("inf"):
+            return Constraint.Skip
         return (
             sum(
                 mod.Unserved_Energy_MW_Expression[lz, tmp]
@@ -160,6 +165,9 @@ def add_model_components(
     )
 
     def max_unserved_load_limit_constraint_rule(mod, lz, tmp):
+        # No limit specified (defaults to +inf): skip (see above).
+        if mod.max_unserved_load_limit_mw[lz] == float("inf"):
+            return Constraint.Skip
         return (
             mod.Unserved_Energy_MW_Expression[lz, tmp]
             <= mod.max_unserved_load_limit_mw[lz]
