@@ -28,6 +28,7 @@ up to 1,200 MW from Zone 1 to Zone 2.
 
 import csv
 import os.path
+import pandas as pd
 from statistics import mean
 
 from pyomo.environ import Set, Param, Reals, NonNegativeReals
@@ -42,9 +43,16 @@ from gridpath.auxiliary.validations import (
     write_validation_to_database,
     validate_dtypes,
     validate_idxs,
-    validate_missing_inputs,
     validate_column_monotonicity,
 )
+
+# A specified transmission line whose min (max) capacity is left blank in the
+# inputs is treated as having no lower (upper) flow limit. The capacity params
+# default to these sentinels, and the operational types skip the corresponding
+# flow-limit constraint when the capacity is infinite (see
+# min/max_limit_is_unconstrained_rule below).
+Negative_Infinity = float("-inf")
+Infinity = float("inf")
 
 
 def add_model_components(
@@ -116,8 +124,15 @@ def add_model_components(
     # Required Params
     ###########################################################################
 
-    m.tx_spec_min_cap_mw = Param(m.TX_SPEC_OPR_PRDS, within=Reals)
-    m.tx_spec_max_cap_mw = Param(m.TX_SPEC_OPR_PRDS, within=Reals)
+    # Optional caps: a blank min (max) in the inputs leaves the param at
+    # -inf (+inf), which the operational type reads as "no lower (upper)
+    # flow limit" and skips the corresponding constraint.
+    m.tx_spec_min_cap_mw = Param(
+        m.TX_SPEC_OPR_PRDS, within=Reals, default=Negative_Infinity
+    )
+    m.tx_spec_max_cap_mw = Param(
+        m.TX_SPEC_OPR_PRDS, within=Reals, default=Infinity
+    )
     m.tx_spec_fixed_cost_per_mw_yr = Param(
         m.TX_SPEC_OPR_PRDS, within=NonNegativeReals, default=0
     )
@@ -140,12 +155,30 @@ def max_transmission_capacity_rule(mod, tx, p):
     return mod.tx_spec_max_cap_mw[tx, p]
 
 
+def min_limit_is_unconstrained_rule(mod, tx, p):
+    """Whether this line-period has no lower flow limit (blank min in inputs)."""
+    return mod.tx_spec_min_cap_mw[tx, p] == Negative_Infinity
+
+
+def max_limit_is_unconstrained_rule(mod, tx, p):
+    """Whether this line-period has no upper flow limit (blank max in inputs)."""
+    return mod.tx_spec_max_cap_mw[tx, p] == Infinity
+
+
 def fixed_cost_rule(mod, g, p):
     """
     The fixed cost of Tx lines of the *tx_spec* capacity type is a
     pre-specified number equal to the average capacity times the per-mw fixed
     cost for each of the project's operational periods.
+
+    A line with no flow limit (infinite min or max capacity) has no
+    meaningful capacity to cost, so its fixed cost is zero.
     """
+    if (
+        mod.tx_spec_min_cap_mw[g, p] == Negative_Infinity
+        or mod.tx_spec_max_cap_mw[g, p] == Infinity
+    ):
+        return 0
     return (
         mean([abs(mod.tx_spec_min_cap_mw[g, p]), abs(mod.tx_spec_max_cap_mw[g, p])])
         * mod.tx_spec_fixed_cost_per_mw_yr[g, p]
@@ -167,31 +200,49 @@ def load_model_data(
     subproblem,
     stage,
 ):
-    data_portal.load(
-        filename=os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "specified_transmission_line_capacities.tab",
-        ),
-        select=(
-            "transmission_line",
-            "period",
-            "specified_tx_min_mw",
-            "specified_tx_max_mw",
-            "fixed_cost_per_mw_yr",
-        ),
-        index=m.TX_SPEC_OPR_PRDS,
-        param=(
-            m.tx_spec_min_cap_mw,
-            m.tx_spec_max_cap_mw,
-            m.tx_spec_fixed_cost_per_mw_yr,
-        ),
+    # min and max capacities are optional (a blank cell means "no flow limit
+    # in that direction"), so we cannot use a single data_portal.load() that
+    # ties index membership to parsing every param column. Instead we read the
+    # file manually, build TX_SPEC_OPR_PRDS from *every* row, and populate the
+    # capacity params per-cell, skipping blanks so they fall back to the
+    # ±Infinity defaults. This mirrors
+    # transmission/operations/transmission_flow_limits.py.
+    capacities_file = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
+        "specified_transmission_line_capacities.tab",
     )
+
+    df = pd.read_csv(capacities_file, sep="\t")
+
+    opr_prds = []
+    min_cap = {}
+    max_cap = {}
+    fixed_cost = {}
+    for _, row in df.iterrows():
+        tx = row["transmission_line"]
+        prd = int(row["period"])
+        opr_prds.append((tx, prd))
+        # "." (or a blank read as NaN) leaves the param at its ±inf default.
+        min_val = row["specified_tx_min_mw"]
+        if str(min_val) != "." and pd.notna(min_val):
+            min_cap[(tx, prd)] = float(min_val)
+        max_val = row["specified_tx_max_mw"]
+        if str(max_val) != "." and pd.notna(max_val):
+            max_cap[(tx, prd)] = float(max_val)
+        fc_val = row["fixed_cost_per_mw_yr"]
+        if str(fc_val) != "." and pd.notna(fc_val):
+            fixed_cost[(tx, prd)] = float(fc_val)
+
+    data_portal.data()["TX_SPEC_OPR_PRDS"] = {None: opr_prds}
+    data_portal.data()["tx_spec_min_cap_mw"] = min_cap
+    data_portal.data()["tx_spec_max_cap_mw"] = max_cap
+    data_portal.data()["tx_spec_fixed_cost_per_mw_yr"] = fixed_cost
 
 
 # Database
@@ -390,23 +441,14 @@ def validate_inputs(
         ),
     )
 
-    # Check for missing values (vs. missing row entries above)
-    cols = ["min_mw", "max_mw"]
-    write_validation_to_database(
-        conn=conn,
-        scenario_id=scenario_id,
-        weather_iteration=weather_iteration,
-        hydro_iteration=hydro_iteration,
-        availability_iteration=availability_iteration,
-        subproblem_id=subproblem,
-        stage_id=stage,
-        gridpath_module=__name__,
-        db_table="inputs_transmission_specified_capacity",
-        severity="High",
-        errors=validate_missing_inputs(df, cols),
-    )
+    # Note: min_mw and max_mw are intentionally NOT checked for missing
+    # values here -- a blank in either column is a valid input meaning "no
+    # flow limit in that direction" (the capacity param falls back to its
+    # ±Infinity default).
 
-    # check that min <= max
+    # check that min <= max (validate_column_monotonicity drops NaN rows, so
+    # lines with a blank/unconstrained min or max are skipped)
+    cols = ["min_mw", "max_mw"]
     write_validation_to_database(
         conn=conn,
         scenario_id=scenario_id,
