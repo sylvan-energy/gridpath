@@ -139,6 +139,7 @@ test_w_hydro_as_slice_candidate,"{('', '', '', 1): {1: -200490477.22404}}","{(''
 test_w_energy_products,"{('', '', '', 1): {1: -16211256.0}}","{('', '', '', 1): {1: np.float64(-16211256.0)}}",,,
 test_w_energy_products_group_limits,"{('', '', '', 1): {1: -140015997056.28812}}","{('', '', '', 1): {1: np.float64(-140015997056.28812)}}",,,
 2periods_new_build_generic_policy,"{('', '', '', 1): {1: -26966855745114.633}}","{('', '', '', 1): {1: -26966855745114.633}}",,,
+2periods_new_build_generic_policy_w_tx_losses,"{('', '', '', 1): {1: -272577320895333.84}}","{('', '', '', 1): {1: -272577320895333.84}}",,,
 open_data,"{('weather_iteration_2010', 'hydro_iteration_2010', '', 1): {1: -177248006449.44724}, ('weather_iteration_2010', 'hydro_iteration_2010', '', 2): {1: -206929765361.27356}}","{('weather_iteration_2010', 'hydro_iteration_2010', '', 1): {1: -177248006449.44724}, ('weather_iteration_2010', 'hydro_iteration_2010', '', 2): {1: -206929765361.27356}}",,,
 hydro_system_exog_elev_w_travel_time_and_max_halfday_flows,"{('', 'hydro_iteration_1', '', 1): {1: -0.0}}","{('', 'hydro_iteration_1', '', 1): {1: -0.0}}",,,
 hydro_system_w_ramp_limits,"{('', 'hydro_iteration_1', '', 1): {1: -0.0}}","{('', 'hydro_iteration_1', '', 1): {1: -0.0}}",,,
