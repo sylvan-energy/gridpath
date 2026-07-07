@@ -16,6 +16,9 @@
 
 from pyomo.environ import Expression, value
 
+from gridpath.auxiliary.dynamic_components import (
+    policy_balance_contribution_components,
+)
 from gridpath.common_functions import create_results_df
 from gridpath.system.policy.energy_targets import ENERGY_TARGET_ZONE_HRZ_DF
 
@@ -83,6 +86,20 @@ def add_model_components(
     m.Total_Project_Policy_Zone_Month_Hour_Contributions = Expression(
         m.POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ,
         rule=policy_target_total_month_hour_contributions_rule,
+    )
+
+    record_dynamic_components(dynamic_components=d)
+
+
+def record_dynamic_components(dynamic_components):
+    """
+    :param dynamic_components:
+
+    Add the project contributions to the policy requirement constraint.
+    """
+
+    getattr(dynamic_components, policy_balance_contribution_components).append(
+        "Total_Project_Policy_Zone_Tmp_Contributions"
     )
 
 

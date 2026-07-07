@@ -64,9 +64,10 @@ def add_model_components(
     | | :code:`Tx_Losses_MW`                                                  |
     | | *Defined over*: :code:`TX_OPR_TMPS`                                   |
     |                                                                         |
-    | Losses on the transmission line in MW. A positive number means the      |
-    | power flows in the line's defined direction when losses incurred,       |
-    | while a negative number means it flows in the opposite direction.       |
+    | Total losses on the transmission line in MW, i.e. the sum of the        |
+    | losses accounted for in the line's "from" and "to" load zones (only     |
+    | one of which can be non-zero in a timepoint, depending on the flow      |
+    | direction).                                                             |
     +-------------------------------------------------------------------------+
 
     """
@@ -123,6 +124,11 @@ def add_model_components(
     m.Tx_Losses_LZ_To_MW = Expression(
         m.TX_OPR_TMPS, rule=transmit_power_losses_lz_to_rule
     )
+
+    def total_losses_rule(mod, tx, tmp):
+        return mod.Tx_Losses_LZ_From_MW[tx, tmp] + mod.Tx_Losses_LZ_To_MW[tx, tmp]
+
+    m.Tx_Losses_MW = Expression(m.TX_OPR_TMPS, rule=total_losses_rule)
 
 
 # Input-Output

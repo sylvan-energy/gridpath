@@ -1,4 +1,5 @@
-# Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2016-2025 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +17,9 @@
 
 from pyomo.environ import Var, Constraint, NonNegativeReals, Expression, value
 
+from gridpath.auxiliary.dynamic_components import (
+    policy_balance_contribution_components,
+)
 from gridpath.common_functions import (
     create_results_df,
     duals_wrapper,
@@ -73,9 +77,18 @@ def add_model_components(
         initialize=month_hour_violation_expression_init,
     )
 
+    m.Total_Policy_Zone_Tmp_Contributions_from_All_Sources_Expression = Expression(
+        m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ,
+        rule=lambda mod, policy, zone, bt, h: sum(
+            getattr(mod, component)[policy, zone, bt, h]
+            for component in getattr(d, policy_balance_contribution_components)
+        ),
+    )
+
     def meet_policy_target_constraint_rule(mod, policy, zone, bt, h):
         """
-        Total delivered energy-target-eligible energy must exceed target
+        Total contributions from all sources (projects, transmission lines)
+        must exceed the target
         :param mod:
         :param policy:
         :param zone:
@@ -84,7 +97,9 @@ def add_model_components(
         :return:
         """
         return (
-            mod.Total_Project_Policy_Zone_Tmp_Contributions[policy, zone, bt, h]
+            mod.Total_Policy_Zone_Tmp_Contributions_from_All_Sources_Expression[
+                policy, zone, bt, h
+            ]
             + mod.Policy_Requirement_Shortage_Expression[policy, zone, bt, h]
             >= mod.Policy_Zone_Horizon_Requirement[policy, zone, bt, h]
         )

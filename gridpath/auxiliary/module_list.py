@@ -173,6 +173,7 @@ def all_modules_list():
         "system.policy.generic_policy",
         "system.policy.generic_policy.generic_policy_requirements",
         "project.policy.policy_contribution",
+        "transmission.policy.policy_contribution",
         "system.reliability.prm",
         "system.reliability.prm.prm_requirement",
         "system.reliability.local_capacity",
@@ -233,6 +234,7 @@ def all_modules_list():
         "system.policy.fuel_burn_limits.fuel_burn_limit_balance",
         "system.policy.fuel_burn_limits.consolidate_results",
         "system.policy.generic_policy.aggregate_project_policy_contributions",
+        "system.policy.generic_policy.aggregate_transmission_policy_contributions",
         "system.policy.generic_policy.policy_target_balance",
         "system.policy.generic_policy.consolidate_results",
         "system.reliability.prm.aggregate_project_simple_prm_contribution",
@@ -545,6 +547,10 @@ def cross_feature_modules_list():
         ],
         ("transmission", "simultaneous_flow_limits"): [
             "transmission.operations.simultaneous_flow_limits"
+        ],
+        ("transmission", "policy"): [
+            "transmission.policy.policy_contribution",
+            "system.policy.generic_policy.aggregate_transmission_policy_contributions",
         ],
         ("transmission", "prm", "capacity_transfers"): [
             "transmission.reliability.capacity_transfer_links",

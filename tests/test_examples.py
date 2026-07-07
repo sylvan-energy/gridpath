@@ -1618,6 +1618,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_generic_policy"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_generic_policy_w_tx_losses(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_generic_policy_w_tx_losses" example, in which
+        transmission losses count against the policy requirement via the
+        tx_losses compliance type
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_w_tx_losses"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_open_data(self):
         """
         Check validation and objective function value of "open_data" example

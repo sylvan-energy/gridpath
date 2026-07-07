@@ -57,12 +57,10 @@ def add_model_components(
 
     # Losses
     def losses_tuning_cost_rule(mod, line, tmp):
-        # TODO: implement for binary also
+        # TODO: implement for binary also (the losses_tuning_cost_per_mw
+        #  param is currently defined for the tx_simple operational type only)
         if mod.tx_operational_type[line] in ["tx_simple"]:
-            return (
-                mod.TxSimple_Losses_LZ_From_MW[line, tmp]
-                + mod.TxSimple_Losses_LZ_To_MW[line, tmp]
-            ) * mod.losses_tuning_cost_per_mw[line]
+            return mod.Tx_Losses_MW[line, tmp] * mod.losses_tuning_cost_per_mw[line]
         else:
             return 0
 
