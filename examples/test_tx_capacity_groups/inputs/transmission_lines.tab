@@ -1,3 +1,3 @@
-transmission_line	tx_capacity_type	tx_availability_type	tx_operational_type	load_zone_from	load_zone_to	tx_simple_loss_factor	losses_tuning_cost_per_mw	reactance_ohms
-Tx2_new	tx_new_lin	exogenous	tx_simple	Zone1	Zone2	.	.	.
-Tx_new	tx_new_lin	exogenous	tx_simple	Zone1	Zone2	.	.	.
+transmission_line	tx_capacity_type	tx_availability_type	tx_operational_type	load_zone_from	load_zone_to	tx_simple_loss_factor	losses_tuning_cost_per_mw	reactance_ohms	tx_losses_factor_curtailment
+Tx2_new	tx_new_lin	exogenous	tx_simple	Zone1	Zone2	.	.	.	.
+Tx_new	tx_new_lin	exogenous	tx_simple	Zone1	Zone2	.	.	.	.

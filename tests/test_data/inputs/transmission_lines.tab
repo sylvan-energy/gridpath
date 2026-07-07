@@ -1,6 +1,6 @@
-transmission_line	tx_capacity_type	tx_operational_type	tx_availability_type	load_zone_from	load_zone_to	tx_simple_loss_factor	losses_tuning_cost_per_mw	reactance_ohms	transmission_target_zone	contributes_net_flow_to_tx_target
-Tx1	tx_spec	tx_dcopf	exogenous	Zone1	Zone2	.	.	0.5	.	.
-Tx_New	tx_new_lin	tx_simple	exogenous	Zone1	Zone2	0.1	.	.	.	.
-Tx2	tx_spec	tx_dcopf	exogenous_monthly	Zone1	Zone3	.	.	0.3	.	.
-Tx3	tx_spec	tx_dcopf	exogenous	Zone2	Zone3	.	.	0.4	.	.
-Tx_binary_1	tx_spec	tx_simple_binary	exogenous	Zone1	Zone2	.	.	.	Tx_Target_Zone1	1
+transmission_line	tx_capacity_type	tx_operational_type	tx_availability_type	load_zone_from	load_zone_to	tx_simple_loss_factor	losses_tuning_cost_per_mw	reactance_ohms	tx_losses_factor_curtailment	transmission_target_zone	contributes_net_flow_to_tx_target
+Tx1	tx_spec	tx_dcopf	exogenous	Zone1	Zone2	.	.	0.5	.	.	.
+Tx_New	tx_new_lin	tx_simple	exogenous	Zone1	Zone2	0.1	.	.	0.5	.	.
+Tx2	tx_spec	tx_dcopf	exogenous_monthly	Zone1	Zone3	.	.	0.3	.	.	.
+Tx3	tx_spec	tx_dcopf	exogenous	Zone2	Zone3	.	.	0.4	.	.	.
+Tx_binary_1	tx_spec	tx_simple_binary	exogenous	Zone1	Zone2	.	.	.	.	Tx_Target_Zone1	1

@@ -1,0 +1,4 @@
+transmission_line	period	tx_curtailment_cost_per_powerunithour
+Tx_New	0	10
+Tx_binary_1	2020	5
+Tx_binary_1	2030	0

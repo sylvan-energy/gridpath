@@ -306,11 +306,11 @@ def get_inputs_from_database(
     #  tx_operational_type rather than here (see also comment in project/init)
     c = conn.cursor()
     transmission_lines = c.execute(f"""
-        SELECT transmission_line, capacity_type AS tx_capacity_type, 
-        availability_type AS tx_availability_type, operational_type AS 
+        SELECT transmission_line, capacity_type AS tx_capacity_type,
+        availability_type AS tx_availability_type, operational_type AS
         tx_operational_type,
-        load_zone_from, load_zone_to, tx_simple_loss_factor, 
-        losses_tuning_cost_per_mw, reactance_ohms
+        load_zone_from, load_zone_to, tx_simple_loss_factor,
+        losses_tuning_cost_per_mw, reactance_ohms, tx_losses_factor_curtailment
         FROM
         -- Get only the subset of projects in the portfolio with their 
         -- capacity types based on the project_portfolio_scenario_id 
@@ -335,8 +335,9 @@ def get_inputs_from_database(
         -- Get the operational type, balancing_type, technology, 
         -- and variable cost for these transmission_lines depending on the 
         -- transmission_operational_chars_scenario_id
-        (SELECT transmission_line, operational_type, 
-            tx_simple_loss_factor, losses_tuning_cost_per_mw, reactance_ohms
+        (SELECT transmission_line, operational_type,
+            tx_simple_loss_factor, losses_tuning_cost_per_mw, reactance_ohms,
+            tx_losses_factor_curtailment
             FROM inputs_transmission_operational_chars
             WHERE transmission_operational_chars_scenario_id = {subscenarios.TRANSMISSION_OPERATIONAL_CHARS_SCENARIO_ID}) as prj_chars
         USING (transmission_line)
