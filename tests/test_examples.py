@@ -445,6 +445,25 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_2zones_transmission_w_losses"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_2zones_transmission_w_losses_curtailment_cost(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_transmission_w_losses_curtailment_cost"
+        example, in which a curtailment cost is applied to transmission
+        losses
+
+        Note: the objective function should differ from that of
+        2periods_new_build_2zones_transmission_w_losses by exactly the total
+        transmission curtailment cost
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_transmission_w_losses_curtailment_cost"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_2zones_transmission_w_losses_opp_dir(self):
         """
         Check validation and objective function value of

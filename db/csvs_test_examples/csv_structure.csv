@@ -77,6 +77,7 @@ fuels/fuel_prices,fuels,fuel_price_scenario_id,fuel_prices,simple,,0,,,,,
 transmission/portfolios,transmission,transmission_portfolio_scenario_id,transmission_portfolios,simple,,0,,,,,
 transmission/load_zones,transmission,transmission_load_zone_scenario_id,transmission_load_zones,simple,,0,,,,,
 transmission/capacity/specified_capacity,transmission,transmission_specified_capacity_scenario_id,transmission_specified_capacity,simple,,0,,,,,
+transmission/opchar/curtailment_cost,data_dependent,tx_curtailment_cost_scenario_id,transmission_curtailment_cost,simple,,1,transmission_line,,,inputs_transmission_operational_chars,transmission_operational_chars_scenario_id
 transmission/opchar,transmission,transmission_operational_chars_scenario_id,transmission_operational_chars,simple,,0,,,,,
 transmission/capacity/new_cost,transmission,transmission_new_cost_scenario_id,transmission_new_cost,simple,,0,,,,,
 transmission/availability,transmission,transmission_availability_scenario_id,transmission_availability,simple,,0,,,,,
