@@ -4511,12 +4511,41 @@ CREATE TABLE inputs_transmission_operational_chars
     tx_simple_loss_factor                      FLOAT,
     losses_tuning_cost_per_mw                  FLOAT,
     reactance_ohms                             FLOAT,
+    tx_curtailment_cost_scenario_id            INTEGER,
+    tx_losses_factor_curtailment               FLOAT,
     PRIMARY KEY (transmission_operational_chars_scenario_id, transmission_line),
     FOREIGN KEY (transmission_operational_chars_scenario_id) REFERENCES
         subscenarios_transmission_operational_chars
             (transmission_operational_chars_scenario_id),
     FOREIGN KEY (operational_type) REFERENCES mod_tx_operational_types
-        (operational_type)
+        (operational_type),
+    FOREIGN KEY (transmission_line, tx_curtailment_cost_scenario_id) REFERENCES
+        subscenarios_transmission_curtailment_cost
+            (transmission_line, tx_curtailment_cost_scenario_id)
+);
+
+-- Curtailment cost (applied to transmission losses)
+DROP TABLE IF EXISTS subscenarios_transmission_curtailment_cost;
+CREATE TABLE subscenarios_transmission_curtailment_cost
+(
+    transmission_line               VARCHAR(64),
+    tx_curtailment_cost_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (transmission_line, tx_curtailment_cost_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_curtailment_cost;
+CREATE TABLE inputs_transmission_curtailment_cost
+(
+    transmission_line                     VARCHAR(64),
+    tx_curtailment_cost_scenario_id       INTEGER,
+    period                                 INTEGER, -- 0 means it's the same for all periods
+    tx_curtailment_cost_per_powerunithour FLOAT,
+    PRIMARY KEY (transmission_line, tx_curtailment_cost_scenario_id, period),
+    FOREIGN KEY (transmission_line, tx_curtailment_cost_scenario_id) REFERENCES
+        subscenarios_transmission_curtailment_cost
+            (transmission_line, tx_curtailment_cost_scenario_id)
 );
 
 -- Hurdle rates
@@ -8041,6 +8070,7 @@ CREATE TABLE results_system_costs
     Total_Market_Net_Cost                                   FLOAT,
     Total_Export_Penalty_Cost                               FLOAT,
     Total_Tx_Simple_Losses_Penalty_Cost                     FLOAT,
+    Total_Tx_Curtailment_Cost                               FLOAT,
     Total_Horizon_Fuel_Burn_Min_Abs_Penalty_Costs           FLOAT,
     Total_Horizon_Fuel_Burn_Max_Abs_Penalty_Costs           FLOAT,
     Total_Horizon_Fuel_Burn_Max_Rel_Penalty_Costs           FLOAT,
