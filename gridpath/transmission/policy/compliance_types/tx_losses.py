@@ -43,4 +43,4 @@ def contribution_in_timepoint(mod, tx, policy, zone, tmp):
     requirement, so the contribution is the negative of the losses (in
     either flow direction).
     """
-    return -(mod.Tx_Losses_LZ_From_MW[tx, tmp] + mod.Tx_Losses_LZ_To_MW[tx, tmp])
+    return -mod.Tx_Losses_MW[tx, tmp]

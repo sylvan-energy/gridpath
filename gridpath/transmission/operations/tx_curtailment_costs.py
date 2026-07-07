@@ -20,10 +20,9 @@ prevent unwanted behavior such as the optimization using transmission losses
 to avoid curtailment cost, which happen because losses are calculated based
 on a >= constraint.
 
-Losses are taken from the operational-type-agnostic ``Tx_Losses_LZ_From_MW`` and
-``Tx_Losses_LZ_To_MW`` expressions, so this applies to losses regardless of
-which operational type produced them (currently *tx_simple* and
-*tx_simple_binary*).
+Losses are taken from the operational-type-agnostic ``Tx_Losses_MW``
+expression, so this applies to losses regardless of which operational type
+produced them (currently *tx_simple* and *tx_simple_binary*).
 """
 
 import os.path
@@ -143,7 +142,7 @@ def add_model_components(
         1).
         """
         return (
-            (mod.Tx_Losses_LZ_From_MW[line, tmp] + mod.Tx_Losses_LZ_To_MW[line, tmp])
+            mod.Tx_Losses_MW[line, tmp]
             * mod.tx_curtailment_cost_per_powerunithour[line, mod.period[tmp]]
             * mod.tx_losses_factor_curtailment[line]
         )
