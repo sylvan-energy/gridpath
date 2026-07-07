@@ -1,0 +1,5 @@
+transmission_line,operational_type,tx_simple_loss_factor,losses_tuning_cost_per_mw,reactance_ohms,tx_curtailment_cost_scenario_id,tx_losses_factor_curtailment
+Tx1,tx_simple,0.1,,,1,
+Tx_new,tx_simple,0.1,,,,
+Tx2,tx_simple,0.1,,,,
+Tx3,tx_simple,0.1,,,,

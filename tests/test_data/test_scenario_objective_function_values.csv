@@ -18,6 +18,7 @@ test_aux_cons,"{('', '', '', 1): {1: -3664910801437.807}}","{('', '', '', 1): {1
 2periods_new_build_2zones_transmission_w_hurdle_rates_by_timepoint,"{('', '', '', 1): {1: -220771086972318.25}}","{('', '', '', 1): {1: -220771086972318.25}}",,,
 2periods_new_build_2zones_transmission_w_hurdle_rates_by_timepoint_and_period,"{('', '', '', 1): {1: -220771095732318.25}}","{('', '', '', 1): {1: -220771095732318.25}}",,,
 2periods_new_build_2zones_transmission_w_losses,"{('', '', '', 1): {1: -238291078037118.25}}","{('', '', '', 1): {1: -238291078037118.25}}",,,
+2periods_new_build_2zones_transmission_w_losses_curtailment_cost,"{('', '', '', 1): {1: -238291078913118.25}}","{('', '', '', 1): {1: np.float64(-238291078913118.25)}}",,,
 2periods_new_build_2zones_transmission_w_losses_opp_dir,"{('', '', '', 1): {1: -238291078037118.25}}","{('', '', '', 1): {1: -238291078037118.25}}",,,
 2periods_new_build_capgroups,"{('', '', '', 1): {1: -5266183794344.565}}","{('', '', '', 1): {1: -5266183794344.565}}",,,
 2periods_new_build_cumulative_and_vintage_min_max,"{('', '', '', 1): {1: -110384972580601.98}}","{('', '', '', 1): {1: -110384972580601.98}}",,,
