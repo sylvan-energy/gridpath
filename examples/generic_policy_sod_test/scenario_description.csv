@@ -85,6 +85,7 @@ project_carbon_credits_scenario_id,NULL
 project_fuel_burn_limit_ba_scenario_id,NULL
 fuel_fuel_burn_limit_ba_scenario_id,NULL
 project_policy_zone_scenario_id,3
+transmission_policy_zone_scenario_id,NULL
 project_prm_zone_scenario_id,NULL
 prm_capacity_transfer_scenario_id,NULL
 prm_capacity_transfer_params_scenario_id,NULL

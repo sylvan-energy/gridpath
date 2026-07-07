@@ -5622,6 +5622,32 @@ CREATE TABLE inputs_project_policy_zones
         subscenarios_project_policy_zones (project_policy_zone_scenario_id)
 );
 
+-- Transmission lines, policy, policy_zones
+-- Which transmission lines count toward which policies and "zones" (e.g.
+-- via their losses to avoid "delivering" policy-eligible energy via Tx losses)
+DROP TABLE IF EXISTS subscenarios_transmission_policy_zones;
+CREATE TABLE subscenarios_transmission_policy_zones
+(
+    transmission_policy_zone_scenario_id INTEGER PRIMARY KEY,
+    name                                 VARCHAR(32),
+    description                          VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_policy_zones;
+CREATE TABLE inputs_transmission_policy_zones
+(
+    transmission_policy_zone_scenario_id INTEGER,
+    transmission_line                    TEXT,
+    policy_name                          TEXT,
+    policy_zone                          TEXT,
+    compliance_type                      TEXT,
+    PRIMARY KEY (transmission_policy_zone_scenario_id, transmission_line,
+                 policy_name, policy_zone),
+    FOREIGN KEY (transmission_policy_zone_scenario_id) REFERENCES
+        subscenarios_transmission_policy_zones
+            (transmission_policy_zone_scenario_id)
+);
+
 DROP TABLE IF EXISTS subscenarios_project_policy_exceedance_values;
 CREATE TABLE subscenarios_project_policy_exceedance_values
 (
@@ -5891,6 +5917,7 @@ CREATE TABLE scenarios
     project_fuel_burn_limit_ba_scenario_id                      INTEGER,
     fuel_fuel_burn_limit_ba_scenario_id                         INTEGER,
     project_policy_zone_scenario_id                             INTEGER,
+    transmission_policy_zone_scenario_id                        INTEGER,
     project_prm_zone_scenario_id                                INTEGER,
     prm_capacity_transfer_scenario_id                           INTEGER,
     prm_capacity_transfer_params_scenario_id                    INTEGER,
@@ -6099,6 +6126,9 @@ CREATE TABLE scenarios
             (fuel_fuel_burn_limit_ba_scenario_id),
     FOREIGN KEY (project_policy_zone_scenario_id) REFERENCES
         subscenarios_project_policy_zones (project_policy_zone_scenario_id),
+    FOREIGN KEY (transmission_policy_zone_scenario_id) REFERENCES
+        subscenarios_transmission_policy_zones
+            (transmission_policy_zone_scenario_id),
     FOREIGN KEY (project_prm_zone_scenario_id) REFERENCES
         subscenarios_project_prm_zones (project_prm_zone_scenario_id),
     FOREIGN KEY (transmission_prm_zone_scenario_id) REFERENCES
@@ -6518,6 +6548,28 @@ CREATE TABLE results_project_policy_zone_timepoint
     PRIMARY KEY (scenario_id, project, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
                  policy_name, policy_zone, timepoint)
+);
+
+DROP TABLE IF EXISTS results_transmission_policy_zone_timepoint;
+CREATE TABLE results_transmission_policy_zone_timepoint
+(
+    scenario_id            INTEGER,
+    transmission_line      VARCHAR(64),
+    weather_iteration      INTEGER,
+    hydro_iteration        INTEGER,
+    availability_iteration INTEGER,
+    policy_name            TEXT,
+    policy_zone            TEXT,
+    timepoint              INTEGER,
+    timepoint_weight       FLOAT,
+    hours_in_timepoint     FLOAT,
+    period                 INTEGER,
+    subproblem_id          INTEGER,
+    stage_id               INTEGER,
+    policy_contribution    FLOAT,
+    PRIMARY KEY (scenario_id, transmission_line, weather_iteration,
+                 hydro_iteration, availability_iteration, subproblem_id,
+                 stage_id, policy_name, policy_zone, timepoint)
 );
 
 DROP TABLE IF EXISTS results_project_curtailment_variable_periodagg;
@@ -8392,6 +8444,10 @@ SELECT scenario_id,
         FROM subscenarios_project_policy_zones
         WHERE project_policy_zone_scenario_id =
               scenarios.project_policy_zone_scenario_id)                             AS project_policy_zones,
+       (SELECT name
+        FROM subscenarios_transmission_policy_zones
+        WHERE transmission_policy_zone_scenario_id =
+              scenarios.transmission_policy_zone_scenario_id)                        AS transmission_policy_zones,
        (SELECT name
         FROM subscenarios_project_prm_zones
         WHERE project_prm_zone_scenario_id =
