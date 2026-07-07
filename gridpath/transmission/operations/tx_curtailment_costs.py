@@ -63,13 +63,13 @@ def add_model_components(
     | cost is incurred along with the periods in which it applies.            |
     +-------------------------------------------------------------------------+
     | | :code:`TX_CURTAILMENT_COST_TX_LINES`                                  |
-    | | *Within*: :code:`TX_LINES`                                           |
+    | | *Within*: :code:`TX_LINES`                                            |
     |                                                                         |
     | The set of transmission lines for which a curtailment cost is incurred  |
     | in at least one period.                                                 |
     +-------------------------------------------------------------------------+
     | | :code:`TX_CURTAILMENT_COST_TX_LINE_OPR_TMPS`                          |
-    | | *Within*: :code:`TX_OPR_TMPS`                                        |
+    | | *Within*: :code:`TX_OPR_TMPS`                                         |
     |                                                                         |
     | The two-dimensional set of curtailment-cost transmission lines and      |
     | their operational timepoints.                                           |
@@ -78,15 +78,15 @@ def add_model_components(
     +-------------------------------------------------------------------------+
     | Params                                                                  |
     +=========================================================================+
-    | | :code:`tx_curtailment_cost_per_powerunithour`                        |
-    | | *Defined over*: :code:`TX_CURTAILMENT_COST_TX_LINE_PRDS`             |
+    | | :code:`tx_curtailment_cost_per_powerunithour`                         |
+    | | *Defined over*: :code:`TX_CURTAILMENT_COST_TX_LINE_PRDS`              |
     | | *Within*: :code:`NonNegativeReals`                                    |
     |                                                                         |
     | The transmission line's cost of curtailment per power-unit-hour of      |
     | losses in a given period.                                               |
     +-------------------------------------------------------------------------+
     | | :code:`tx_losses_factor_curtailment`                                  |
-    | | *Defined over*: :code:`TX_LINES`                                     |
+    | | *Defined over*: :code:`TX_LINES`                                      |
     | | *Default*: :code:`1`                                                  |
     |                                                                         |
     | The fraction of transmission losses that count against curtailment.     |
@@ -130,9 +130,11 @@ def add_model_components(
 
     def tx_curtailment_cost_rule(mod, line, tmp):
         """
-        Apply curtailment cost to transmission losses, to balance against
-        curtailment of variable projects and against the storage
-        round-trip-loss curtailment cost (see the *stor* operational type).
+        Apply curtailment cost to transmission losses to avoid using them as
+        a way to avoid curtailment cost of variable projects (increasing
+        load and making the VERs look like they have been delivered). This
+        is similar to the storage round-trip-loss curtailment cost (see the
+        *stor* operational type).
 
         Downstream this is summed over all timepoints, so losses on the line
         (from either flow direction) will incur the curtailment cost. By
