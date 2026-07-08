@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pyomo.environ import Expression, value
+from pyomo.environ import Expression, Set, value
 
 from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
@@ -81,6 +81,21 @@ def add_model_components(
                 stage,
             )
 
+    # TODO: make the no_availability type module, which will be the
+    #  default for the availability type param (it will just return 1 as
+    #  the derate)
+    derate_cap_rule_by_type = {
+        avl_type: imported_availability_modules[avl_type].availability_derate_cap_rule
+        for avl_type in required_availability_modules
+    }
+
+    derate_hyb_stor_cap_rule_by_type = {
+        avl_type: imported_availability_modules[
+            avl_type
+        ].availability_derate_hyb_stor_cap_rule
+        for avl_type in required_availability_modules
+    }
+
     def availability_derate_cap_rule(mod, g, tmp):
         """
 
@@ -89,20 +104,24 @@ def add_model_components(
         :param tmp:
         :return:
         """
-        # TODO: make the no_availability type module, which will be the
-        #  default for the availability type param (it will just return 1 as
-        #  the derate)
-        availability_type = mod.availability_type[g]
-        return imported_availability_modules[
-            availability_type
-        ].availability_derate_cap_rule(mod, g, tmp)
+        return derate_cap_rule_by_type[mod.availability_type[g]](mod, g, tmp)
 
     m.Availability_Derate = Expression(
         m.PRJ_OPR_TMPS, rule=availability_derate_cap_rule
     )
 
-    # TODO: can we define this only for hybrid projects, so defined over
-    #  AVL_EXOG_OPR_TMPS, not PRJ_OPR_TMPS
+    # The hybrid storage capacity derate is only used by the
+    # gen_var_stor_hyb operational type, so define it over the operational
+    # timepoints of those projects only, not all of PRJ_OPR_TMPS
+    m.HYB_STOR_PRJ_OPR_TMPS = Set(
+        dimen=2,
+        initialize=lambda mod: [
+            (g, tmp)
+            for (g, tmp) in mod.PRJ_OPR_TMPS
+            if mod.operational_type[g] == "gen_var_stor_hyb"
+        ],
+    )
+
     def availability_derate_hyb_stor_cap_rule(mod, g, tmp):
         """
 
@@ -111,16 +130,10 @@ def add_model_components(
         :param tmp:
         :return:
         """
-        # TODO: make the no_availability type module, which will be the
-        #  default for the availability type param (it will just return 1 as
-        #  the derate)
-        availability_type = mod.availability_type[g]
-        return imported_availability_modules[
-            availability_type
-        ].availability_derate_hyb_stor_cap_rule(mod, g, tmp)
+        return derate_hyb_stor_cap_rule_by_type[mod.availability_type[g]](mod, g, tmp)
 
     m.Availability_Hyb_Stor_Cap_Derate = Expression(
-        m.PRJ_OPR_TMPS, rule=availability_derate_hyb_stor_cap_rule
+        m.HYB_STOR_PRJ_OPR_TMPS, rule=availability_derate_hyb_stor_cap_rule
     )
 
 
