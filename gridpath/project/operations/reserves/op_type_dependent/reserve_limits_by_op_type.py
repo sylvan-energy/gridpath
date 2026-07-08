@@ -89,6 +89,16 @@ def generic_add_model_components(
         required_operational_modules
     )
 
+    # Resolve each op type's online capacity rule once
+    online_capacity_rule_by_op_type = {
+        op_m: (
+            imported_operational_modules[op_m].online_capacity_rule
+            if hasattr(imported_operational_modules[op_m], "online_capacity_rule")
+            else op_type.online_capacity_rule
+        )
+        for op_m in required_operational_modules
+    }
+
     def reserve_provision_ramp_rate_limit_rule(mod, g, tmp):
         """
         :param mod:
@@ -96,22 +106,17 @@ def generic_add_model_components(
         :param tmp:
         :return:
         """
-        gen_op_type = mod.operational_type[g]
-        online_capacity = (
-            imported_operational_modules[gen_op_type].online_capacity_rule(mod, g, tmp)
-            if hasattr(
-                imported_operational_modules[gen_op_type], "online_capacity_rule"
-            )
-            else op_type.online_capacity_rule(mod, g, tmp)
-        )
-
-        if getattr(mod, reserve_provision_ramp_rate_limit_param)[g] == float("inf"):
+        # Check whether to skip before doing any other work
+        limit = getattr(mod, reserve_provision_ramp_rate_limit_param)[g]
+        if limit == float("inf"):
             return Constraint.Skip
         else:
+            online_capacity = online_capacity_rule_by_op_type[mod.operational_type[g]](
+                mod, g, tmp
+            )
             return (
                 getattr(mod, reserve_provision_variable_name)[g, tmp]
-                <= getattr(mod, reserve_provision_ramp_rate_limit_param)[g]
-                * online_capacity
+                <= limit * online_capacity
             )
 
     setattr(
