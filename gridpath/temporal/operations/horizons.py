@@ -1,4 +1,5 @@
-# Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2016-2025 Blue Marble Analytics LLC.
+# Copyright 2026 Blue Marble Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -316,11 +317,6 @@ def add_model_components(
     # Required Params
     ###########################################################################
 
-    def horizon_init(mod, tmp, bt):
-        for h in mod.HRZS_BY_BLN_TYPE[bt]:
-            if tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, h]:
-                return h
-
     m.horizon = Param(
         m.TMPS,
         m.BLN_TYPES,
@@ -443,7 +439,28 @@ def horizons_by_balancing_type_init(mod, bt):
 ###############################################################################
 
 
-def prev_tmp_init(mod, tmp, bt):
+def horizon_init(mod):
+    """
+    **Param Name**: horizon
+    **Defined Over**: TMPS x BLN_TYPES
+
+    Determine the horizon of each timepoint for each balancing type in a
+    single pass over the horizons. Timepoints that don't belong to any
+    horizon of a balancing type get None.
+    """
+    tmp_bt_to_hrz = {}
+    for bt, hrz in mod.BLN_TYPE_HRZS:
+        for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+            tmp_bt_to_hrz[tmp, bt] = hrz
+
+    return {
+        (tmp, bt): tmp_bt_to_hrz.get((tmp, bt))
+        for tmp in mod.TMPS
+        for bt in mod.BLN_TYPES
+    }
+
+
+def prev_tmp_init(mod):
     """
     **Param Name**: prev_tmp
     **Defined Over**: TMPS x BLN_TYPES
@@ -456,30 +473,26 @@ def prev_tmp_init(mod, tmp, bt):
     timepoint is defined. In all other cases, the previous timepoints is the
     one with an index of tmp-1.
     """
-    hrz = mod.horizon[tmp, bt]
-
-    if tmp == mod.first_hrz_tmp[bt, hrz]:
-        if mod.boundary[bt, hrz] == "circular":
-            prev_tmp = mod.last_hrz_tmp[bt, hrz]
-        elif mod.boundary[bt, hrz] in ["linear", "linked"]:
-            prev_tmp = "."
-        else:
+    prev_tmp = {}
+    for bt, hrz in mod.BLN_TYPE_HRZS:
+        boundary = mod.boundary[bt, hrz]
+        if boundary not in ["circular", "linear", "linked"]:
             raise ValueError(
                 "Invalid boundary value '{}' for balancing type "
-                "horizon '{} {}'".format(mod.boundary[bt, hrz], bt, hrz)
+                "horizon '{} {}'".format(boundary, bt, hrz)
                 + "\n"
                 + "Horizon boundary must be 'circular,' 'linear,' "
                 "or 'linked.'"
             )
-    else:
-        prev_tmp = list(mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])[
-            list(mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]).index(tmp) - 1
-        ]
+        tmps = list(mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])
+        prev_tmp[tmps[0], bt] = tmps[-1] if boundary == "circular" else "."
+        for prev_t, tmp in zip(tmps[:-1], tmps[1:]):
+            prev_tmp[tmp, bt] = prev_t
 
     return prev_tmp
 
 
-def next_tmp_init(mod, tmp, bt):
+def next_tmp_init(mod):
     """
     **Param Name**: next_tmp
     **Defined Over**: TMPS x BLN_TYPES
@@ -491,25 +504,21 @@ def next_tmp_init(mod, tmp, bt):
     horizon boundary is linear, then no next timepoint is defined. In all
     other cases, the next timepoint is the one with an index of tmp+1.
     """
-    hrz = mod.horizon[tmp, bt]
-
-    if tmp == mod.last_hrz_tmp[bt, hrz]:
-        if mod.boundary[bt, hrz] == "circular":
-            next_tmp = mod.first_hrz_tmp[bt, hrz]
-        elif mod.boundary[bt, hrz] in ["linear", "linked"]:
-            next_tmp = "."
-        else:
+    next_tmp = {}
+    for bt, hrz in mod.BLN_TYPE_HRZS:
+        boundary = mod.boundary[bt, hrz]
+        if boundary not in ["circular", "linear", "linked"]:
             raise ValueError(
                 "Invalid boundary value '{}' for balancing "
-                "type horizon '{} {}'".format(mod.boundary[bt, hrz], bt, hrz)
+                "type horizon '{} {}'".format(boundary, bt, hrz)
                 + "\n"
                 + "Horizon boundary must be 'circular,' 'linear,' "
                 "or 'linked.'"
             )
-    else:
-        next_tmp = list(mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])[
-            list(mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]).index(tmp) + 1
-        ]
+        tmps = list(mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])
+        next_tmp[tmps[-1], bt] = tmps[0] if boundary == "circular" else "."
+        for tmp, next_t in zip(tmps[:-1], tmps[1:]):
+            next_tmp[tmp, bt] = next_t
 
     return next_tmp
 
