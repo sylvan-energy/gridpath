@@ -230,6 +230,16 @@ def get_run_scenario_parser():
         action="store_true",
         help="Skip solve and load results from a HiGHS solution file instead.",
     )
+    # Duals
+    parser.add_argument(
+        "--skip_duals",
+        default=False,
+        action="store_true",
+        help="Don't import or save constraint duals. Duals are imported "
+        "for every constraint in the model, which adds significant memory "
+        "and solution-load time; skip them if you don't need shadow prices "
+        "(e.g. LMPs). Dual-based results files will not be written.",
+    )
     # Solver options
     parser.add_argument(
         "--solver",
@@ -516,6 +526,10 @@ def update_results_df(target_df, results_df):
 
 
 def duals_wrapper(m, component, verbose=False):
+    # AttributeError: no dual Suffix on the instance (--skip_duals);
+    # KeyError: suffix present but no dual for this constraint
+    if not hasattr(m, "dual"):
+        return None
     try:
         return m.dual[component]
     except KeyError:
