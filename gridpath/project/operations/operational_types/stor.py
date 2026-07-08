@@ -35,6 +35,32 @@ Costs for this operational type include variable O&M costs.
     capacity battery with discharging losses of 5% (discharging_loss_factor = 95%) would
     have a duration of 1 MWh / (1 MW/0.95) or 0.95 hours rather than 1 hour.
 
+.. note:: Model construction performance: most components in this module are
+    indexed by project-timepoint, so their initialization and constraint/
+    expression rules are called once per index -- millions of times in
+    production-scale scenarios. Per-index work that only depends on the
+    project (or can be looked up once) is therefore deliberately hoisted:
+
+    * :code:`STOR_OPR_BT_HRZ` checks horizon-timepoint membership
+      element-by-element with O(1) lookups against :code:`PRJ_OPR_TMPS` and
+      iterates only the project's own balancing type's horizons. (Testing
+      with :code:`set(...).issubset(mod.PRJ_OPR_TMPS)` would materialize the
+      entire multi-million-element superset into a temporary Python set on
+      every check.)
+    * The reserve expressions delegate to
+      :code:`gridpath.project.operations.reserves.reserve_aggregation`,
+      which resolves reserve variable names to component objects once per
+      model instance instead of calling :code:`getattr` per index.
+    * The tracking/ramp-style rules look up
+      :code:`mod.balancing_type_project[prj]` and :code:`mod.prev_tmp[...]`
+      once per call and reuse the local, rather than re-indexing the params
+      for every term of the returned expression.
+    * Derived sets initialized by filtering a superset do not re-declare
+      that superset as :code:`within` -- the domain check is redundant with
+      the initializer and roughly doubles set construction time. (Sets
+      loaded from input data, like :code:`STOR_EXOG_SOC_TMPS`, keep
+      :code:`within` since there it validates user input.)
+
 """
 
 import csv
@@ -316,6 +342,10 @@ def add_model_components(
             for hrz in mod.HRZS_BY_BLN_TYPE[bt]:
                 # Add to the set if all timepoints in the horizon are in
                 # the project's operational timepoints
+                # Keep the element-by-element membership checks: they are
+                # O(1) each and short-circuit, whereas an issubset() test
+                # against PRJ_OPR_TMPS would copy that entire set per
+                # project-horizon
                 if all(
                     (prj, tmp) in mod.PRJ_OPR_TMPS
                     for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
@@ -508,22 +538,20 @@ def energy_tracking_rule(mod, s, tmp):
             starting_soc=mod.stor_exogenous_starting_state_of_charge[s, tmp],
         )
     else:
-        if check_if_first_timepoint(
-            mod=mod, tmp=tmp, balancing_type=mod.balancing_type_project[s]
-        ) and check_boundary_type(
+        bt = mod.balancing_type_project[s]
+        is_first_tmp = check_if_first_timepoint(mod=mod, tmp=tmp, balancing_type=bt)
+        if is_first_tmp and check_boundary_type(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[s],
+            balancing_type=bt,
             boundary_type="linear",
         ):
             return Constraint.Skip
         else:
-            if check_if_first_timepoint(
-                mod=mod, tmp=tmp, balancing_type=mod.balancing_type_project[s]
-            ) and check_boundary_type(
+            if is_first_tmp and check_boundary_type(
                 mod=mod,
                 tmp=tmp,
-                balancing_type=mod.balancing_type_project[s],
+                balancing_type=bt,
                 boundary_type="linked",
             ):
                 prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
@@ -555,23 +583,15 @@ def energy_tracking_rule(mod, s, tmp):
                 )
 
             else:
-                prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
-                    mod.prev_tmp[tmp, mod.balancing_type_project[s]]
-                ]
+                # Look up the previous timepoint once for all the terms below
+                prev = mod.prev_tmp[tmp, bt]
+                prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[prev]
                 prev_tmp_starting_energy_in_storage = (
-                    mod.Stor_Starting_Energy_in_Storage_MWh[
-                        s, mod.prev_tmp[tmp, mod.balancing_type_project[s]]
-                    ]
+                    mod.Stor_Starting_Energy_in_Storage_MWh[s, prev]
                 )
-                prev_tmp_discharge = mod.Stor_Discharge_MW[
-                    s, mod.prev_tmp[tmp, mod.balancing_type_project[s]]
-                ]
-                prev_tmp_charge = mod.Stor_Charge_MW[
-                    s, mod.prev_tmp[tmp, mod.balancing_type_project[s]]
-                ]
-                prev_tmp_upward_reserves = mod.Stor_Upward_Reserves_MW[
-                    s, mod.prev_tmp[tmp, mod.balancing_type_project[s]]
-                ]
+                prev_tmp_discharge = mod.Stor_Discharge_MW[s, prev]
+                prev_tmp_charge = mod.Stor_Charge_MW[s, prev]
+                prev_tmp_upward_reserves = mod.Stor_Upward_Reserves_MW[s, prev]
 
                 starting_soc = (
                     prev_tmp_starting_energy_in_storage * mod.stor_storage_efficiency[s]
@@ -684,16 +704,15 @@ def max_headroom_energy_rule(mod, s, tmp):
     must have enough energy available to be at the new set point (for
     the full duration of the timepoint).
     """
+    hrs_in_tmp = mod.hrs_in_tmp[tmp]
     return (
         mod.Stor_Upward_Reserves_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
+        * hrs_in_tmp
         / mod.stor_discharging_efficiency[s]
         <= mod.Stor_Starting_Energy_in_Storage_MWh[s, tmp]
-        + mod.Stor_Charge_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
-        * mod.stor_charging_efficiency[s]
+        + mod.Stor_Charge_MW[s, tmp] * hrs_in_tmp * mod.stor_charging_efficiency[s]
         - mod.Stor_Discharge_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
+        * hrs_in_tmp
         / mod.stor_discharging_efficiency[s]
     )
 
@@ -708,18 +727,17 @@ def max_footroom_energy_rule(mod, s, tmp):
     must have enough 'room left in the tank' (remaining energy capacity)
     to be at the new set point (for the full duration of the timepoint).
     """
+    hrs_in_tmp = mod.hrs_in_tmp[tmp]
     return (
         mod.Stor_Downward_Reserves_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
+        * hrs_in_tmp
         * mod.stor_charging_efficiency[s]
         <= mod.Energy_Storage_Capacity_MWh[s, mod.period[tmp]]
         * mod.Availability_Derate[s, tmp]
         - mod.Stor_Starting_Energy_in_Storage_MWh[s, tmp]
-        - mod.Stor_Charge_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
-        * mod.stor_charging_efficiency[s]
+        - mod.Stor_Charge_MW[s, tmp] * hrs_in_tmp * mod.stor_charging_efficiency[s]
         + mod.Stor_Discharge_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
+        * hrs_in_tmp
         / mod.stor_discharging_efficiency[s]
     )
 
