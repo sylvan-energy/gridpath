@@ -42,6 +42,10 @@ from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
 )
 
+# The exogenous derates are fixed input data, so the availability
+# derate is a constant in the model
+DERATE_IS_CONSTANT = True
+
 
 def add_model_components(
     m,

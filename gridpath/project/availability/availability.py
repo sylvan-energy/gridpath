@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pyomo.environ import Expression, Set, value
+from pyomo.environ import Expression, NonNegativeReals, Param, Set, value
 
 from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
     load_subtype_modules,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_TIMEPOINT_DF, DEFAULT_AVAILABILITY_TYPE
 
 
@@ -96,6 +96,18 @@ def add_model_components(
         for avl_type in required_availability_modules
     }
 
+    # If every required availability type produces a constant derate (no
+    # variables in the derate, e.g. all-exogenous), make the derate
+    # components Params rather than Expressions: an immutable Param value
+    # is inlined as a plain number in the (many) consuming expressions and
+    # constraints, which makes them smaller and faster to build than
+    # storing a reference into an Expression component
+    # This is almost always the case unless we have endogenous availability
+    all_derates_constant = all(
+        getattr(imported_availability_modules[avl_type], "DERATE_IS_CONSTANT", False)
+        for avl_type in required_availability_modules
+    )
+
     def availability_derate_cap_rule(mod, g, tmp):
         """
 
@@ -106,9 +118,16 @@ def add_model_components(
         """
         return derate_cap_rule_by_type[mod.availability_type[g]](mod, g, tmp)
 
-    m.Availability_Derate = Expression(
-        m.PRJ_OPR_TMPS, rule=availability_derate_cap_rule
-    )
+    if all_derates_constant:
+        m.Availability_Derate = Param(
+            m.PRJ_OPR_TMPS,
+            within=NonNegativeReals,
+            initialize=availability_derate_cap_rule,
+        )
+    else:
+        m.Availability_Derate = Expression(
+            m.PRJ_OPR_TMPS, rule=availability_derate_cap_rule
+        )
 
     # The hybrid storage capacity derate is only used by the
     # gen_var_stor_hyb operational type, so define it over the operational
@@ -132,9 +151,16 @@ def add_model_components(
         """
         return derate_hyb_stor_cap_rule_by_type[mod.availability_type[g]](mod, g, tmp)
 
-    m.Availability_Hyb_Stor_Cap_Derate = Expression(
-        m.HYB_STOR_PRJ_OPR_TMPS, rule=availability_derate_hyb_stor_cap_rule
-    )
+    if all_derates_constant:
+        m.Availability_Hyb_Stor_Cap_Derate = Param(
+            m.HYB_STOR_PRJ_OPR_TMPS,
+            within=NonNegativeReals,
+            initialize=availability_derate_hyb_stor_cap_rule,
+        )
+    else:
+        m.Availability_Hyb_Stor_Cap_Derate = Expression(
+            m.HYB_STOR_PRJ_OPR_TMPS, rule=availability_derate_hyb_stor_cap_rule
+        )
 
 
 def write_model_inputs(
@@ -281,9 +307,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
     # Module-specific availability results
     required_availability_modules = list(
@@ -325,10 +349,7 @@ def export_results(
                 m,
                 d,
             )
-            for c in op_m_results_columns:
-                getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-
-            getattr(d, PROJECT_TIMEPOINT_DF).update(op_m_results_df)
+            update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), op_m_results_df)
 
 
 def validate_inputs(
