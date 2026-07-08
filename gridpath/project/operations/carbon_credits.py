@@ -133,7 +133,6 @@ def add_model_components(
     m.CARBON_CREDITS_GENERATION_PRJS = Set(within=m.PROJECTS)
 
     m.CARBON_CREDITS_GENERATION_PRJ_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -143,7 +142,6 @@ def add_model_components(
     )
 
     m.CARBON_CREDITS_GENERATION_PRJ_OPR_PRDS = Set(
-        within=m.PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_PRDS",
@@ -219,7 +217,6 @@ def add_model_components(
     )
 
     m.CARBON_CREDITS_PURCHASE_PRJS_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",

@@ -47,6 +47,10 @@ from gridpath.auxiliary.dynamic_components import (
     headroom_variables,
     reserve_variable_derate_params,
 )
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    derated_headroom_provision_rule,
+    derated_footroom_provision_rule,
+)
 from gridpath.project.operations.reserves.subhourly_energy_adjustment import (
     footroom_subhourly_energy_adjustment_rule,
     headroom_subhourly_energy_adjustment_rule,
@@ -204,7 +208,6 @@ def add_model_components(
 
     m.GEN_VAR_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.GEN_VAR
         ),
@@ -242,11 +245,7 @@ def add_model_components(
         Gather all headroom variables, and de-rate the total reserves offered
         to account for the fact that gen_var output is uncertain.
         """
-        return sum(
-            getattr(mod, c)[g, tmp]
-            / getattr(mod, getattr(d, reserve_variable_derate_params)[c])[g]
-            for c in getattr(d, headroom_variables)[g]
-        )
+        return derated_headroom_provision_rule(d, mod, g, tmp)
 
     m.GenVar_Upwards_Reserves_MW = Expression(
         m.GEN_VAR_OPR_TMPS, rule=upwards_reserve_rule
@@ -257,11 +256,7 @@ def add_model_components(
         Gather all footroom variables, and de-rate the total reserves offered
         to account for the fact that gen_var output is uncertain.
         """
-        return sum(
-            getattr(mod, c)[g, tmp]
-            / getattr(mod, getattr(d, reserve_variable_derate_params)[c])[g]
-            for c in getattr(d, footroom_variables)[g]
-        )
+        return derated_footroom_provision_rule(d, mod, g, tmp)
 
     m.GenVar_Downwards_Reserves_MW = Expression(
         m.GEN_VAR_OPR_TMPS, rule=downwards_reserve_rule

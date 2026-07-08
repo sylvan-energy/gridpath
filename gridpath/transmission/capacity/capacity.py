@@ -144,16 +144,12 @@ def add_model_components(
 
     m.TX_LINES_OPR_IN_PRD = Set(
         m.PERIODS,
-        initialize=lambda mod, period: sorted(
-            list(set(tx for (tx, p) in mod.TX_OPR_PRDS if p == period)),
-        ),
+        initialize=tx_lines_opr_in_prd,
     )
 
     m.OPR_PRDS_BY_TX_LINE = Set(
         m.TX_LINES,
-        initialize=lambda mod, tx: sorted(
-            list(set(p for (l, p) in mod.TX_OPR_PRDS if l == tx)),
-        ),
+        initialize=opr_prds_by_tx_line,
     )
 
     m.TX_OPR_TMPS = Set(
@@ -168,9 +164,7 @@ def add_model_components(
 
     m.TX_LINES_OPR_IN_TMP = Set(
         m.TMPS,
-        initialize=lambda mod, tmp: sorted(
-            list(set(tx for (tx, t) in mod.TX_OPR_TMPS if t == tmp)),
-        ),
+        initialize=tx_lines_opr_in_tmp,
     )
 
     # Expressions
@@ -191,6 +185,43 @@ def add_model_components(
     m.Tx_Min_Capacity_MW = Expression(m.TX_OPR_PRDS, rule=tx_min_capacity_rule)
 
     m.Tx_Max_Capacity_MW = Expression(m.TX_OPR_PRDS, rule=tx_max_capacity_rule)
+
+
+# Set Rules
+###############################################################################
+
+
+def tx_lines_opr_in_prd(mod):
+    """
+    Figure out which transmission lines are operational in each period.
+    """
+    prd_to_tx = {prd: [] for prd in mod.PERIODS}
+    for tx, prd in mod.TX_OPR_PRDS:
+        prd_to_tx[prd].append(tx)
+
+    return {prd: sorted(txs) for prd, txs in prd_to_tx.items()}
+
+
+def opr_prds_by_tx_line(mod):
+    """
+    Figure out the operational periods for each transmission line.
+    """
+    tx_to_prds = {tx: [] for tx in mod.TX_LINES}
+    for tx, prd in mod.TX_OPR_PRDS:
+        tx_to_prds[tx].append(prd)
+
+    return {tx: sorted(prds) for tx, prds in tx_to_prds.items()}
+
+
+def tx_lines_opr_in_tmp(mod):
+    """
+    Figure out which transmission lines are operational in each timepoint.
+    """
+    tmp_to_tx = {tmp: [] for tmp in mod.TMPS}
+    for tx, tmp in mod.TX_OPR_TMPS:
+        tmp_to_tx[tmp].append(tx)
+
+    return {tmp: sorted(txs) for tmp, txs in tmp_to_tx.items()}
 
 
 # Input-Output

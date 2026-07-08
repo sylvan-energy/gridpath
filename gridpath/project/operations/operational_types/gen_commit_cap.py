@@ -66,6 +66,10 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.operations.operational_types.common_functions import (
     determine_relevant_timepoints,
     load_optype_model_data,
@@ -424,7 +428,6 @@ def add_model_components(
 
     m.GEN_COMMIT_CAP_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.GEN_COMMIT_CAP
         ),
@@ -534,14 +537,14 @@ def add_model_components(
     # TODO: the reserve rules are the same in all modules, so should be
     #  consolidated
     def upwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
+        return headroom_provision_rule(d, mod, g, tmp)
 
     m.GenCommitCap_Upwards_Reserves_MW = Expression(
         m.GEN_COMMIT_CAP_OPR_TMPS, rule=upwards_reserve_rule
     )
 
     def downwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
+        return footroom_provision_rule(d, mod, g, tmp)
 
     m.GenCommitCap_Downwards_Reserves_MW = Expression(
         m.GEN_COMMIT_CAP_OPR_TMPS, rule=downwards_reserve_rule

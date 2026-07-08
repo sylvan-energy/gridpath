@@ -88,7 +88,6 @@ def add_model_components(
     m.INST_PEN_PRJS = Set(within=m.PROJECTS)
 
     m.INST_PEN_PRJ_OPR_TMP = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",

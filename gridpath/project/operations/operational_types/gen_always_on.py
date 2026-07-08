@@ -50,6 +50,10 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.common_functions import (
     check_if_boundary_type_and_first_timepoint,
     check_if_first_timepoint,
@@ -249,7 +253,6 @@ def add_model_components(
 
     m.GEN_ALWAYS_ON_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.GEN_ALWAYS_ON
         ),
@@ -312,14 +315,14 @@ def add_model_components(
     # TODO: the reserve rules are the same in all modules, so should be
     #  consolidated
     def upwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
+        return headroom_provision_rule(d, mod, g, tmp)
 
     m.GenAlwaysOn_Upwards_Reserves_MW = Expression(
         m.GEN_ALWAYS_ON_OPR_TMPS, rule=upwards_reserve_rule
     )
 
     def downwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
+        return footroom_provision_rule(d, mod, g, tmp)
 
     m.GenAlwaysOn_Downwards_Reserves_MW = Expression(
         m.GEN_ALWAYS_ON_OPR_TMPS, rule=downwards_reserve_rule
@@ -412,10 +415,11 @@ def ramp_up_rule(mod, g, tmp):
     take place during the duration of the first timepoint, and the
     ramp rate limit is adjusted for the duration of the first timepoint.
     """
+    bt = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=bt,
         boundary_type="linear",
     ):
         return Constraint.Skip
@@ -423,7 +427,7 @@ def ramp_up_rule(mod, g, tmp):
         if check_if_boundary_type_and_first_timepoint(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=bt,
             boundary_type="linked",
         ):
             prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
@@ -432,15 +436,10 @@ def ramp_up_rule(mod, g, tmp):
                 g, 0
             ]
         else:
-            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
-                mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
-            prev_tmp_power = mod.GenAlwaysOn_Gross_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
-            prev_tmp_downwards_reserves = mod.GenAlwaysOn_Downwards_Reserves_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            prev = mod.prev_tmp[tmp, bt]
+            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[prev]
+            prev_tmp_power = mod.GenAlwaysOn_Gross_Power_MW[g, prev]
+            prev_tmp_downwards_reserves = mod.GenAlwaysOn_Downwards_Reserves_MW[g, prev]
 
         # If ramp rate limits, adjusted for timepoint duration, allow you to
         # ramp up the full operable range between timepoints, constraint won't
@@ -476,10 +475,11 @@ def ramp_down_rule(mod, g, tmp):
     take place during the duration of the first timepoint, and the
     ramp rate limit is adjusted for the duration of the first timepoint.
     """
+    bt = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=bt,
         boundary_type="linear",
     ):
         return Constraint.Skip
@@ -487,22 +487,17 @@ def ramp_down_rule(mod, g, tmp):
         if check_if_boundary_type_and_first_timepoint(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=bt,
             boundary_type="linked",
         ):
             prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
             prev_tmp_power = mod.gen_always_on_linked_power[g, 0]
             prev_tmp_upwards_reserves = mod.gen_always_on_linked_upwards_reserves[g, 0]
         else:
-            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
-                mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
-            prev_tmp_power = mod.GenAlwaysOn_Gross_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
-            prev_tmp_upwards_reserves = mod.GenAlwaysOn_Upwards_Reserves_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            prev = mod.prev_tmp[tmp, bt]
+            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[prev]
+            prev_tmp_power = mod.GenAlwaysOn_Gross_Power_MW[g, prev]
+            prev_tmp_upwards_reserves = mod.GenAlwaysOn_Upwards_Reserves_MW[g, prev]
 
         # If ramp rate limits, adjusted for timepoint duration, allow you to
         # ramp down the full operable range between timepoints, constraint

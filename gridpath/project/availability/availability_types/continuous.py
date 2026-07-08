@@ -185,7 +185,6 @@ def add_model_components(
 
     m.AVL_CONT_OPR_PRDS = Set(
         dimen=2,
-        within=m.PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_PRDS", index=0, membership_set=mod.AVL_CONT
         ),
@@ -193,7 +192,6 @@ def add_model_components(
 
     m.AVL_CONT_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.AVL_CONT
         ),

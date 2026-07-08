@@ -206,7 +206,6 @@ def add_model_components(
 
     m.TX_DCOPF_OPR_TMPS = Set(
         dimen=2,
-        within=m.TX_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="TX_OPR_TMPS", index=0, membership_set=mod.TX_DCOPF
         ),

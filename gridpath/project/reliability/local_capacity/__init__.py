@@ -60,7 +60,6 @@ def add_model_components(
 
     # Get operational local capacity projects - timepoints combinations
     m.LOCAL_CAPACITY_PRJ_OPR_PRDS = Set(
-        within=m.PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_PRDS",
