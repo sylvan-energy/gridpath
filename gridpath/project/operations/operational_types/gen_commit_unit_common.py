@@ -64,6 +64,10 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.common_functions import duals_wrapper
 from gridpath.project.operations.operational_types.common_functions import (
     determine_relevant_timepoints,
@@ -1038,7 +1042,6 @@ def add_model_components(
         "GEN_COMMIT_{}_OPR_TMPS".format(BIN_OR_LIN),
         Set(
             dimen=2,
-            within=m.PRJ_OPR_TMPS,
             initialize=lambda mod: subset_init_by_set_membership(
                 mod=mod,
                 superset="PRJ_OPR_TMPS",
@@ -1801,7 +1804,7 @@ def add_model_components(
     )
 
     def upwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
+        return headroom_provision_rule(d, mod, g, tmp)
 
     setattr(
         m,
@@ -1813,7 +1816,7 @@ def add_model_components(
     )
 
     def downwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
+        return footroom_provision_rule(d, mod, g, tmp)
 
     setattr(
         m,
