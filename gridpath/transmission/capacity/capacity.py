@@ -31,7 +31,7 @@ from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
     join_sets,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission import TX_PERIOD_DF
 from gridpath.transmission.capacity.common_functions import (
     load_tx_capacity_type_modules,
@@ -271,9 +271,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_PERIOD_DF)[c] = None
-    getattr(d, TX_PERIOD_DF).update(results_df)
+    update_results_df(getattr(d, TX_PERIOD_DF), results_df)
 
     # Module-specific capacity results
     required_capacity_modules = get_required_subtype_modules(
@@ -304,10 +302,7 @@ def export_results(
                 m,
                 d,
             )
-            for column in results_columns:
-                if column not in getattr(d, TX_PERIOD_DF):
-                    getattr(d, TX_PERIOD_DF)[column] = None
-            getattr(d, TX_PERIOD_DF).update(optype_df)
+            update_results_df(getattr(d, TX_PERIOD_DF), optype_df)
 
 
 def save_duals(

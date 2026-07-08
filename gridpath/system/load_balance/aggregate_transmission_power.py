@@ -24,7 +24,7 @@ from gridpath.auxiliary.dynamic_components import (
     load_balance_production_components,
     load_balance_consumption_components,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.load_balance import LOAD_ZONE_TMP_DF
 
 
@@ -143,6 +143,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, LOAD_ZONE_TMP_DF)[c] = None
-    getattr(d, LOAD_ZONE_TMP_DF).update(results_df)
+    update_results_df(getattr(d, LOAD_ZONE_TMP_DF), results_df)

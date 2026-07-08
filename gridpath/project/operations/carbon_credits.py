@@ -25,7 +25,7 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_PERIOD_DF
 from gridpath.project.operations.common_functions import load_operational_type_modules
 import gridpath.project.operations.operational_types as op_type_init
@@ -728,9 +728,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_PERIOD_DF)[c] = None
-    getattr(d, PROJECT_PERIOD_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_PERIOD_DF), results_df)
 
     # Carbon credits purchase
     with open(

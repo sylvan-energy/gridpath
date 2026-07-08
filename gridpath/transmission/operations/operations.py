@@ -24,7 +24,7 @@ from pyomo.environ import Expression, value
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission.operations.common_functions import (
     load_tx_operational_type_modules,
 )
@@ -178,9 +178,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_TIMEPOINT_DF)[c] = None
-    getattr(d, TX_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, TX_TIMEPOINT_DF), results_df)
 
     required_operational_modules = get_required_subtype_modules(
         scenario_directory=scenario_directory,
@@ -206,10 +204,7 @@ def export_results(
             results_columns, optype_df = imported_operational_modules[
                 optype_module
             ].add_to_operations_results(mod=m)
-            for column in results_columns:
-                if column not in getattr(d, TX_TIMEPOINT_DF):
-                    getattr(d, TX_TIMEPOINT_DF)[column] = None
-            getattr(d, TX_TIMEPOINT_DF).update(optype_df)
+            update_results_df(getattr(d, TX_TIMEPOINT_DF), optype_df)
 
 
 # Database

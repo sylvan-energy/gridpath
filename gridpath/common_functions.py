@@ -498,6 +498,23 @@ def create_results_df(index_columns, results_columns, data):
     return df
 
 
+def update_results_df(target_df, results_df):
+    """
+    Add :code:`results_df`'s columns to :code:`target_df` (if not already
+    present) and fill in its values; rows of :code:`target_df` not covered
+    by :code:`results_df` are left as NaN.
+
+    New columns are created with the source column's dtype. Avoids creating
+    them as object columns (e.g. by first assigning None), as it would make
+    numeric results columns store boxed Python floats (much higher memory
+    requirements).
+    """
+    for c in results_df.columns:
+        if c not in target_df.columns:
+            target_df[c] = pd.Series(dtype=results_df[c].dtype)
+    target_df.update(results_df)
+
+
 def duals_wrapper(m, component, verbose=False):
     try:
         return m.dual[component]

@@ -19,7 +19,7 @@ level to the energy-target zone - balancing type - horizon level.
 
 from pyomo.environ import Expression, value
 
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.energy_targets import ENERGY_TARGET_ZONE_HRZ_DF
 
 
@@ -141,6 +141,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, ENERGY_TARGET_ZONE_HRZ_DF)[c] = None
-    getattr(d, ENERGY_TARGET_ZONE_HRZ_DF).update(results_df)
+    update_results_df(getattr(d, ENERGY_TARGET_ZONE_HRZ_DF), results_df)

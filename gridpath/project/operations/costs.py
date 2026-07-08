@@ -33,7 +33,7 @@ from gridpath.project.operations.common_functions import (
     load_operational_type_modules,
     resolve_op_type_rules,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 import gridpath.project.operations.operational_types as op_type_init
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
@@ -677,9 +677,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
     # for prj, prd in m.PRJ_OPR_PRDS:
     #     for mnth in m.MONTHS:
