@@ -31,6 +31,7 @@ from gridpath.auxiliary.auxiliary import (
 )
 from gridpath.project.operations.common_functions import (
     load_operational_type_modules,
+    resolve_op_type_rules,
 )
 from gridpath.common_functions import create_results_df
 import gridpath.project.operations.operational_types as op_type_init
@@ -263,16 +264,12 @@ def add_model_components(
 
     # All VOM projects
     m.VAR_OM_COST_ALL_PRJS_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
+        dimen=2,
         initialize=lambda mod: sorted(
-            list(
-                set(
-                    mod.VAR_OM_COST_SIMPLE_PRJ_OPR_TMPS
-                    | mod.VAR_OM_COST_BY_PRD_PRJS_OPR_TMPS
-                    | mod.VAR_OM_COST_BY_TMP_PRJS_OPR_TMPS
-                    | mod.VAR_OM_COST_CURVE_PRJS_OPR_TMPS
-                )
-            ),
+            set(mod.VAR_OM_COST_SIMPLE_PRJ_OPR_TMPS)
+            | set(mod.VAR_OM_COST_BY_PRD_PRJS_OPR_TMPS)
+            | set(mod.VAR_OM_COST_BY_TMP_PRJS_OPR_TMPS)
+            | set(mod.VAR_OM_COST_CURVE_PRJS_OPR_TMPS)
         ),
     )
 
@@ -340,6 +337,20 @@ def add_model_components(
         m.VAR_OM_COST_CURVE_PRJS_OPR_TMPS, within=NonNegativeReals
     )
 
+    # Resolve each op type's cost rules once
+    vom_cost_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "variable_om_cost_rule", op_type_init
+    )
+    vom_by_prd_cost_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "variable_om_by_period_cost_rule", op_type_init
+    )
+    vom_by_tmp_cost_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "variable_om_by_timepoint_cost_rule", op_type_init
+    )
+    vom_cost_by_ll_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "variable_om_cost_by_ll_rule", op_type_init
+    )
+
     # Constraints
     ###########################################################################
 
@@ -358,15 +369,9 @@ def add_model_components(
         are out rather than it being forced to run below minimum stable level
         at very costly operating points.
         """
-        op_type = mod.operational_type[prj]
-        if hasattr(
-            imported_operational_modules[op_type], "variable_om_cost_by_ll_rule"
-        ):
-            var_cost_by_ll = imported_operational_modules[
-                op_type
-            ].variable_om_cost_by_ll_rule(mod, prj, tmp, s)
-        else:
-            var_cost_by_ll = op_type_init.variable_om_cost_by_ll_rule(mod, prj, tmp, s)
+        var_cost_by_ll = vom_cost_by_ll_rule_by_op_type[mod.operational_type[prj]](
+            mod, prj, tmp, s
+        )
 
         return mod.Variable_OM_Curve_Cost[prj, tmp] >= var_cost_by_ll
 
@@ -391,46 +396,25 @@ def add_model_components(
         op_type = mod.operational_type[prj]
 
         # Simple VOM cost
-        if prj in mod.VAR_OM_COST_SIMPLE_PRJS:
-            if hasattr(imported_operational_modules[op_type], "variable_om_cost_rule"):
-                var_cost_simple = imported_operational_modules[
-                    op_type
-                ].variable_om_cost_rule(mod, prj, tmp)
-            else:
-                var_cost_simple = op_type_init.variable_om_cost_rule(mod, prj, tmp)
-        else:
-            var_cost_simple = 0
+        var_cost_simple = (
+            vom_cost_rule_by_op_type[op_type](mod, prj, tmp)
+            if prj in mod.VAR_OM_COST_SIMPLE_PRJS
+            else 0
+        )
 
         # By period VOM
-        if prj in mod.VAR_OM_COST_BY_PRD_PRJS:
-            if hasattr(
-                imported_operational_modules[op_type], "variable_om_by_period_cost_rule"
-            ):
-                var_cost_by_prd = imported_operational_modules[
-                    op_type
-                ].variable_om_by_period_cost_rule(mod, prj, tmp)
-            else:
-                var_cost_by_prd = op_type_init.variable_om_by_period_cost_rule(
-                    mod, prj, tmp
-                )
-        else:
-            var_cost_by_prd = 0
+        var_cost_by_prd = (
+            vom_by_prd_cost_rule_by_op_type[op_type](mod, prj, tmp)
+            if prj in mod.VAR_OM_COST_BY_PRD_PRJS
+            else 0
+        )
 
         # By timepoint VOM
-        if prj in mod.VAR_OM_COST_BY_TMP_PRJS:
-            if hasattr(
-                imported_operational_modules[op_type],
-                "variable_om_by_timepoint_cost_rule",
-            ):
-                var_cost_by_tmp = imported_operational_modules[
-                    op_type
-                ].variable_om_by_timepoint_cost_rule(mod, prj, tmp)
-            else:
-                var_cost_by_tmp = op_type_init.variable_om_by_timepoint_cost_rule(
-                    mod, prj, tmp
-                )
-        else:
-            var_cost_by_tmp = 0
+        var_cost_by_tmp = (
+            vom_by_tmp_cost_rule_by_op_type[op_type](mod, prj, tmp)
+            if prj in mod.VAR_OM_COST_BY_TMP_PRJS
+            else 0
+        )
 
         # VOM curve cost
         if prj in mod.VAR_OM_COST_CURVE_PRJS:
