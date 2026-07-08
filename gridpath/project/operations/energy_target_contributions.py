@@ -142,7 +142,6 @@ def add_model_components(
     m.ENERGY_TARGET_PRJS = Set(within=m.PROJECTS)
 
     m.ENERGY_TARGET_PRJ_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",

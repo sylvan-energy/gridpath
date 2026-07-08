@@ -207,7 +207,6 @@ def add_model_components(
 
     m.VAR_OM_COST_SIMPLE_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -218,7 +217,6 @@ def add_model_components(
 
     m.VAR_OM_COST_BY_PRD_PRJS_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -229,7 +227,6 @@ def add_model_components(
 
     m.VAR_OM_COST_BY_TMP_PRJS_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -281,7 +278,6 @@ def add_model_components(
 
     m.STARTUP_COST_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -292,7 +288,6 @@ def add_model_components(
 
     m.SHUTDOWN_COST_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -303,7 +298,6 @@ def add_model_components(
 
     m.VIOL_ALL_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.VIOL_ALL_PRJS
         ),
@@ -311,7 +305,6 @@ def add_model_components(
 
     m.CURTAILMENT_COST_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -322,7 +315,6 @@ def add_model_components(
 
     m.SOC_PENALTY_COST_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -333,7 +325,6 @@ def add_model_components(
 
     m.SOC_LAST_TMP_PENALTY_COST_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
