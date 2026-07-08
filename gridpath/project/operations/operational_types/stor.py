@@ -57,6 +57,10 @@ from gridpath.auxiliary.auxiliary import (
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.common_functions import (
     check_if_first_timepoint,
     check_if_last_timepoint,
@@ -296,7 +300,6 @@ def add_model_components(
 
     m.STOR_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.STOR
         ),
@@ -309,18 +312,15 @@ def add_model_components(
     def stor_opr_bt_hrz_set_init(mod):
         prj_bt_hrz = []
         for prj in mod.STOR:
-            for bt, hrz in mod.BLN_TYPE_HRZS:
-                # Only take balancing types matching the project's
-                if bt == mod.balancing_type_project[prj]:
-                    # Add to the set if the timepoints in the horizon are in
-                    # the project's operational timepoints
-                    if set(
-                        [
-                            (prj, hrz_tmp)
-                            for hrz_tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
-                        ]
-                    ).issubset(mod.PRJ_OPR_TMPS):
-                        prj_bt_hrz.append((prj, bt, hrz))
+            bt = mod.balancing_type_project[prj]
+            for hrz in mod.HRZS_BY_BLN_TYPE[bt]:
+                # Add to the set if all timepoints in the horizon are in
+                # the project's operational timepoints
+                if all(
+                    (prj, tmp) in mod.PRJ_OPR_TMPS
+                    for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
+                ):
+                    prj_bt_hrz.append((prj, bt, hrz))
 
         return prj_bt_hrz
 
@@ -403,12 +403,12 @@ def add_model_components(
     )
 
     def upward_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
+        return headroom_provision_rule(d, mod, g, tmp)
 
     m.Stor_Upward_Reserves_MW = Expression(m.STOR_OPR_TMPS, rule=upward_reserve_rule)
 
     def downward_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
+        return footroom_provision_rule(d, mod, g, tmp)
 
     m.Stor_Downward_Reserves_MW = Expression(
         m.STOR_OPR_TMPS, rule=downward_reserve_rule
