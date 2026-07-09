@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pyomo.environ import Expression
+from pyomo.environ import Expression, NonNegativeReals, Param
 
 from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
@@ -81,6 +81,23 @@ def add_model_components(
                 stage,
             )
 
+    # Resolve each availability type's derate rule once, not per index
+    derate_rule_by_type = {
+        avl_type: imported_availability_modules[avl_type].availability_derate_rule
+        for avl_type in required_availability_modules
+    }
+
+    # If every required availability type produces a constant derate (no
+    # variables in the derate), make the derate component a Param rather
+    # than an Expression: an immutable Param value is inlined as a plain
+    # number in the consuming expressions and constraints, which makes
+    # them smaller and faster to build than storing a reference into an
+    # Expression component
+    all_derates_constant = all(
+        getattr(imported_availability_modules[avl_type], "DERATE_IS_CONSTANT", False)
+        for avl_type in required_availability_modules
+    )
+
     def availability_derate_rule(mod, tx, tmp):
         """
 
@@ -89,12 +106,18 @@ def add_model_components(
         :param tmp:
         :return:
         """
-        availability_type = mod.tx_availability_type[tx]
-        return imported_availability_modules[
-            availability_type
-        ].availability_derate_rule(mod, tx, tmp)
+        return derate_rule_by_type[mod.tx_availability_type[tx]](mod, tx, tmp)
 
-    m.Tx_Availability_Derate = Expression(m.TX_OPR_TMPS, rule=availability_derate_rule)
+    if all_derates_constant:
+        m.Tx_Availability_Derate = Param(
+            m.TX_OPR_TMPS,
+            within=NonNegativeReals,
+            initialize=availability_derate_rule,
+        )
+    else:
+        m.Tx_Availability_Derate = Expression(
+            m.TX_OPR_TMPS, rule=availability_derate_rule
+        )
 
 
 # Input-Output
