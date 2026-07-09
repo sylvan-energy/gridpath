@@ -38,6 +38,7 @@ from gridpath.common_functions import (
     get_required_e2e_arguments_parser,
     get_temporal_structure_csv_overwrite_parser,
     get_get_inputs_parser,
+    get_version_parser,
     ensure_empty_string,
 )
 from gridpath.auxiliary.module_list import determine_modules, load_modules
@@ -328,6 +329,7 @@ def parse_arguments(args):
             get_required_e2e_arguments_parser(),
             get_temporal_structure_csv_overwrite_parser(),
             get_get_inputs_parser(),
+            get_version_parser(),
         ],
     )
 

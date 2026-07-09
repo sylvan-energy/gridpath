@@ -28,7 +28,7 @@ from gridpath.auxiliary.db_interface import (
     get_scenario_id_and_name,
 )
 from gridpath.auxiliary.validations import write_validation_to_database
-from gridpath.common_functions import get_db_parser
+from gridpath.common_functions import get_db_parser, get_version_parser
 from gridpath.auxiliary.module_list import determine_modules, load_modules
 from gridpath.auxiliary.scenario_chars import (
     OptionalFeatures,
@@ -347,7 +347,9 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True, parents=[get_db_parser()])
+    parser = ArgumentParser(
+        add_help=True, parents=[get_db_parser(), get_version_parser()]
+    )
 
     # Add quiet flag which can suppress run output
     parser.add_argument(

@@ -59,6 +59,7 @@ destination database table, in that order.
 
 import sys
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import os.path
 from sqlite3 import Connection
 
@@ -75,7 +76,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database")
     parser.add_argument("-csv", "--csv_location")

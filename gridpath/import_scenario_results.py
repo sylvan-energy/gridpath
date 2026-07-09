@@ -35,9 +35,14 @@ from gridpath.common_functions import (
     get_required_e2e_arguments_parser,
     get_temporal_structure_csv_overwrite_parser,
     get_import_results_parser,
+    get_version_parser,
     ensure_empty_string,
 )
-from db.common_functions import connect_to_database, spin_on_database_lock
+from db.common_functions import (
+    connect_to_database,
+    spin_on_database_lock,
+    update_db_last_modified,
+)
 from db.utilities.scenario import delete_scenario_results
 from gridpath.auxiliary.module_list import determine_modules, load_modules
 from gridpath.auxiliary.scenario_chars import (
@@ -365,6 +370,7 @@ def parse_arguments(args):
             get_required_e2e_arguments_parser(),
             get_temporal_structure_csv_overwrite_parser(),
             get_import_results_parser(),
+            get_version_parser(),
         ],
     )
     parsed_arguments = parser.parse_known_args(args=args)[0]
@@ -450,6 +456,8 @@ def main(args=None):
         ignore_incomplete=ignore_incomplete,
         quiet=quiet,
     )
+
+    update_db_last_modified(conn=conn, modification_type="results_import")
 
     # Close the database connection
     conn.commit()

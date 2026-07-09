@@ -47,6 +47,7 @@ Settings
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import numpy as np
 import os.path
 import pandas as pd
@@ -67,7 +68,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
     parser.add_argument("-r", "--region", default="WECC")
