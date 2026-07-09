@@ -57,16 +57,30 @@ def add_model_components(
     # Dynamic Inputs
     ###########################################################################
 
-    required_compliance_modules = get_required_subtype_modules(
-        scenario_directory=scenario_directory,
-        weather_iteration=weather_iteration,
-        hydro_iteration=hydro_iteration,
-        availability_iteration=availability_iteration,
-        subproblem=subproblem,
-        stage=stage,
-        which_type="compliance_type",
-        filename="transmission_policy_zones",
-    )
+    # Transmission policy contributions are optional; if the user has not
+    # specified any transmission policy inputs (no
+    # transmission_policy_zones.tab file), the components below are simply
+    # empty and the policy feature functions as before, for projects only
+    if tx_policy_zones_file_exists(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+    ):
+        required_compliance_modules = get_required_subtype_modules(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
+            which_type="compliance_type",
+            filename="transmission_policy_zones",
+        )
+    else:
+        required_compliance_modules = []
 
     imported_compliance_modules = load_subtype_modules(
         required_subtype_modules=required_compliance_modules,
@@ -153,6 +167,18 @@ def load_model_data(
     :param stage:
     :return:
     """
+    # Transmission policy contributions are optional; nothing to load if the
+    # user has not specified any transmission policy inputs
+    if not tx_policy_zones_file_exists(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+    ):
+        return
+
     data_portal.load(
         filename=os.path.join(
             scenario_directory,
@@ -211,6 +237,28 @@ def load_model_data(
                 subproblem,
                 stage,
             )
+
+
+def tx_policy_zones_file_exists(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    return os.path.exists(
+        os.path.join(
+            scenario_directory,
+            weather_iteration,
+            hydro_iteration,
+            availability_iteration,
+            subproblem,
+            stage,
+            "inputs",
+            "transmission_policy_zones.tab",
+        )
+    )
 
 
 def export_results(
@@ -379,7 +427,12 @@ def write_model_inputs(
         db_subproblem,
         db_stage,
         conn,
-    )
+    ).fetchall()
+
+    # Transmission policy contributions are optional; only write the file if
+    # the user has specified transmission policy inputs
+    if not transmission_policy_zones:
+        return
 
     with open(
         os.path.join(

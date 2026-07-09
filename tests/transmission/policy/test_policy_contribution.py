@@ -16,7 +16,9 @@
 from collections import OrderedDict
 from importlib import import_module
 import os.path
+import shutil
 import sys
+import tempfile
 import unittest
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
@@ -143,6 +145,36 @@ class TestTxPolicyContribution(unittest.TestCase):
             )
         )
         self.assertDictEqual(expected_compliance_type, actual_compliance_type)
+
+    def test_no_transmission_policy_inputs(self):
+        """
+        Transmission policy contributions are optional: if the user has not
+        specified any transmission policy inputs (no
+        transmission_policy_zones.tab file), the model should still build,
+        with the transmission policy components empty.
+        :return:
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_data_dir = os.path.join(tmp_dir, "test_data")
+            shutil.copytree(TEST_DATA_DIRECTORY, test_data_dir)
+            os.remove(
+                os.path.join(test_data_dir, "inputs", "transmission_policy_zones.tab")
+            )
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=test_data_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
+
+            self.assertListEqual([], [idx for idx in instance.TX_POLICY_ZONES])
+            self.assertListEqual([], [idx for idx in instance.TX_POLICY_ZONE_OPR_TMPS])
 
 
 if __name__ == "__main__":
