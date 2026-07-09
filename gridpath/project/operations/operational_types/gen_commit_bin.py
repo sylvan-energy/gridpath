@@ -47,7 +47,7 @@ Morales-Espana et al. (2013).
 from gridpath.project.operations.operational_types.common_functions import (
     validate_opchars,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 import gridpath.project.operations.operational_types.gen_commit_unit_common as gen_commit_unit_common
 
 
@@ -311,9 +311,7 @@ def add_to_prj_tmp_results(mod):
 
     # Add duals to dispatch DF
     results_columns += duals_results_columns
-    for column in duals_results_columns:
-        optype_dispatch_df[column] = None
-    optype_dispatch_df.update(optype_duals_df)
+    update_results_df(optype_dispatch_df, optype_duals_df)
 
     return results_columns, optype_dispatch_df
 

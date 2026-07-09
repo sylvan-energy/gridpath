@@ -135,9 +135,11 @@ def create_problem(
     if parsed_arguments.report_timing:
         report_timing()
 
-    # Create a dual suffix component
-    # TODO: maybe this shouldn't always be needed
-    model.dual = Suffix(direction=Suffix.IMPORT)
+    # Create a dual suffix component unless the user asked to skip duals;
+    # duals are imported for every constraint in the model, which adds
+    # significant memory and solution-load time
+    if not parsed_arguments.skip_duals:
+        model.dual = Suffix(direction=Suffix.IMPORT)
 
     # Load the scenario data
     if not parsed_arguments.quiet:
@@ -1000,18 +1002,19 @@ def save_results(
             instance=instance,
         )
 
-        save_duals(
-            scenario_directory=scenario_directory,
-            weather_iteration=weather_iteration,
-            hydro_iteration=hydro_iteration,
-            availability_iteration=availability_iteration,
-            subproblem=subproblem,
-            stage=stage,
-            multi_stage=multi_stage,
-            instance=instance,
-            dynamic_components=dynamic_components,
-            verbose=parsed_arguments.verbose,
-        )
+        if not parsed_arguments.skip_duals:
+            save_duals(
+                scenario_directory=scenario_directory,
+                weather_iteration=weather_iteration,
+                hydro_iteration=hydro_iteration,
+                availability_iteration=availability_iteration,
+                subproblem=subproblem,
+                stage=stage,
+                multi_stage=multi_stage,
+                instance=instance,
+                dynamic_components=dynamic_components,
+                verbose=parsed_arguments.verbose,
+            )
 
         # Force garbage collection to release file descriptors immediately
         # This prevents "too many open files" errors when processing many iterations
@@ -1753,17 +1756,19 @@ def load_cplex_xml_solution(
         if not var_id in ["ONE_VAR_CONSTANT", "x2"]:
             symbol_map.bySymbol[var_id].value = float(value)
 
-    # Constraints
-    for type_tag in root.findall("linearConstraints/constraint"):
-        constraint_id_w_extra_symbols, const_index, dual = (
-            type_tag.get("name"),
-            type_tag.get("index"),
-            type_tag.get("dual"),
-        )
-        if not constraint_id_w_extra_symbols == "c_e_ONE_VAR_CONSTANT":
-            # constraint_id = constraint_id_w_extra_symbols[4:-1]
-            constraint_id = constraint_id_w_extra_symbols
-            instance.dual[symbol_map.bySymbol[constraint_id]] = float(dual)
+    # Constraints (only if the instance was created with a dual suffix,
+    # i.e. not with --skip_duals)
+    if hasattr(instance, "dual"):
+        for type_tag in root.findall("linearConstraints/constraint"):
+            constraint_id_w_extra_symbols, const_index, dual = (
+                type_tag.get("name"),
+                type_tag.get("index"),
+                type_tag.get("dual"),
+            )
+            if not constraint_id_w_extra_symbols == "c_e_ONE_VAR_CONSTANT":
+                # constraint_id = constraint_id_w_extra_symbols[4:-1]
+                constraint_id = constraint_id_w_extra_symbols
+                instance.dual[symbol_map.bySymbol[constraint_id]] = float(dual)
 
     # Solver status
     header = root.findall("header")[0]  # Need a check that there is only one element
@@ -1809,11 +1814,13 @@ def load_gurobi_json_solution(
         if not var_id == "ONE_VAR_CONSTANT":
             symbol_map.bySymbol[var_id]().value = float(value)
 
-    # Constraints
-    for c in solution["Constrs"]:
-        constraint_id, dual = c["CTag"][0][4:], c["Pi"]
-        if not constraint_id == "ONE_VAR_CONSTAN":
-            instance.dual[symbol_map.bySymbol[constraint_id]()] = float(dual)
+    # Constraints (only if the instance was created with a dual suffix,
+    # i.e. not with --skip_duals)
+    if hasattr(instance, "dual"):
+        for c in solution["Constrs"]:
+            constraint_id, dual = c["CTag"][0][4:], c["Pi"]
+            if not constraint_id == "ONE_VAR_CONSTAN":
+                instance.dual[symbol_map.bySymbol[constraint_id]()] = float(dual)
 
     # Solver status
     # TODO: what are the types
@@ -1899,9 +1906,11 @@ def load_highs_xml_solution(
                     symbol_map.bySymbol[var_id].value = float(value)
 
         # Parse constraint dual values (c_ constraints only) from dual rows
+        # (only if the instance was created with a dual suffix, i.e. not
+        # with --skip_duals)
         elif section == "dual_rows":
             parts = line.split()
-            if len(parts) == 2:
+            if len(parts) == 2 and hasattr(instance, "dual"):
                 constraint_id, dual = parts[0], parts[1]
                 if (
                     constraint_id.startswith("c_")

@@ -22,7 +22,7 @@ from pyomo.environ import Param, Var, NonNegativeReals, value
 
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.auxiliary.dynamic_components import (
     carbon_credits_balance_purchase_components,
 )
@@ -259,6 +259,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, CARBON_CREDITS_ZONE_PRD_DF)[c] = None
-    getattr(d, CARBON_CREDITS_ZONE_PRD_DF).update(results_df)
+    update_results_df(getattr(d, CARBON_CREDITS_ZONE_PRD_DF), results_df)

@@ -36,7 +36,7 @@ from gridpath.auxiliary.db_interface import (
     directories_to_db_values,
 )
 from gridpath.auxiliary.dynamic_components import carbon_cap_balance_emission_components
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission import TX_TIMEPOINT_DF
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
@@ -389,9 +389,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_TIMEPOINT_DF)[c] = None
-    getattr(d, TX_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, TX_TIMEPOINT_DF), results_df)
 
 
 # Database

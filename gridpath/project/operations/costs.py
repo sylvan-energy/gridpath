@@ -22,7 +22,17 @@ For the purpose, this module calls the respective method from the
 operational type modules.
 """
 
-from pyomo.environ import Set, Var, Expression, Constraint, NonNegativeReals, value
+import os.path
+
+from pyomo.environ import (
+    Set,
+    SetOf,
+    Var,
+    Expression,
+    Constraint,
+    NonNegativeReals,
+    value,
+)
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import (
@@ -33,7 +43,7 @@ from gridpath.project.operations.common_functions import (
     load_operational_type_modules,
     resolve_op_type_rules,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 import gridpath.project.operations.operational_types as op_type_init
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
@@ -263,15 +273,41 @@ def add_model_components(
     )
 
     # All VOM projects
-    m.VAR_OM_COST_ALL_PRJS_OPR_TMPS = Set(
-        dimen=2,
-        initialize=lambda mod: sorted(
-            set(mod.VAR_OM_COST_SIMPLE_PRJ_OPR_TMPS)
-            | set(mod.VAR_OM_COST_BY_PRD_PRJS_OPR_TMPS)
-            | set(mod.VAR_OM_COST_BY_TMP_PRJS_OPR_TMPS)
-            | set(mod.VAR_OM_COST_CURVE_PRJS_OPR_TMPS)
-        ),
+    # The by-period, by-timepoint, and curve VOM projects come exclusively
+    # from their respective input files; if none of those files exists,
+    # the union of the four VOM project-timepoint sets equals the simple
+    # VOM set, so make it a zero-copy view of that set instead of a copy
+    # (at production scale the copy is tens of millions of elements)
+    inputs_directory = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
     )
+    non_simple_vom_inputs_exist = any(
+        os.path.exists(os.path.join(inputs_directory, fname))
+        for fname in [
+            "project_variable_om_by_period.tab",
+            "project_variable_om_by_timepoint.tab",
+            "variable_om_curves.tab",
+        ]
+    )
+
+    if not non_simple_vom_inputs_exist:
+        m.VAR_OM_COST_ALL_PRJS_OPR_TMPS = SetOf(m.VAR_OM_COST_SIMPLE_PRJ_OPR_TMPS)
+    else:
+        m.VAR_OM_COST_ALL_PRJS_OPR_TMPS = Set(
+            dimen=2,
+            initialize=lambda mod: sorted(
+                set(mod.VAR_OM_COST_SIMPLE_PRJ_OPR_TMPS)
+                | set(mod.VAR_OM_COST_BY_PRD_PRJS_OPR_TMPS)
+                | set(mod.VAR_OM_COST_BY_TMP_PRJS_OPR_TMPS)
+                | set(mod.VAR_OM_COST_CURVE_PRJS_OPR_TMPS)
+            ),
+        )
 
     m.STARTUP_COST_PRJ_OPR_TMPS = Set(
         dimen=2,
@@ -677,9 +713,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
     # for prj, prd in m.PRJ_OPR_PRDS:
     #     for mnth in m.MONTHS:

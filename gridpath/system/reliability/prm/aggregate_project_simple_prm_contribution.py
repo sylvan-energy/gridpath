@@ -23,7 +23,7 @@ from pyomo.environ import Expression, value
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.dynamic_components import prm_balance_provision_components
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.reliability.prm import PRM_ZONE_PRD_DF
 
 
@@ -105,6 +105,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PRM_ZONE_PRD_DF)[c] = None
-    getattr(d, PRM_ZONE_PRD_DF).update(results_df)
+    update_results_df(getattr(d, PRM_ZONE_PRD_DF), results_df)

@@ -54,6 +54,10 @@ from gridpath.project.common_functions import (
     check_if_boundary_type_and_first_timepoint,
 )
 
+# The binary availability decisions are variables, so the availability
+# derate is an expression involving variables
+DERATE_IS_CONSTANT = False
+
 
 def add_model_components(
     m,

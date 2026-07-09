@@ -31,7 +31,7 @@ from gridpath.auxiliary.auxiliary import (
     cursor_to_df,
     subset_init_by_set_membership,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
 
@@ -306,9 +306,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
 
 def get_inputs_from_database(

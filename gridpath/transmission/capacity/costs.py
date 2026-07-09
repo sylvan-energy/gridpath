@@ -25,7 +25,7 @@ from pyomo.environ import Set, Expression, value
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import join_sets
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission.capacity.common_functions import (
     load_tx_capacity_type_modules,
 )
@@ -287,9 +287,7 @@ def export_results(
         data=data1,
     )
 
-    for c in results_columns1:
-        getattr(d, TX_PERIOD_DF)[c] = None
-    getattr(d, TX_PERIOD_DF).update(cost_df1)
+    update_results_df(getattr(d, TX_PERIOD_DF), cost_df1)
 
     results_columns2 = [
         "hours_in_period_timepoints",
@@ -313,9 +311,7 @@ def export_results(
         data=data2,
     )
 
-    for c in results_columns2:
-        getattr(d, TX_PERIOD_DF)[c] = None
-    getattr(d, TX_PERIOD_DF).update(cost_df2)
+    update_results_df(getattr(d, TX_PERIOD_DF), cost_df2)
 
 
 def save_duals(

@@ -202,15 +202,13 @@ def add_model_components(
     | | :code:`variable_om_cost_per_mwh`                                      |
     | | *Defined over*: :code:`VAR_OM_COST_SIMPLE_PRJS`                       |
     | | *Within*: :code:`NonNegativeReals`                                    |
-    | | *Default*: :code:`0`                                                  |
     |                                                                         |
     | The project's variable operations and maintenance cost per MWh of       |
-    | power production.                                                       |
+    | power production. Do not specify if zero for memory efficiency.         |                                                      |
     +-------------------------------------------------------------------------+
     | | :code:`variable_om_cost_per_mwh_by_period`                            |
     | | *Defined over*: :code:`VAR_OM_COST_BY_PRD_PRJ_PRDS`                   |
     | | *Within*: :code:`NonNegativeReals`                                    |
-    | | *Default*: :code:`0`                                                  |
     |                                                                         |
     | The project's variable operations and maintenance cost per MWh of       |
     | power production (by period).                                           |
@@ -218,7 +216,6 @@ def add_model_components(
     | | :code:`variable_om_cost_per_mwh_by_timepoint`                         |
     | | *Defined over*: :code:`VAR_OM_COST_BY_TMP_PRJ_TMPS`                   |
     | | *Within*: :code:`Reals`                                               |
-    | | *Default*: :code:`0`                                                  |
     |                                                                         |
     | The project's variable operations and maintenance cost per MWh of       |
     | power production (by timepoint).                                        |
@@ -487,15 +484,15 @@ def add_model_components(
     # Optional Params
     ###########################################################################
     m.variable_om_cost_per_mwh = Param(
-        m.VAR_OM_COST_SIMPLE_PRJS, within=NonNegativeReals, default=0
+        m.VAR_OM_COST_SIMPLE_PRJS, within=NonNegativeReals
     )
 
     m.variable_om_cost_per_mwh_by_period = Param(
-        m.VAR_OM_COST_BY_PRD_PRJ_PRDS, within=NonNegativeReals, default=0
+        m.VAR_OM_COST_BY_PRD_PRJ_PRDS, within=NonNegativeReals
     )
 
     m.variable_om_cost_per_mwh_by_timepoint = Param(
-        m.VAR_OM_COST_BY_TMP_PRJ_TMPS, within=Reals, default=0
+        m.VAR_OM_COST_BY_TMP_PRJ_TMPS, within=Reals
     )
 
     m.vom_slope_cost_per_mwh = Param(

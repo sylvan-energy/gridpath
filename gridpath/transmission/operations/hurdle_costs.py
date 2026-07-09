@@ -35,7 +35,7 @@ from gridpath.auxiliary.validations import (
     validate_values,
     validate_missing_inputs,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission import TX_TIMEPOINT_DF
 
 
@@ -274,9 +274,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_TIMEPOINT_DF)[c] = None
-    getattr(d, TX_TIMEPOINT_DF).update(cost_df)
+    update_results_df(getattr(d, TX_TIMEPOINT_DF), cost_df)
 
 
 # Database

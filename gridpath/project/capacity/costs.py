@@ -24,7 +24,7 @@ import os.path
 from pyomo.environ import Set, Expression, value
 
 from db.common_functions import spin_on_database_lock
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
     join_sets,
@@ -228,9 +228,7 @@ def export_results(
         data=data1,
     )
 
-    for c in results_columns1:
-        getattr(d, PROJECT_PERIOD_DF)[c] = None
-    getattr(d, PROJECT_PERIOD_DF).update(cost_df1)
+    update_results_df(getattr(d, PROJECT_PERIOD_DF), cost_df1)
 
     results_columns2 = [
         "hours_in_period_timepoints",
@@ -254,9 +252,7 @@ def export_results(
         data=data2,
     )
 
-    for c in results_columns2:
-        getattr(d, PROJECT_PERIOD_DF)[c] = None
-    getattr(d, PROJECT_PERIOD_DF).update(cost_df2)
+    update_results_df(getattr(d, PROJECT_PERIOD_DF), cost_df2)
 
 
 # Database

@@ -83,23 +83,29 @@ def _build_adjusted_vars_by_prj(d, mod, key):
     reserve type. Both the adjustment param and the balancing area param
     are indexed by project/balancing area only (not timepoint), so they
     resolve to a plain value per project-reserve pair here.
+
+    To save on memory, pairs whose adjustment value is 0 (the param default)
+    are dropped: a 0 x Var term contributes exactly 0 to the subhourly
+    adjustment sums, so the values of the resulting expressions are
+    unchanged, but the expressions -- one per project-timepoint -- don't
+    store zero-valued terms.
     """
     direction = key[0]
     adjustment_params = getattr(d, reserve_to_energy_adjustment_params)
     comp_by_name = {}
-    return {
-        prj: [
-            (
-                comp_by_name.setdefault(c, getattr(mod, c)),
-                # adjustment param, indexed by the project's balancing area
-                getattr(mod, adjustment_params[c][0])[
-                    getattr(mod, adjustment_params[c][1])[prj]
-                ],
-            )
-            for c in names
-        ]
-        for prj, names in getattr(d, _direction_attr(direction)).items()
-    }
+    adjusted_vars_by_prj = {}
+    for prj, names in getattr(d, _direction_attr(direction)).items():
+        pairs = []
+        for c in names:
+            # adjustment param, indexed by the project's balancing area
+            adj = getattr(mod, adjustment_params[c][0])[
+                getattr(mod, adjustment_params[c][1])[prj]
+            ]
+            if adj != 0:
+                pairs.append((comp_by_name.setdefault(c, getattr(mod, c)), adj))
+        adjusted_vars_by_prj[prj] = pairs
+
+    return adjusted_vars_by_prj
 
 
 def headroom_provision_rule(d, mod, prj, tmp):

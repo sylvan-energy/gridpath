@@ -32,7 +32,7 @@ from gridpath.auxiliary.dynamic_components import (
     reserve_variable_derate_params,
     reserve_to_energy_adjustment_params,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
 
@@ -449,9 +449,7 @@ def generic_export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
 
 def generic_get_inputs_from_database(

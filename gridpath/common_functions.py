@@ -230,6 +230,16 @@ def get_run_scenario_parser():
         action="store_true",
         help="Skip solve and load results from a HiGHS solution file instead.",
     )
+    # Duals
+    parser.add_argument(
+        "--skip_duals",
+        default=False,
+        action="store_true",
+        help="Don't import or save constraint duals. Duals are imported "
+        "for every constraint in the model, which adds significant memory "
+        "and solution-load time; skip them if you don't need shadow prices "
+        "(e.g. LMPs). Dual-based results files will not be written.",
+    )
     # Solver options
     parser.add_argument(
         "--solver",
@@ -498,7 +508,28 @@ def create_results_df(index_columns, results_columns, data):
     return df
 
 
+def update_results_df(target_df, results_df):
+    """
+    Add :code:`results_df`'s columns to :code:`target_df` (if not already
+    present) and fill in its values; rows of :code:`target_df` not covered
+    by :code:`results_df` are left as NaN.
+
+    New columns are created with the source column's dtype. Avoids creating
+    them as object columns (e.g. by first assigning None), as it would make
+    numeric results columns store boxed Python floats (much higher memory
+    requirements).
+    """
+    for c in results_df.columns:
+        if c not in target_df.columns:
+            target_df[c] = pd.Series(dtype=results_df[c].dtype)
+    target_df.update(results_df)
+
+
 def duals_wrapper(m, component, verbose=False):
+    # AttributeError: no dual Suffix on the instance (--skip_duals);
+    # KeyError: suffix present but no dual for this constraint
+    if not hasattr(m, "dual"):
+        return None
     try:
         return m.dual[component]
     except KeyError:
