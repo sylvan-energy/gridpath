@@ -31,13 +31,16 @@ To create a database for GridPath raw data, point to the schema in
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import csv
+import datetime
 import os.path
 import pandas as pd
 import sqlite3
 import sys
 
 from db.common_functions import spin_on_database_lock, spin_on_database_lock_generic
+from version import __version__
 
 
 def parse_arguments(arguments):
@@ -45,7 +48,7 @@ def parse_arguments(arguments):
 
     :return:
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     # Scenario name and location options
     parser.add_argument(
@@ -102,6 +105,37 @@ def create_database_schema(conn, parsed_arguments):
     with open(schema_path, "r") as db_schema_script:
         schema = db_schema_script.read()
         conn.executescript(schema)
+
+
+def write_db_metadata(conn):
+    """
+    :param conn: database connection
+
+    Record the GridPath version used to create the database and, if the
+    schema tracks it (the raw-data database schema does not), the database
+    creation datetime.
+    """
+    columns = [
+        row[1] for row in conn.execute("PRAGMA table_info(db_metadata);").fetchall()
+    ]
+    if "created_datetime" in columns:
+        sql = """INSERT INTO db_metadata (gridpath_version, created_datetime)
+            VALUES (?, ?);"""
+        data = (
+            __version__,
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+    else:
+        sql = "INSERT INTO db_metadata (gridpath_version) VALUES (?);"
+        data = (__version__,)
+
+    spin_on_database_lock(
+        conn=conn,
+        cursor=conn.cursor(),
+        sql=sql,
+        data=data,
+        many=False,
+    )
 
 
 def load_data(conn, data_directory, custom_units):
@@ -300,6 +334,8 @@ def main(args=None):
     conn.execute("PRAGMA foreign_keys=ON;")
     # Create schema
     create_database_schema(conn=conn, parsed_arguments=parsed_args)
+    # Record version and creation datetime
+    write_db_metadata(conn=conn)
     # Load data
     if not parsed_args.omit_data:
         load_data(

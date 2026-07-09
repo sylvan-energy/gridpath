@@ -16,6 +16,25 @@
 
 -- A description of the database schema structure is in db.__init__
 
+--------------------
+-- -- METADATA -- --
+--------------------
+
+-- Database metadata: the GridPath version used to create the database, the
+-- datetime when the database was created, and the datetimes when each type
+-- of data was last modified by GridPath utilities (single-row table); the
+-- last-modified datetimes are NULL until the respective utility first runs
+DROP TABLE IF EXISTS db_metadata;
+CREATE TABLE db_metadata
+(
+    gridpath_version                 VARCHAR(64),
+    created_datetime                 DATETIME,
+    inputs_last_modified_datetime    DATETIME,
+    scenarios_last_modified_datetime DATETIME,
+    results_last_imported_datetime   DATETIME,
+    results_last_processed_datetime  DATETIME
+);
+
 -----------------
 -- -- MODEL -- --
 -----------------

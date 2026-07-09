@@ -21,6 +21,22 @@ from argparse import ArgumentParser
 
 import pandas as pd
 
+from version import __version__
+
+
+def get_version_parser():
+    """
+    Create a parser for the --version argument, which prints the GridPath
+    version and exits. Include this in the parents of every GridPath
+    command-line entry point's parser.
+    """
+    parser = ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--version", action="version", version=f"GridPath {__version__}"
+    )
+
+    return parser
+
 
 def determine_scenario_directory(scenario_location, scenario_name):
     """

@@ -147,6 +147,7 @@ Settings
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import csv
 from multiprocessing import get_context
 import numpy as np
@@ -166,7 +167,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../io.db")
     parser.add_argument(

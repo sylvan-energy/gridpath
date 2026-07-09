@@ -58,6 +58,7 @@ from gridpath.common_functions import (
     get_scenario_name_parser,
     get_required_e2e_arguments_parser,
     get_run_scenario_parser,
+    get_version_parser,
     create_logs_directory_if_not_exists,
     Logging,
     ensure_empty_string,
@@ -1584,6 +1585,7 @@ def parse_arguments(args):
             get_scenario_name_parser(),
             get_required_e2e_arguments_parser(),
             get_run_scenario_parser(),
+            get_version_parser(),
         ],
     )
 

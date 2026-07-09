@@ -79,6 +79,7 @@ scenario should be entered as the name of the scenario column.
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import numpy as np
 import os
 import pandas as pd
@@ -86,7 +87,7 @@ import sqlite3
 import sys
 
 # Data-import modules
-from db.common_functions import connect_to_database
+from db.common_functions import connect_to_database, update_db_last_modified
 from db.utilities.common_functions import (
     load_all_subscenario_ids_from_dir_to_subscenario_table,
     load_single_subscenario_id_from_dir_to_subscenario_table,
@@ -106,7 +107,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     # Database name and location options
     parser.add_argument(
@@ -479,6 +480,8 @@ def main(args=None):
             delete_flag=parsed_args.delete,
             quiet=parsed_args.quiet,
         )
+
+    update_db_last_modified(conn=conn, modification_type="inputs")
 
     # Commit and close connection
     conn.commit()
