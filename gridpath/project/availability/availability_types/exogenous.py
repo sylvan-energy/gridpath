@@ -24,9 +24,13 @@ optimization.
 
 import csv
 import os.path
-from pyomo.environ import Param, Set, NonNegativeReals
+from pyomo.environ import Param, Set, SetOf, NonNegativeReals
 
-from gridpath.auxiliary.auxiliary import cursor_to_df, subset_init_by_set_membership
+from gridpath.auxiliary.auxiliary import (
+    cursor_to_df,
+    get_required_subtype_modules,
+    subset_init_by_set_membership,
+)
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import (
     write_validation_to_database,
@@ -113,12 +117,32 @@ def add_model_components(
 
     m.AVL_EXOG = Set(within=m.PROJECTS)
 
-    m.AVL_EXOG_OPR_TMPS = Set(
-        dimen=2,
-        initialize=lambda mod: subset_init_by_set_membership(
-            mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.AVL_EXOG
-        ),
+    # If every project is of the exogenous availability type (the type is
+    # also the default for projects with no type specified), then
+    # AVL_EXOG_OPR_TMPS would equal PRJ_OPR_TMPS, so make it a zero-copy
+    # view of PRJ_OPR_TMPS instead of a filtered copy; at production scale
+    # the copy is tens of millions of elements
+    availability_types_in_use = set(
+        get_required_subtype_modules(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
+            which_type="availability_type",
+        )
     )
+
+    if availability_types_in_use <= {"exogenous", "."}:
+        m.AVL_EXOG_OPR_TMPS = SetOf(m.PRJ_OPR_TMPS)
+    else:
+        m.AVL_EXOG_OPR_TMPS = Set(
+            dimen=2,
+            initialize=lambda mod: subset_init_by_set_membership(
+                mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.AVL_EXOG
+            ),
+        )
 
     m.AVL_EXOG_PRJ_BT_HRZ_W_WEATHER_DERATES = Set(
         dimen=3, within=m.PROJECTS * m.BLN_TYPE_HRZS
