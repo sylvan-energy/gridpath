@@ -234,11 +234,11 @@ def import_scenario_results_into_database(
                             import_objective_function_value(
                                 db=db,
                                 scenario_id=scenario_id,
-                                weather_iteration=weather_iteration_str,
-                                hydro_iteration=hydro_iteration_str,
+                                weather_iteration=weather_iteration,
+                                hydro_iteration=hydro_iteration,
                                 availability_iteration=availability_iteration,
-                                subproblem=subproblem_str,
-                                stage=stage_str,
+                                subproblem=subproblem,
+                                stage=stage,
                                 results_directory=results_directory,
                             )
                             import_subproblem_stage_results_into_database(
