@@ -210,6 +210,23 @@ CREATE TABLE status_validation
     FOREIGN KEY (scenario_id) REFERENCES scenarios (scenario_id)
 );
 
+-- End-to-end run step timings: the start/end time and duration of each E2E
+-- step from the scenario's most recent gridpath_run_e2e invocation (rows
+-- are cleared at the start of each invocation and written as each step
+-- finishes)
+DROP TABLE IF EXISTS status_e2e_step_timings;
+CREATE TABLE status_e2e_step_timings
+(
+    scenario_id      INTEGER,
+    run_process_id   INTEGER,
+    e2e_step         VARCHAR(32),
+    step_start_time  TIME,
+    step_end_time    TIME,
+    duration_seconds FLOAT,
+    PRIMARY KEY (scenario_id, e2e_step),
+    FOREIGN KEY (scenario_id) REFERENCES scenarios (scenario_id)
+);
+
 -- Scenario results: objective function, solver status
 DROP TABLE IF EXISTS results_scenario;
 CREATE TABLE results_scenario
