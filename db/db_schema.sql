@@ -3526,6 +3526,31 @@ CREATE TABLE inputs_project_energy_target_zones
         subscenarios_project_energy_target_zones (project_energy_target_zone_scenario_id)
 );
 
+-- Transmission energy target zones
+-- Which transmission lines' losses count against the energy target
+-- This table can include all tx lines with NULLs for tx lines not
+-- contributing or just the contributing tx lines
+DROP TABLE IF EXISTS subscenarios_transmission_energy_target_zones;
+CREATE TABLE subscenarios_transmission_energy_target_zones
+(
+    transmission_energy_target_zone_scenario_id INTEGER PRIMARY KEY,
+    name                                        VARCHAR(32),
+    description                                 VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_energy_target_zones;
+CREATE TABLE inputs_transmission_energy_target_zones
+(
+    transmission_energy_target_zone_scenario_id INTEGER,
+    transmission_line                           VARCHAR(64),
+    energy_target_zone                          VARCHAR(32),
+    PRIMARY KEY (transmission_energy_target_zone_scenario_id,
+                 transmission_line),
+    FOREIGN KEY (transmission_energy_target_zone_scenario_id) REFERENCES
+        subscenarios_transmission_energy_target_zones
+            (transmission_energy_target_zone_scenario_id)
+);
+
 -- Project instantaneous penetration zones
 -- Which projects are constrained by the instantaneous penetration rules
 -- This table can include all project with NULLs for projects not
@@ -5923,6 +5948,7 @@ CREATE TABLE scenarios
     project_spinning_reserves_ba_scenario_id                    INTEGER,
     project_inertia_reserves_ba_scenario_id                     INTEGER,
     project_energy_target_zone_scenario_id                      INTEGER,
+    transmission_energy_target_zone_scenario_id                 INTEGER,
     project_instantaneous_penetration_zone_scenario_id          INTEGER,
     tx_line_transmission_target_zone_scenario_id                INTEGER,
     project_carbon_cap_zone_scenario_id                         INTEGER,
@@ -6107,6 +6133,9 @@ CREATE TABLE scenarios
     FOREIGN KEY (project_energy_target_zone_scenario_id) REFERENCES
         subscenarios_project_energy_target_zones
             (project_energy_target_zone_scenario_id),
+    FOREIGN KEY (transmission_energy_target_zone_scenario_id) REFERENCES
+        subscenarios_transmission_energy_target_zones
+            (transmission_energy_target_zone_scenario_id),
     FOREIGN KEY (project_instantaneous_penetration_zone_scenario_id) REFERENCES
         subscenarios_project_instantaneous_penetration_zones
             (project_instantaneous_penetration_zone_scenario_id),
@@ -7756,6 +7785,7 @@ CREATE TABLE results_system_horizon_energy_target
     fraction_of_energy_target_energy_curtailed FLOAT,
     energy_target_shortage_mwh                 FLOAT,
     dual                                       FLOAT,
+    energy_target_marginal_cost_per_mwh        FLOAT,
     PRIMARY KEY (scenario_id, energy_target_zone, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id, balancing_type_horizon, horizon)

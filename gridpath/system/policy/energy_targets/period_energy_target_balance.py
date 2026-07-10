@@ -22,6 +22,9 @@ import pandas as pd
 
 from pyomo.environ import Var, Constraint, NonNegativeReals, Expression, value
 
+from gridpath.auxiliary.dynamic_components import (
+    period_energy_target_balance_contribution_components,
+)
 from gridpath.common_functions import (
     create_results_df,
     duals_wrapper,
@@ -62,16 +65,30 @@ def add_model_components(
         m.ENERGY_TARGET_ZONE_PERIODS_WITH_ENERGY_TARGET, rule=violation_expression_rule
     )
 
+    m.Total_Period_Energy_Target_Contributions_from_All_Sources_Expression = Expression(
+        m.ENERGY_TARGET_ZONE_PERIODS_WITH_ENERGY_TARGET,
+        rule=lambda mod, z, p: sum(
+            getattr(mod, component)[z, p]
+            for component in getattr(
+                d, period_energy_target_balance_contribution_components
+            )
+        ),
+    )
+
     def energy_target_rule(mod, z, p):
         """
-        Total delivered energy-target-eligible energy must exceed target
+        Total delivered energy-target-eligible energy from all sources
+        (projects, net of transmission losses counted against the target)
+        must exceed the target
         :param mod:
         :param z:
         :param p:
         :return:
         """
         return (
-            mod.Total_Delivered_Period_Energy_Target_Energy_MWh[z, p]
+            mod.Total_Period_Energy_Target_Contributions_from_All_Sources_Expression[
+                z, p
+            ]
             + mod.Period_Energy_Target_Shortage_MWh_Expression[z, p]
             >= mod.Period_Energy_Target[z, p]
         )

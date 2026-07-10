@@ -22,6 +22,9 @@ import pandas as pd
 
 from pyomo.environ import Var, Constraint, NonNegativeReals, Expression, value
 
+from gridpath.auxiliary.dynamic_components import (
+    horizon_energy_target_balance_contribution_components,
+)
 from gridpath.common_functions import (
     create_results_df,
     duals_wrapper,
@@ -63,9 +66,23 @@ def add_model_components(
         rule=violation_expression_rule,
     )
 
+    m.Total_Horizon_Energy_Target_Contributions_from_All_Sources_Expression = (
+        Expression(
+            m.ENERGY_TARGET_ZONE_BLN_TYPE_HRZS_WITH_ENERGY_TARGET,
+            rule=lambda mod, z, bt, h: sum(
+                getattr(mod, component)[z, bt, h]
+                for component in getattr(
+                    d, horizon_energy_target_balance_contribution_components
+                )
+            ),
+        )
+    )
+
     def energy_target_rule(mod, z, bt, h):
         """
-        Total delivered energy-target-eligible energy must exceed target
+        Total delivered energy-target-eligible energy from all sources
+        (projects, net of transmission losses counted against the target)
+        must exceed the target
         :param mod:
         :param z:
         :param bt:
@@ -73,7 +90,9 @@ def add_model_components(
         :return:
         """
         return (
-            mod.Total_Delivered_Horizon_Energy_Target_Energy_MWh[z, bt, h]
+            mod.Total_Horizon_Energy_Target_Contributions_from_All_Sources_Expression[
+                z, bt, h
+            ]
             + mod.Horizon_Energy_Target_Shortage_MWh_Expression[z, bt, h]
             >= mod.Horizon_Energy_Target[z, bt, h]
         )
@@ -167,7 +186,7 @@ def export_results(
         for (z, bt, h) in m.ENERGY_TARGET_ZONE_BLN_TYPE_HRZS_WITH_ENERGY_TARGET
     ]
     results_df = create_results_df(
-        index_columns=["energy_target_zone", "balancing_type", "horizon"],
+        index_columns=["energy_target_zone", "balancing_type_horizon", "horizon"],
         results_columns=results_columns,
         data=data,
     )

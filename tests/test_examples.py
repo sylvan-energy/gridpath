@@ -485,6 +485,16 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_rps"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_rps_w_tx_losses(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_rps_w_tx_losses" example, in which transmission
+        losses count against the period energy target
+        :return:
+        """
+        scenario_name = "2periods_new_build_rps_w_tx_losses"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_rps_percent_target(self):
         """
         Check objective function value of
