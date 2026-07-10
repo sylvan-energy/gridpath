@@ -1635,6 +1635,13 @@ def main(args=None):
         scenario_directory=scenario_directory
     )
 
+    if not parsed_args.quiet:
+        print(
+            "Running scenario {}, started on {}...".format(
+                parsed_args.scenario, datetime.datetime.now()
+            )
+        )
+
     # Run the scenario (can be multiple optimization subproblems)
     expected_objective_values = run_scenario(
         scenario_directory=scenario_directory,

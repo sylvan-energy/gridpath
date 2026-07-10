@@ -23,6 +23,7 @@ The main()_ function of this script can also be called with the
 
 import warnings
 from argparse import ArgumentParser
+import datetime
 import os.path
 import pandas as pd
 import sys
@@ -402,7 +403,11 @@ def main(args=None):
     c = conn.cursor()
 
     if not parsed_arguments.quiet:
-        print("Importing results... (connected to database {})".format(db_path))
+        print(
+            "Importing results, started on {}... (connected to database {})".format(
+                datetime.datetime.now(), db_path
+            )
+        )
 
     scenario_id, scenario_name = get_scenario_id_and_name(
         scenario_id_arg=scenario_id_arg,

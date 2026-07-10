@@ -22,6 +22,7 @@ The main() function of this script can also be called with the
 """
 
 from argparse import ArgumentParser
+import datetime
 import sys
 
 from db.common_functions import connect_to_database, update_db_last_modified
@@ -91,7 +92,11 @@ def main(args=None):
     c = conn.cursor()
 
     if not parsed_arguments.quiet:
-        print("Processing results... (connected to database {})".format(db_path))
+        print(
+            "Processing results, started on {}... (connected to database {})".format(
+                datetime.datetime.now(), db_path
+            )
+        )
 
     scenario_id, scenario_name = get_scenario_id_and_name(
         scenario_id_arg=scenario_id_arg,

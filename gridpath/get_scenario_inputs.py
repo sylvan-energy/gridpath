@@ -23,6 +23,7 @@ The main() function of this script can also be called with the
 
 from argparse import ArgumentParser
 import csv
+import datetime
 from multiprocessing import get_context
 import os.path
 import pandas as pd
@@ -499,7 +500,11 @@ def main(args=None):
     c = conn.cursor()
 
     if not parsed_arguments.quiet:
-        print("Getting inputs... (connected to database {})".format(db_path))
+        print(
+            "Getting inputs, started on {}... (connected to database {})".format(
+                datetime.datetime.now(), db_path
+            )
+        )
 
     scenario_id, scenario_name = get_scenario_id_and_name(
         scenario_id_arg=scenario_id_arg,

@@ -43,6 +43,7 @@ from gridpath.common_functions import (
     Logging,
     determine_scenario_directory,
     get_import_results_parser,
+    string_from_time,
 )
 from gridpath import (
     get_scenario_inputs,
@@ -252,6 +253,175 @@ def remove_from_queue_if_in_queue(db_path, scenario, queue_order_id):
     conn.close()
 
 
+def step_timings_table_exists(cursor):
+    """
+    :param cursor:
+    :return: boolean
+
+    Check whether the status_e2e_step_timings table exists. Databases
+    created before the table was added to the schema don't have it, in
+    which case we skip recording step timings in the database.
+    """
+    return (
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'status_e2e_step_timings';"
+        ).fetchone()
+        is not None
+    )
+
+
+def clear_step_timings_in_db(db_path, scenario_id):
+    """
+    :param db_path:
+    :param scenario_id:
+    :return:
+
+    Clear any step timings from previous runs of this scenario, so that the
+    status_e2e_step_timings table only holds timings from the most recent
+    run.
+    """
+    conn = connect_to_database(db_path=db_path)
+    c = conn.cursor()
+
+    if step_timings_table_exists(cursor=c):
+        sql = """
+            DELETE FROM status_e2e_step_timings
+            WHERE scenario_id = ?;
+            """
+        spin_on_database_lock(
+            conn=conn, cursor=c, sql=sql, data=(scenario_id,), many=False
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def record_step_timing_in_db(
+    db_path, scenario_id, process_id, step, step_start_time, step_end_time
+):
+    """
+    :param db_path:
+    :param scenario_id:
+    :param process_id:
+    :param step: name of the E2E step that just finished
+    :param step_start_time: the step start time
+    :param step_end_time: the step end time
+    :return:
+
+    Record the step's start/end time and duration in the
+    status_e2e_step_timings table.
+    """
+    conn = connect_to_database(db_path=db_path)
+    c = conn.cursor()
+
+    if step_timings_table_exists(cursor=c):
+        sql = """
+            INSERT OR REPLACE INTO status_e2e_step_timings
+            (scenario_id, run_process_id, e2e_step, step_start_time,
+            step_end_time, duration_seconds)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """
+        spin_on_database_lock(
+            conn=conn,
+            cursor=c,
+            sql=sql,
+            data=(
+                scenario_id,
+                process_id,
+                step,
+                str(step_start_time),
+                str(step_end_time),
+                (step_end_time - step_start_time).total_seconds(),
+            ),
+            many=False,
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def record_step_timing(
+    db_path,
+    scenario_id,
+    process_id,
+    step,
+    step_start_time,
+    timing_summary_file_path,
+    quiet,
+):
+    """
+    :param db_path:
+    :param scenario_id:
+    :param process_id:
+    :param step: name of the E2E step that just finished
+    :param step_start_time: the step start time
+    :param timing_summary_file_path: the timing summary file path (None if
+        not logging)
+    :param quiet: boolean
+    :return:
+
+    Print the step end time and duration (indented under the step's own
+    starting print statement), append the step's timing to the timing
+    summary file, and record it in the database.
+    """
+    step_end_time = datetime.datetime.now()
+    if not quiet:
+        print(
+            "...E2E step '{}' finished on {} (duration {})".format(
+                step, step_end_time, step_end_time - step_start_time
+            )
+        )
+    append_to_timing_summary_file(
+        timing_summary_file_path,
+        "... {}: started on {}, finished on {}, duration {}".format(
+            step, step_start_time, step_end_time, step_end_time - step_start_time
+        ),
+    )
+    record_step_timing_in_db(
+        db_path=db_path,
+        scenario_id=scenario_id,
+        process_id=process_id,
+        step=step,
+        step_start_time=step_start_time,
+        step_end_time=step_end_time,
+    )
+
+
+def get_timing_summary_file_path(logs_directory, process_id, start_time):
+    """
+    :param logs_directory: the logs directory to write the summary file to
+    :param process_id: the run's process ID
+    :param start_time: the run start time
+    :return: the timing summary file path
+
+    The timing summary gets its own text file in the logs directory, named
+    consistently with the run's log file.
+    """
+    return os.path.join(
+        logs_directory,
+        "e2e_timing_summary_{}_pid_{}.txt".format(
+            string_from_time(start_time), str(process_id)
+        ),
+    )
+
+
+def append_to_timing_summary_file(timing_summary_file_path, line):
+    """
+    :param timing_summary_file_path: the timing summary file path; None if
+        no summary file is being kept (i.e. when not logging)
+    :param line: the line to append
+    :return:
+
+    Append a line to the timing summary file. The summary is written as we
+    go, so that it is available (with the steps completed so far) even if
+    the run fails or is interrupted.
+    """
+    if timing_summary_file_path is not None:
+        with open(timing_summary_file_path, "a") as summary_file:
+            summary_file.write(line + "\n")
+
+
 # TODO: add more run status types?
 # TODO: handle error messages for parser: the argparser error message will refer
 #   to run_end_to_end.py, even if the parsing fails at one of the scripts
@@ -284,6 +454,10 @@ def main(args=None):
         scenario_name=parsed_args.scenario,
     )
 
+    # The timing summary is written to its own file in the logs directory
+    # (i.e. only when logging), as the run progresses
+    timing_summary_file_path = None
+
     # TODO: why aren't we printing the log in the individual optimization
     #  directory
     if parsed_args.log:
@@ -312,6 +486,13 @@ def main(args=None):
         )
         sys.stdout = logger
         sys.stderr = logger
+
+        timing_summary_file_path = get_timing_summary_file_path(
+            logs_directory=logs_directory,
+            process_id=process_id,
+            start_time=start_time,
+        )
+        append_to_timing_summary_file(timing_summary_file_path, "E2E timing summary:")
 
     # Create connection
     db_path = parsed_args.database
@@ -342,6 +523,9 @@ def main(args=None):
         db_path, parsed_args.scenario, process_id, start_time
     )
 
+    # Clear any step timings from previous runs of this scenario
+    clear_step_timings_in_db(db_path=db_path, scenario_id=scenario_id)
+
     # Figure out which steps we are skipping if user has requested a single
     # E2E step; start by assuming we'll skip and reverse skipping if the
     # step is specified
@@ -366,6 +550,7 @@ def main(args=None):
 
     # Go through the steps if user has not requested to skip them
     if not skip_get_inputs and not parsed_args.skip_get_inputs:
+        step_start_time = datetime.datetime.now()
         try:
             get_scenario_inputs.main(args=args)
         except Exception as e:
@@ -376,14 +561,28 @@ def main(args=None):
                 queue_order_id=queue_order_id,
                 process_id=process_id,
                 run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
             )
             print(
                 "Error encountered when getting inputs from the database for "
-                "scenario {}. End time: {}.".format(scenario, end_time)
+                "scenario {}. End time: {}. Total run time: {}.".format(
+                    scenario, end_time, end_time - start_time
+                )
             )
             sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="get_inputs",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
 
     if not skip_run_scenario and not parsed_args.skip_run_scenario:
+        step_start_time = datetime.datetime.now()
         try:
             # make sure run_scenario.py gets the required --scenario argument
             run_scenario_args = args + ["--scenario", scenario]
@@ -398,17 +597,28 @@ def main(args=None):
                 queue_order_id=queue_order_id,
                 process_id=process_id,
                 run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
             )
             print(
-                "Error encountered when running scenario {}. End time: {}.".format(
-                    scenario, end_time
-                )
+                "Error encountered when running scenario {}. End time: {}. "
+                "Total run time: {}.".format(scenario, end_time, end_time - start_time)
             )
             sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="run_scenario",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
     else:
         expected_objective_values = None
 
     if not skip_import_results and not parsed_args.skip_import_results:
+        step_start_time = datetime.datetime.now()
         try:
             import_scenario_results.main(args=args)
         except Exception as e:
@@ -419,14 +629,28 @@ def main(args=None):
                 queue_order_id=queue_order_id,
                 process_id=process_id,
                 run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
             )
             print(
                 "Error encountered when importing results for "
-                "scenario {}. End time: {}.".format(scenario, end_time)
+                "scenario {}. End time: {}. Total run time: {}.".format(
+                    scenario, end_time, end_time - start_time
+                )
             )
             sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="import_results",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
 
     if not skip_process_results and not parsed_args.skip_process_results:
+        step_start_time = datetime.datetime.now()
         try:
             process_results.main(args=args)
         except Exception as e:
@@ -437,12 +661,25 @@ def main(args=None):
                 queue_order_id=queue_order_id,
                 process_id=process_id,
                 run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
             )
             print(
-                "Error encountered when importing results for "
-                "scenario {}. End time: {}.".format(scenario, end_time)
+                "Error encountered when processing results for "
+                "scenario {}. End time: {}. Total run time: {}.".format(
+                    scenario, end_time, end_time - start_time
+                )
             )
             sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="process_results",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
 
     # If we make it here, mark run as complete and update run end time
     end_time = update_db_for_run_end(
@@ -451,10 +688,16 @@ def main(args=None):
         queue_order_id=queue_order_id,
         process_id=process_id,
         run_status_id=2,
+        start_time=start_time,
+        timing_summary_file_path=timing_summary_file_path,
     )
     # TODO: should the process ID be set back to NULL?
     if not parsed_args.quiet:
-        print("Done. Run finished on {}.".format(end_time))
+        print(
+            "Done. Run finished on {}. Total run time: {}.".format(
+                end_time, end_time - start_time
+            )
+        )
 
     # If logging, we need to return sys.stdout to original (i.e. stop writing
     # to log file) and close the log file to release file descriptor
@@ -468,10 +711,21 @@ def main(args=None):
         return expected_objective_values
 
 
-def update_db_for_run_end(db_path, scenario, queue_order_id, process_id, run_status_id):
+def update_db_for_run_end(
+    db_path,
+    scenario,
+    queue_order_id,
+    process_id,
+    run_status_id,
+    start_time,
+    timing_summary_file_path,
+):
     """
     Make the necessary database updates when a run ends (remove from queue,
-    update the run status, and record the end time).
+    update the run status, and record the end time), and append the total
+    run time to the timing summary file (if one is being kept). This is
+    called both when the run finishes successfully and when a step fails,
+    so the summary file gets the total run time either way.
     """
 
     end_time = datetime.datetime.now()
@@ -479,6 +733,10 @@ def update_db_for_run_end(db_path, scenario, queue_order_id, process_id, run_sta
     update_run_status(db_path, scenario, run_status_id)
     record_end_time(
         db_path=db_path, scenario=scenario, process_id=process_id, end_time=end_time
+    )
+    append_to_timing_summary_file(
+        timing_summary_file_path,
+        "... total run time: {}".format(end_time - start_time),
     )
 
     return end_time
