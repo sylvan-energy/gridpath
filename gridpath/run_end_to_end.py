@@ -44,6 +44,7 @@ from gridpath.common_functions import (
     determine_scenario_directory,
     get_import_results_parser,
     string_from_time,
+    append_to_timing_summary_file,
 )
 from gridpath import (
     get_scenario_inputs,
@@ -404,22 +405,6 @@ def get_timing_summary_file_path(logs_directory, process_id, start_time):
             string_from_time(start_time), str(process_id)
         ),
     )
-
-
-def append_to_timing_summary_file(timing_summary_file_path, line):
-    """
-    :param timing_summary_file_path: the timing summary file path; None if
-        no summary file is being kept (i.e. when not logging)
-    :param line: the line to append
-    :return:
-
-    Append a line to the timing summary file. The summary is written as we
-    go, so that it is available (with the steps completed so far) even if
-    the run fails or is interrupted.
-    """
-    if timing_summary_file_path is not None:
-        with open(timing_summary_file_path, "a") as summary_file:
-            summary_file.write(line + "\n")
 
 
 # TODO: add more run status types?
