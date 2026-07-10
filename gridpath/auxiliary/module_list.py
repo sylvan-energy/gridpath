@@ -145,6 +145,7 @@ def all_modules_list():
         "transmission.operations.carbon_emissions",
         "transmission.reliability.capacity_transfer_links",
         "transmission.operations.transmission_target_contributions",
+        "transmission.operations.energy_target_contributions",
         "system.load_balance.aggregate_project_power",
         "system.load_balance.aggregate_load_modifier_power",
         "system.load_balance.load_following",
@@ -202,6 +203,8 @@ def all_modules_list():
         "system.reserves.balance.inertia_reserves",
         "system.policy.energy_targets.aggregate_period_energy_target_contributions",
         "system.policy.energy_targets.aggregate_horizon_energy_target_contributions",
+        "system.policy.energy_targets.aggregate_period_energy_target_tx_losses",
+        "system.policy.energy_targets.aggregate_horizon_energy_target_tx_losses",
         "system.policy.energy_targets.period_energy_target_balance",
         "system.policy.energy_targets.horizon_energy_target_balance",
         "system.policy.energy_targets.consolidate_results",
@@ -552,6 +555,14 @@ def cross_feature_modules_list():
             "transmission.policy.policy_contribution",
             "system.policy.generic_policy.aggregate_transmission_policy_contributions",
         ],
+        ("transmission", "period_energy_target"): [
+            "transmission.operations.energy_target_contributions",
+            "system.policy.energy_targets.aggregate_period_energy_target_tx_losses",
+        ],
+        ("transmission", "horizon_energy_target"): [
+            "transmission.operations.energy_target_contributions",
+            "system.policy.energy_targets.aggregate_horizon_energy_target_tx_losses",
+        ],
         ("transmission", "prm", "capacity_transfers"): [
             "transmission.reliability.capacity_transfer_links",
             "system.reliability.prm.capacity_contribution_transfers",
@@ -734,11 +745,18 @@ def determine_modules(
     # Some modules depend on more than one feature
     # We have to check if all features that the module depends on are
     # specified before removing it
+    # A module may belong to more than one feature group (e.g. it is needed
+    # when either of two feature combinations is requested); it is kept if
+    # ANY of its groups has all of its features requested
     cross_feature_modules = cross_feature_modules_list()
+    cross_modules_all = set()
+    cross_modules_to_keep = set()
     for feature_group in list(cross_feature_modules.keys()):
-        if not all(feature in requested_features for feature in feature_group):
-            for m in cross_feature_modules[feature_group]:
-                modules_to_use.remove(m)
+        cross_modules_all.update(cross_feature_modules[feature_group])
+        if all(feature in requested_features for feature in feature_group):
+            cross_modules_to_keep.update(cross_feature_modules[feature_group])
+    for m in cross_modules_all - cross_modules_to_keep:
+        modules_to_use.remove(m)
 
     # Remove "fix variables" modules, which should not be included when the feature is
     # not included even when there are stages

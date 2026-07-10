@@ -19,6 +19,9 @@ the energy-target zone - period level.
 
 from pyomo.environ import Expression, value
 
+from gridpath.auxiliary.dynamic_components import (
+    period_energy_target_balance_contribution_components,
+)
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.energy_targets import ENERGY_TARGET_ZONE_PRD_DF
 
@@ -96,6 +99,20 @@ def add_model_components(
         m.ENERGY_TARGET_ZONE_PERIODS_WITH_ENERGY_TARGET,
         rule=total_curtailed_energy_target_energy_rule,
     )
+
+    record_dynamic_components(dynamic_components=d)
+
+
+def record_dynamic_components(dynamic_components):
+    """
+    :param dynamic_components:
+
+    Add the delivered project energy to the period energy target constraint.
+    """
+
+    getattr(
+        dynamic_components, period_energy_target_balance_contribution_components
+    ).append("Total_Delivered_Period_Energy_Target_Energy_MWh")
 
 
 def export_results(

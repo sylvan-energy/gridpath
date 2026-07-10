@@ -1,0 +1,3 @@
+energy_target_zone,subproblem_id,stage_id,period,energy_target_mwh,energy_target_fraction
+RPSZone1,1,1,2020,400000,
+RPSZone1,1,1,2030,400000,

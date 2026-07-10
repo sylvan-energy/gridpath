@@ -19,6 +19,9 @@ level to the energy-target zone - balancing type - horizon level.
 
 from pyomo.environ import Expression, value
 
+from gridpath.auxiliary.dynamic_components import (
+    horizon_energy_target_balance_contribution_components,
+)
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.energy_targets import ENERGY_TARGET_ZONE_HRZ_DF
 
@@ -100,6 +103,20 @@ def add_model_components(
         rule=total_curtailed_energy_target_energy_rule,
     )
 
+    record_dynamic_components(dynamic_components=d)
+
+
+def record_dynamic_components(dynamic_components):
+    """
+    :param dynamic_components:
+
+    Add the delivered project energy to the horizon energy target constraint.
+    """
+
+    getattr(
+        dynamic_components, horizon_energy_target_balance_contribution_components
+    ).append("Total_Delivered_Horizon_Energy_Target_Energy_MWh")
+
 
 def export_results(
     scenario_directory,
@@ -136,7 +153,7 @@ def export_results(
         for (z, bt, h) in m.ENERGY_TARGET_ZONE_BLN_TYPE_HRZS_WITH_ENERGY_TARGET
     ]
     results_df = create_results_df(
-        index_columns=["energy_target_zone", "balancing_type", "horizon"],
+        index_columns=["energy_target_zone", "balancing_type_horizon", "horizon"],
         results_columns=results_columns,
         data=data,
     )

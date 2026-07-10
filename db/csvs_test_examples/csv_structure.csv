@@ -135,6 +135,7 @@ reserves/inertia_reserves/req,inertia_reserves,inertia_reserves_scenario_id,syst
 reserves/inertia_reserves/req,inertia_reserves,inertia_reserves_scenario_id,system_inertia_reserves_param,dir_aux,,0,,system_param.csv,,,
 policy/energy_targets/zones,energy_target,energy_target_zone_scenario_id,geography_energy_target_zones,simple,,0,,,,,
 policy/energy_targets/project_zones,energy_target,project_energy_target_zone_scenario_id,project_energy_target_zones,simple,,0,,,,,
+policy/energy_targets/transmission_zones,energy_target,transmission_energy_target_zone_scenario_id,transmission_energy_target_zones,simple,,0,,,,,
 policy/energy_targets/period_targets,energy_target,period_energy_target_scenario_id,system_period_energy_targets,dir_main,,0,,targets.csv,,,
 policy/energy_targets/period_targets,energy_target,period_energy_target_scenario_id,system_period_energy_target_load_zone_map,dir_aux,,0,,load_zone_mapping.csv,,,
 policy/energy_targets/horizon_targets,energy_target,horizon_energy_target_scenario_id,system_horizon_energy_targets,dir_main,,0,,targets.csv,,,
