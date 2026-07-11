@@ -24,7 +24,7 @@ from pyomo.environ import Expression, value
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission.operations.common_functions import (
     load_tx_operational_type_modules,
 )
@@ -64,9 +64,10 @@ def add_model_components(
     | | :code:`Tx_Losses_MW`                                                  |
     | | *Defined over*: :code:`TX_OPR_TMPS`                                   |
     |                                                                         |
-    | Losses on the transmission line in MW. A positive number means the      |
-    | power flows in the line's defined direction when losses incurred,       |
-    | while a negative number means it flows in the opposite direction.       |
+    | Total losses on the transmission line in MW, i.e. the sum of the        |
+    | losses accounted for in the line's "from" and "to" load zones (only     |
+    | one of which can be non-zero in a timepoint, depending on the flow      |
+    | direction).                                                             |
     +-------------------------------------------------------------------------+
 
     """
@@ -124,6 +125,11 @@ def add_model_components(
         m.TX_OPR_TMPS, rule=transmit_power_losses_lz_to_rule
     )
 
+    def total_losses_rule(mod, tx, tmp):
+        return mod.Tx_Losses_LZ_From_MW[tx, tmp] + mod.Tx_Losses_LZ_To_MW[tx, tmp]
+
+    m.Tx_Losses_MW = Expression(m.TX_OPR_TMPS, rule=total_losses_rule)
+
 
 # Input-Output
 ###############################################################################
@@ -172,9 +178,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_TIMEPOINT_DF)[c] = None
-    getattr(d, TX_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, TX_TIMEPOINT_DF), results_df)
 
     required_operational_modules = get_required_subtype_modules(
         scenario_directory=scenario_directory,
@@ -200,10 +204,7 @@ def export_results(
             results_columns, optype_df = imported_operational_modules[
                 optype_module
             ].add_to_operations_results(mod=m)
-            for column in results_columns:
-                if column not in getattr(d, TX_TIMEPOINT_DF):
-                    getattr(d, TX_TIMEPOINT_DF)[column] = None
-            getattr(d, TX_TIMEPOINT_DF).update(optype_df)
+            update_results_df(getattr(d, TX_TIMEPOINT_DF), optype_df)
 
 
 # Database

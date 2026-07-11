@@ -23,7 +23,7 @@ from pyomo.environ import Set, Param, Any, NonNegativeReals, Expression, value
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.dynamic_components import load_balance_consumption_components
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
 )
@@ -525,9 +525,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, LOAD_ZONE_TMP_DF)[c] = None
-    getattr(d, LOAD_ZONE_TMP_DF).update(results_df)
+    update_results_df(getattr(d, LOAD_ZONE_TMP_DF), results_df)
 
 
 def check_for_value_and_raise_value_error(param, value_to_check, msg):

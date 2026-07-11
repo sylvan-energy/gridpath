@@ -16,6 +16,25 @@
 
 -- A description of the database schema structure is in db.__init__
 
+--------------------
+-- -- METADATA -- --
+--------------------
+
+-- Database metadata: the GridPath version used to create the database, the
+-- datetime when the database was created, and the datetimes when each type
+-- of data was last modified by GridPath utilities (single-row table); the
+-- last-modified datetimes are NULL until the respective utility first runs
+DROP TABLE IF EXISTS db_metadata;
+CREATE TABLE db_metadata
+(
+    gridpath_version                 VARCHAR(64),
+    created_datetime                 DATETIME,
+    inputs_last_modified_datetime    DATETIME,
+    scenarios_last_modified_datetime DATETIME,
+    results_last_imported_datetime   DATETIME,
+    results_last_processed_datetime  DATETIME
+);
+
 -----------------
 -- -- MODEL -- --
 -----------------
@@ -188,6 +207,23 @@ CREATE TABLE status_validation
     severity        VARCHAR(32),
     description     VARCHAR(64),
     time_stamp      TEXT, -- ISO8601 String
+    FOREIGN KEY (scenario_id) REFERENCES scenarios (scenario_id)
+);
+
+-- End-to-end run step timings: the start/end time and duration of each E2E
+-- step from the scenario's most recent gridpath_run_e2e invocation (rows
+-- are cleared at the start of each invocation and written as each step
+-- finishes)
+DROP TABLE IF EXISTS status_e2e_step_timings;
+CREATE TABLE status_e2e_step_timings
+(
+    scenario_id      INTEGER,
+    run_process_id   INTEGER,
+    e2e_step         VARCHAR(32),
+    step_start_time  TIME,
+    step_end_time    TIME,
+    duration_seconds FLOAT,
+    PRIMARY KEY (scenario_id, e2e_step),
     FOREIGN KEY (scenario_id) REFERENCES scenarios (scenario_id)
 );
 
@@ -3507,6 +3543,31 @@ CREATE TABLE inputs_project_energy_target_zones
         subscenarios_project_energy_target_zones (project_energy_target_zone_scenario_id)
 );
 
+-- Transmission energy target zones
+-- Which transmission lines' losses count against the energy target
+-- This table can include all tx lines with NULLs for tx lines not
+-- contributing or just the contributing tx lines
+DROP TABLE IF EXISTS subscenarios_transmission_energy_target_zones;
+CREATE TABLE subscenarios_transmission_energy_target_zones
+(
+    transmission_energy_target_zone_scenario_id INTEGER PRIMARY KEY,
+    name                                        VARCHAR(32),
+    description                                 VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_energy_target_zones;
+CREATE TABLE inputs_transmission_energy_target_zones
+(
+    transmission_energy_target_zone_scenario_id INTEGER,
+    transmission_line                           VARCHAR(64),
+    energy_target_zone                          VARCHAR(32),
+    PRIMARY KEY (transmission_energy_target_zone_scenario_id,
+                 transmission_line),
+    FOREIGN KEY (transmission_energy_target_zone_scenario_id) REFERENCES
+        subscenarios_transmission_energy_target_zones
+            (transmission_energy_target_zone_scenario_id)
+);
+
 -- Project instantaneous penetration zones
 -- Which projects are constrained by the instantaneous penetration rules
 -- This table can include all project with NULLs for projects not
@@ -4511,12 +4572,41 @@ CREATE TABLE inputs_transmission_operational_chars
     tx_simple_loss_factor                      FLOAT,
     losses_tuning_cost_per_mw                  FLOAT,
     reactance_ohms                             FLOAT,
+    tx_curtailment_cost_scenario_id            INTEGER,
+    tx_losses_factor_curtailment               FLOAT,
     PRIMARY KEY (transmission_operational_chars_scenario_id, transmission_line),
     FOREIGN KEY (transmission_operational_chars_scenario_id) REFERENCES
         subscenarios_transmission_operational_chars
             (transmission_operational_chars_scenario_id),
     FOREIGN KEY (operational_type) REFERENCES mod_tx_operational_types
-        (operational_type)
+        (operational_type),
+    FOREIGN KEY (transmission_line, tx_curtailment_cost_scenario_id) REFERENCES
+        subscenarios_transmission_curtailment_cost
+            (transmission_line, tx_curtailment_cost_scenario_id)
+);
+
+-- Curtailment cost (applied to transmission losses)
+DROP TABLE IF EXISTS subscenarios_transmission_curtailment_cost;
+CREATE TABLE subscenarios_transmission_curtailment_cost
+(
+    transmission_line               VARCHAR(64),
+    tx_curtailment_cost_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (transmission_line, tx_curtailment_cost_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_curtailment_cost;
+CREATE TABLE inputs_transmission_curtailment_cost
+(
+    transmission_line                     VARCHAR(64),
+    tx_curtailment_cost_scenario_id       INTEGER,
+    period                                 INTEGER, -- 0 means it's the same for all periods
+    tx_curtailment_cost_per_powerunithour FLOAT,
+    PRIMARY KEY (transmission_line, tx_curtailment_cost_scenario_id, period),
+    FOREIGN KEY (transmission_line, tx_curtailment_cost_scenario_id) REFERENCES
+        subscenarios_transmission_curtailment_cost
+            (transmission_line, tx_curtailment_cost_scenario_id)
 );
 
 -- Hurdle rates
@@ -5593,6 +5683,32 @@ CREATE TABLE inputs_project_policy_zones
         subscenarios_project_policy_zones (project_policy_zone_scenario_id)
 );
 
+-- Transmission lines, policy, policy_zones
+-- Which transmission lines count toward which policies and "zones" (e.g.
+-- via their losses to avoid "delivering" policy-eligible energy via Tx losses)
+DROP TABLE IF EXISTS subscenarios_transmission_policy_zones;
+CREATE TABLE subscenarios_transmission_policy_zones
+(
+    transmission_policy_zone_scenario_id INTEGER PRIMARY KEY,
+    name                                 VARCHAR(32),
+    description                          VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_policy_zones;
+CREATE TABLE inputs_transmission_policy_zones
+(
+    transmission_policy_zone_scenario_id INTEGER,
+    transmission_line                    TEXT,
+    policy_name                          TEXT,
+    policy_zone                          TEXT,
+    compliance_type                      TEXT,
+    PRIMARY KEY (transmission_policy_zone_scenario_id, transmission_line,
+                 policy_name, policy_zone),
+    FOREIGN KEY (transmission_policy_zone_scenario_id) REFERENCES
+        subscenarios_transmission_policy_zones
+            (transmission_policy_zone_scenario_id)
+);
+
 DROP TABLE IF EXISTS subscenarios_project_policy_exceedance_values;
 CREATE TABLE subscenarios_project_policy_exceedance_values
 (
@@ -5849,6 +5965,7 @@ CREATE TABLE scenarios
     project_spinning_reserves_ba_scenario_id                    INTEGER,
     project_inertia_reserves_ba_scenario_id                     INTEGER,
     project_energy_target_zone_scenario_id                      INTEGER,
+    transmission_energy_target_zone_scenario_id                 INTEGER,
     project_instantaneous_penetration_zone_scenario_id          INTEGER,
     tx_line_transmission_target_zone_scenario_id                INTEGER,
     project_carbon_cap_zone_scenario_id                         INTEGER,
@@ -5862,6 +5979,7 @@ CREATE TABLE scenarios
     project_fuel_burn_limit_ba_scenario_id                      INTEGER,
     fuel_fuel_burn_limit_ba_scenario_id                         INTEGER,
     project_policy_zone_scenario_id                             INTEGER,
+    transmission_policy_zone_scenario_id                        INTEGER,
     project_prm_zone_scenario_id                                INTEGER,
     prm_capacity_transfer_scenario_id                           INTEGER,
     prm_capacity_transfer_params_scenario_id                    INTEGER,
@@ -6032,6 +6150,9 @@ CREATE TABLE scenarios
     FOREIGN KEY (project_energy_target_zone_scenario_id) REFERENCES
         subscenarios_project_energy_target_zones
             (project_energy_target_zone_scenario_id),
+    FOREIGN KEY (transmission_energy_target_zone_scenario_id) REFERENCES
+        subscenarios_transmission_energy_target_zones
+            (transmission_energy_target_zone_scenario_id),
     FOREIGN KEY (project_instantaneous_penetration_zone_scenario_id) REFERENCES
         subscenarios_project_instantaneous_penetration_zones
             (project_instantaneous_penetration_zone_scenario_id),
@@ -6070,6 +6191,9 @@ CREATE TABLE scenarios
             (fuel_fuel_burn_limit_ba_scenario_id),
     FOREIGN KEY (project_policy_zone_scenario_id) REFERENCES
         subscenarios_project_policy_zones (project_policy_zone_scenario_id),
+    FOREIGN KEY (transmission_policy_zone_scenario_id) REFERENCES
+        subscenarios_transmission_policy_zones
+            (transmission_policy_zone_scenario_id),
     FOREIGN KEY (project_prm_zone_scenario_id) REFERENCES
         subscenarios_project_prm_zones (project_prm_zone_scenario_id),
     FOREIGN KEY (transmission_prm_zone_scenario_id) REFERENCES
@@ -6489,6 +6613,28 @@ CREATE TABLE results_project_policy_zone_timepoint
     PRIMARY KEY (scenario_id, project, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
                  policy_name, policy_zone, timepoint)
+);
+
+DROP TABLE IF EXISTS results_transmission_policy_zone_timepoint;
+CREATE TABLE results_transmission_policy_zone_timepoint
+(
+    scenario_id            INTEGER,
+    transmission_line      VARCHAR(64),
+    weather_iteration      INTEGER,
+    hydro_iteration        INTEGER,
+    availability_iteration INTEGER,
+    policy_name            TEXT,
+    policy_zone            TEXT,
+    timepoint              INTEGER,
+    timepoint_weight       FLOAT,
+    hours_in_timepoint     FLOAT,
+    period                 INTEGER,
+    subproblem_id          INTEGER,
+    stage_id               INTEGER,
+    policy_contribution    FLOAT,
+    PRIMARY KEY (scenario_id, transmission_line, weather_iteration,
+                 hydro_iteration, availability_iteration, subproblem_id,
+                 stage_id, policy_name, policy_zone, timepoint)
 );
 
 DROP TABLE IF EXISTS results_project_curtailment_variable_periodagg;
@@ -7656,6 +7802,7 @@ CREATE TABLE results_system_horizon_energy_target
     fraction_of_energy_target_energy_curtailed FLOAT,
     energy_target_shortage_mwh                 FLOAT,
     dual                                       FLOAT,
+    energy_target_marginal_cost_per_mwh        FLOAT,
     PRIMARY KEY (scenario_id, energy_target_zone, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id, balancing_type_horizon, horizon)
@@ -8041,6 +8188,7 @@ CREATE TABLE results_system_costs
     Total_Market_Net_Cost                                   FLOAT,
     Total_Export_Penalty_Cost                               FLOAT,
     Total_Tx_Simple_Losses_Penalty_Cost                     FLOAT,
+    Total_Tx_Curtailment_Cost                               FLOAT,
     Total_Horizon_Fuel_Burn_Min_Abs_Penalty_Costs           FLOAT,
     Total_Horizon_Fuel_Burn_Max_Abs_Penalty_Costs           FLOAT,
     Total_Horizon_Fuel_Burn_Max_Rel_Penalty_Costs           FLOAT,
@@ -8362,6 +8510,10 @@ SELECT scenario_id,
         FROM subscenarios_project_policy_zones
         WHERE project_policy_zone_scenario_id =
               scenarios.project_policy_zone_scenario_id)                             AS project_policy_zones,
+       (SELECT name
+        FROM subscenarios_transmission_policy_zones
+        WHERE transmission_policy_zone_scenario_id =
+              scenarios.transmission_policy_zone_scenario_id)                        AS transmission_policy_zones,
        (SELECT name
         FROM subscenarios_project_prm_zones
         WHERE project_prm_zone_scenario_id =

@@ -20,7 +20,7 @@ zone - period level.
 
 from pyomo.environ import Expression, value
 
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.auxiliary.dynamic_components import (
     carbon_credits_balance_generation_components,
     carbon_credits_balance_purchase_components,
@@ -144,6 +144,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, CARBON_CREDITS_ZONE_PRD_DF)[c] = None
-    getattr(d, CARBON_CREDITS_ZONE_PRD_DF).update(results_df)
+    update_results_df(getattr(d, CARBON_CREDITS_ZONE_PRD_DF), results_df)

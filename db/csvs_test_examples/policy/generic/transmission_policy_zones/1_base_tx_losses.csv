@@ -1,0 +1,2 @@
+transmission_line,policy_name,policy_zone,compliance_type
+Tx1,RPS,RPSZone1,tx_losses

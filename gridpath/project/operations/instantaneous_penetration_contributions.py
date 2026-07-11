@@ -29,7 +29,7 @@ from gridpath.auxiliary.db_interface import (
     determine_table_subset_by_start_and_column,
     directories_to_db_values,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.auxiliary.validations import write_validation_to_database, validate_idxs
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
@@ -88,7 +88,6 @@ def add_model_components(
     m.INST_PEN_PRJS = Set(within=m.PROJECTS)
 
     m.INST_PEN_PRJ_OPR_TMP = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -213,9 +212,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
 
 # Database

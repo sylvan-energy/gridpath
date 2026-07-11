@@ -23,6 +23,7 @@ The main() function of this script can also be called with the
 
 from argparse import ArgumentParser
 import csv
+import datetime
 from multiprocessing import get_context
 import os.path
 import pandas as pd
@@ -38,6 +39,7 @@ from gridpath.common_functions import (
     get_required_e2e_arguments_parser,
     get_temporal_structure_csv_overwrite_parser,
     get_get_inputs_parser,
+    get_version_parser,
     ensure_empty_string,
 )
 from gridpath.auxiliary.module_list import determine_modules, load_modules
@@ -328,6 +330,7 @@ def parse_arguments(args):
             get_required_e2e_arguments_parser(),
             get_temporal_structure_csv_overwrite_parser(),
             get_get_inputs_parser(),
+            get_version_parser(),
         ],
     )
 
@@ -497,7 +500,11 @@ def main(args=None):
     c = conn.cursor()
 
     if not parsed_arguments.quiet:
-        print("Getting inputs... (connected to database {})".format(db_path))
+        print(
+            "Getting inputs, started on {}... (connected to database {})".format(
+                datetime.datetime.now(), db_path
+            )
+        )
 
     scenario_id, scenario_name = get_scenario_id_and_name(
         scenario_id_arg=scenario_id_arg,

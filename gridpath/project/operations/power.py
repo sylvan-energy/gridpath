@@ -24,8 +24,11 @@ from pyomo.environ import Expression, value, Constraint
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
-from gridpath.common_functions import create_results_df
-from gridpath.project.operations.common_functions import load_operational_type_modules
+from gridpath.common_functions import create_results_df, update_results_df
+from gridpath.project.operations.common_functions import (
+    load_operational_type_modules,
+    resolve_op_type_rules,
+)
 import gridpath.project.operations.operational_types as op_type_init
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
@@ -88,6 +91,11 @@ def add_model_components(
     # Expressions
     ###########################################################################
 
+    # Resolve each op type's power provision rule once
+    power_provision_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "power_provision_rule", op_type_init
+    )
+
     def project_power_provision_rule(mod, prj, tmp):
         """
         **Expression Name**: Project_Power_Provision_MW
@@ -98,13 +106,7 @@ def add_model_components(
         type. This is a project-level variable that is not yet adjusted for
         distribution system losses to get bulk system equivalent power.
         """
-        gen_op_type = mod.operational_type[prj]
-        if hasattr(imported_operational_modules[gen_op_type], "power_provision_rule"):
-            return imported_operational_modules[gen_op_type].power_provision_rule(
-                mod, prj, tmp
-            )
-        else:
-            return op_type_init.power_provision_rule(mod, prj, tmp)
+        return power_provision_rule_by_op_type[mod.operational_type[prj]](mod, prj, tmp)
 
     m.Project_Power_Provision_MW = Expression(
         m.PRJ_OPR_TMPS, rule=project_power_provision_rule
@@ -173,9 +175,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
     required_operational_modules = get_required_subtype_modules(
         scenario_directory=scenario_directory,
@@ -198,10 +198,7 @@ def export_results(
             results_columns, optype_df = imported_operational_modules[
                 optype_module
             ].add_to_prj_tmp_results(mod=m)
-            for column in results_columns:
-                if column not in getattr(d, PROJECT_TIMEPOINT_DF):
-                    getattr(d, PROJECT_TIMEPOINT_DF)[column] = None
-            getattr(d, PROJECT_TIMEPOINT_DF).update(optype_df)
+            update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), optype_df)
 
 
 # Database

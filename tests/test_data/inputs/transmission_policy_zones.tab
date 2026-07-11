@@ -1,0 +1,3 @@
+transmission_line	policy_name	policy_zone	compliance_type
+Tx_New	RPS	RPSZone1	tx_losses
+Tx_binary_1	RPS	RPSZone1	tx_losses

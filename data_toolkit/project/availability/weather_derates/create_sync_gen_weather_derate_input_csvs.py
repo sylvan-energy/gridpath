@@ -46,6 +46,7 @@ Settings
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 from multiprocessing import get_context
 import os.path
 import sys
@@ -69,7 +70,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database")
     parser.add_argument(

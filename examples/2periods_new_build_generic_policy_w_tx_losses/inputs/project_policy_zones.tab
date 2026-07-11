@@ -1,0 +1,4 @@
+project	policy_name	policy_zone	compliance_type	f_slope	f_intercept	exceedance_values_scenario_id	sod_stor_rte
+Wind	RPS	RPSZone1	f_output	1.0	0.0	.	.
+Wind_new	RPS	RPSZone1	f_output	1.0	0.0	.	.
+Wind_z2	RPS	RPSZone1	f_output	1.0	0.0	.	.

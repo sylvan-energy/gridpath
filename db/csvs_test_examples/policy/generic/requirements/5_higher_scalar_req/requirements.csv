@@ -1,0 +1,3 @@
+policy_name,policy_zone,subproblem_id,stage_id,balancing_type_horizon,horizon,policy_requirement,policy_requirement_f_load_coeff
+RPS,RPSZone1,1,1,year,2020,400000,
+RPS,RPSZone1,1,1,year,2030,400000,

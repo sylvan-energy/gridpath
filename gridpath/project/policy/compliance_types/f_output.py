@@ -63,13 +63,15 @@ def add_model_components(
     )
 
     def prj_policy_zone_opr_tmps_init(mod):
-        opr_tmps = list()
-        for prj, policy, zone in mod.FOUTPUT_PROJECT_POLICY_ZONES:
-            for _prj, tmp in mod.PRJ_OPR_TMPS:
-                if prj == _prj:
-                    opr_tmps.append((prj, policy, zone, tmp))
+        tmps_by_prj = {}
+        for prj, tmp in mod.PRJ_OPR_TMPS:
+            tmps_by_prj.setdefault(prj, []).append(tmp)
 
-        return opr_tmps
+        return [
+            (prj, policy, zone, tmp)
+            for (prj, policy, zone) in mod.FOUTPUT_PROJECT_POLICY_ZONES
+            for tmp in tmps_by_prj.get(prj, [])
+        ]
 
     m.FOUTPUT_PRJ_POLICY_ZONE_OPR_TMPS = Set(
         dimen=4, initialize=prj_policy_zone_opr_tmps_init

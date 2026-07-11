@@ -24,9 +24,13 @@ optimization.
 
 import csv
 import os.path
-from pyomo.environ import Param, Set, NonNegativeReals
+from pyomo.environ import Param, Set, SetOf, NonNegativeReals
 
-from gridpath.auxiliary.auxiliary import cursor_to_df, subset_init_by_set_membership
+from gridpath.auxiliary.auxiliary import (
+    cursor_to_df,
+    get_required_subtype_modules,
+    subset_init_by_set_membership,
+)
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import (
     write_validation_to_database,
@@ -37,6 +41,10 @@ from gridpath.auxiliary.validations import (
 )
 from gridpath.project import write_tab_file_model_inputs
 from gridpath.project.common_functions import determine_project_subset
+
+# The exogenous derates are fixed input data, so the availability
+# derate is a constant in the model
+DERATE_IS_CONSTANT = True
 
 
 def add_model_components(
@@ -88,13 +96,32 @@ def add_model_components(
 
     m.TX_AVL_EXOG = Set(within=m.TX_LINES)
 
-    m.TX_AVL_EXOG_OPR_TMPS = Set(
-        dimen=2,
-        within=m.TX_OPR_TMPS,
-        initialize=lambda mod: subset_init_by_set_membership(
-            mod=mod, superset="TX_OPR_TMPS", index=0, membership_set=mod.TX_AVL_EXOG
-        ),
+    # If every transmission line is of the exogenous availability type (the
+    # type is also the default for lines with no type specified), then
+    # TX_AVL_EXOG_OPR_TMPS would equal TX_OPR_TMPS, so make it a zero-copy
+    # view of TX_OPR_TMPS instead of a filtered copy
+    tx_availability_types_in_use = set(
+        get_required_subtype_modules(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
+            filename="transmission_lines",
+            which_type="tx_availability_type",
+        )
     )
+
+    if tx_availability_types_in_use <= {"exogenous", "."}:
+        m.TX_AVL_EXOG_OPR_TMPS = SetOf(m.TX_OPR_TMPS)
+    else:
+        m.TX_AVL_EXOG_OPR_TMPS = Set(
+            dimen=2,
+            initialize=lambda mod: subset_init_by_set_membership(
+                mod=mod, superset="TX_OPR_TMPS", index=0, membership_set=mod.TX_AVL_EXOG
+            ),
+        )
 
     # Required Params
     ###########################################################################

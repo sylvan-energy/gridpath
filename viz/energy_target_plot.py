@@ -216,7 +216,8 @@ def create_plot(df, title, energy_unit, cost_unit, ylimit=None):
     plot.xaxis.axis_label = "Period"
     plot.yaxis.axis_label = "Energy ({})".format(energy_unit)
     plot.yaxis.formatter = NumeralTickFormatter(format="0,0")
-    plot.y_range.end = ylimit  # will be ignored if ylimit is None
+    if ylimit is not None:
+        plot.y_range.end = ylimit  # will be ignored if ylimit is None
 
     # Add delivered RPS HoverTool
     r_delivered = bar_renderers[0]  # renderer for delivered RPS

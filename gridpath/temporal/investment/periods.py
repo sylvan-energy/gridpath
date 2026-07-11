@@ -248,11 +248,16 @@ def add_model_components(
     # Derived Sets and Input Params
     ###########################################################################
 
+    def tmps_in_prd_init(mod):
+        prd_to_tmps = {prd: [] for prd in mod.PERIODS}
+        for tmp in mod.TMPS:
+            prd_to_tmps[mod.period[tmp]].append(tmp)
+
+        return {prd: sorted(tmps) for prd, tmps in prd_to_tmps.items()}
+
     m.TMPS_IN_PRD = Set(
         m.PERIODS,
-        initialize=lambda mod, p: sorted(
-            list(set(tmp for tmp in mod.TMPS if mod.period[tmp] == p)),
-        ),
+        initialize=tmps_in_prd_init,
     )
 
     m.number_years_represented = Param(

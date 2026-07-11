@@ -37,6 +37,7 @@ For options, including download location, see the ``--help`` menu.
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import os.path
 import sys
 
@@ -53,7 +54,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument(
         "-d",

@@ -24,9 +24,13 @@ optimization.
 
 import csv
 import os.path
-from pyomo.environ import Param, Set, NonNegativeReals
+from pyomo.environ import Param, Set, SetOf, NonNegativeReals
 
-from gridpath.auxiliary.auxiliary import cursor_to_df, subset_init_by_set_membership
+from gridpath.auxiliary.auxiliary import (
+    cursor_to_df,
+    get_required_subtype_modules,
+    subset_init_by_set_membership,
+)
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import (
     write_validation_to_database,
@@ -41,6 +45,10 @@ from gridpath.project.common_functions import (
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
 )
+
+# The exogenous derates are fixed input data, so the availability
+# derate is a constant in the model
+DERATE_IS_CONSTANT = True
 
 
 def add_model_components(
@@ -109,13 +117,32 @@ def add_model_components(
 
     m.AVL_EXOG = Set(within=m.PROJECTS)
 
-    m.AVL_EXOG_OPR_TMPS = Set(
-        dimen=2,
-        within=m.PRJ_OPR_TMPS,
-        initialize=lambda mod: subset_init_by_set_membership(
-            mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.AVL_EXOG
-        ),
+    # If every project is of the exogenous availability type (the type is
+    # also the default for projects with no type specified), then
+    # AVL_EXOG_OPR_TMPS would equal PRJ_OPR_TMPS, so make it a zero-copy
+    # view of PRJ_OPR_TMPS instead of a filtered copy; at production scale
+    # the copy is tens of millions of elements
+    availability_types_in_use = set(
+        get_required_subtype_modules(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
+            which_type="availability_type",
+        )
     )
+
+    if availability_types_in_use <= {"exogenous", "."}:
+        m.AVL_EXOG_OPR_TMPS = SetOf(m.PRJ_OPR_TMPS)
+    else:
+        m.AVL_EXOG_OPR_TMPS = Set(
+            dimen=2,
+            initialize=lambda mod: subset_init_by_set_membership(
+                mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.AVL_EXOG
+            ),
+        )
 
     m.AVL_EXOG_PRJ_BT_HRZ_W_WEATHER_DERATES = Set(
         dimen=3, within=m.PROJECTS * m.BLN_TYPE_HRZS
@@ -223,15 +250,61 @@ def add_model_components(
 ###############################################################################
 
 
+_TMP_INDEXED_CAP_DERATE_PARAMS = [
+    "avl_exog_cap_derate_independent",
+    "avl_exog_cap_derate_weather",
+    "avl_exog_cap_derate_weather_bt_hrz_by_tmp",
+    "avl_exog_cap_derate_independent_bt_hrz_by_tmp",
+]
+
+
+def _active_cap_derate_params(mod):
+    """
+    Derate factor params with no loaded data are 1 (their default)
+    everywhere, so they can be skipped in the per-timepoint product for the
+    overall derate below in order to speed things up. Figure out which params
+    are active here.
+    """
+    # Check if we already figured out the active params; returns None if not
+    active = getattr(mod, "_avl_exog_active_cap_derate_params", None)
+    # If we don't have the active params, figure it out
+    if active is None:
+        active = (
+            # Are the per timepoint params active
+            [
+                getattr(mod, p)
+                for p in _TMP_INDEXED_CAP_DERATE_PARAMS
+                if len(getattr(mod, p).sparse_keys()) > 0
+            ],
+            # Is the monthly param active
+            len(mod.avl_exog_mnth_derate.sparse_keys()) > 0,
+        )
+        mod._avl_exog_active_cap_derate_params = active
+    return active
+
+
 def availability_derate_cap_rule(mod, g, tmp):
-    """ """
-    return (
+    """
+    The final availability is the product of all derates applied.
+
+    derate =
         mod.avl_exog_cap_derate_independent[g, tmp]
         * mod.avl_exog_cap_derate_weather[g, tmp]
         * mod.avl_exog_cap_derate_weather_bt_hrz_by_tmp[g, tmp]
         * mod.avl_exog_cap_derate_independent_bt_hrz_by_tmp[g, tmp]
         * mod.avl_exog_mnth_derate[g, mod.month[tmp]]
-    )
+
+
+    """
+    tmp_indexed_params, mnth_derate_active = _active_cap_derate_params(mod)
+
+    derate = 1
+    for param in tmp_indexed_params:
+        derate = derate * param[g, tmp]
+    if mnth_derate_active:
+        derate = derate * mod.avl_exog_mnth_derate[g, mod.month[tmp]]
+
+    return derate
 
 
 def availability_derate_hyb_stor_cap_rule(mod, g, tmp):

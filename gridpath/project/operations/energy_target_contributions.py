@@ -30,7 +30,7 @@ from gridpath.auxiliary.db_interface import (
     determine_table_subset_by_start_and_column,
     directories_to_db_values,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project.operations.common_functions import load_operational_type_modules
 from gridpath.auxiliary.validations import write_validation_to_database, validate_idxs
 import gridpath.project.operations.operational_types as op_type_init
@@ -142,7 +142,6 @@ def add_model_components(
     m.ENERGY_TARGET_PRJS = Set(within=m.PROJECTS)
 
     m.ENERGY_TARGET_PRJ_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -344,9 +343,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_TIMEPOINT_DF)[c] = None
-    getattr(d, PROJECT_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_TIMEPOINT_DF), results_df)
 
 
 # Database

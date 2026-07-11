@@ -22,7 +22,7 @@ import os.path
 from pyomo.environ import Set, Param, NonNegativeReals
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.reliability.prm import PRM_ZONE_PRD_DF
 
 
@@ -259,6 +259,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PRM_ZONE_PRD_DF)[c] = None
-    getattr(d, PRM_ZONE_PRD_DF).update(results_df)
+    update_results_df(getattr(d, PRM_ZONE_PRD_DF), results_df)

@@ -25,7 +25,7 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_PERIOD_DF
 from gridpath.project.operations.common_functions import load_operational_type_modules
 import gridpath.project.operations.operational_types as op_type_init
@@ -133,7 +133,6 @@ def add_model_components(
     m.CARBON_CREDITS_GENERATION_PRJS = Set(within=m.PROJECTS)
 
     m.CARBON_CREDITS_GENERATION_PRJ_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -143,7 +142,6 @@ def add_model_components(
     )
 
     m.CARBON_CREDITS_GENERATION_PRJ_OPR_PRDS = Set(
-        within=m.PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_PRDS",
@@ -219,7 +217,6 @@ def add_model_components(
     )
 
     m.CARBON_CREDITS_PURCHASE_PRJS_OPR_TMPS = Set(
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -731,9 +728,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_PERIOD_DF)[c] = None
-    getattr(d, PROJECT_PERIOD_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_PERIOD_DF), results_df)
 
     # Carbon credits purchase
     with open(

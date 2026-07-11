@@ -445,6 +445,25 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_2zones_transmission_w_losses"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_2zones_transmission_w_losses_curtailment_cost(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_transmission_w_losses_curtailment_cost"
+        example, in which a curtailment cost is applied to transmission
+        losses
+
+        Note: the objective function should differ from that of
+        2periods_new_build_2zones_transmission_w_losses by exactly the total
+        transmission curtailment cost
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_transmission_w_losses_curtailment_cost"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_2zones_transmission_w_losses_opp_dir(self):
         """
         Check validation and objective function value of
@@ -464,6 +483,16 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "2periods_new_build_rps"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_rps_w_tx_losses(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_rps_w_tx_losses" example, in which transmission
+        losses count against the period energy target
+        :return:
+        """
+        scenario_name = "2periods_new_build_rps_w_tx_losses"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_2periods_new_build_rps_percent_target(self):
@@ -1616,6 +1645,17 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "2periods_new_build_generic_policy"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_generic_policy_w_tx_losses(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_generic_policy_w_tx_losses" example, in which
+        transmission losses count against the policy requirement via the
+        tx_losses compliance type
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_w_tx_losses"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_open_data(self):
