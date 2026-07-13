@@ -1,17 +1,17 @@
-[![GridPath Test Suite Status](https://github.com/blue-marble/gridpath/actions/workflows/test_gridpath.yml/badge.svg?branch=main)](https://github.com/blue-marble/gridpath/actions/workflows/test_gridpath.yml)
+[![GridPath Test Suite Status](https://github.com/sylvan-energy/gridpath/actions/workflows/test_gridpath.yml/badge.svg?branch=main)](https://github.com/sylvan-energy/gridpath/actions/workflows/test_gridpath.yml)
 [![Documentation Status](https://readthedocs.org/projects/gridpath/badge/?version=latest)](https://gridpath.readthedocs.io/en/latest/?badge=latest)
-[![Coverage Status](https://coveralls.io/repos/github/blue-marble/gridpath/badge.svg?branch=main)](https://coveralls.io/github/blue-marble/gridpath?branch=main)
+[![Coverage Status](https://coveralls.io/repos/github/sylvan-energy/gridpath/badge.svg?branch=main)](https://coveralls.io/github/sylvan-energy/gridpath?branch=main)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Lint Black](https://github.com/blue-marble/gridpath/actions/workflows/black.yml/badge.svg?branch=main)](https://github.com/blue-marble/gridpath/actions/workflows/black.yml)
+[![Lint Black](https://github.com/sylvan-energy/gridpath/actions/workflows/black.yml/badge.svg?branch=main)](https://github.com/sylvan-energy/gridpath/actions/workflows/black.yml)
 [![DOI](https://zenodo.org/badge/65574330.svg)](https://doi.org/10.5281/zenodo.5822994)
 
 # Welcome to GridPath
 
 <p align="center" width="100%">
-    <img src="https://github.com/blue-marble/gridpath/blob/main/doc/graphics/gridpath_logo.png?raw=true" width="20%"/>
+    <img src="https://github.com/sylvan-energy/gridpath/blob/main/doc/graphics/gridpath_logo.png?raw=true" width="20%"/>
 </p>
 
-![Approaches](https://github.com/blue-marble/gridpath/blob/main/doc/graphics/approaches.png?raw=true)
+![Approaches](https://github.com/sylvan-energy/gridpath/blob/main/doc/graphics/approaches.png?raw=true)
 
 
 GridPath is a versatile power-system planning platform capable of a range of
@@ -24,12 +24,13 @@ GridPath's documentation is hosted on [Read the Docs](https://gridpath.readthedo
 # Installation
 
 ## Python
-GridPath is tested on Python 3.9, 3.10, and 3.11. Get one of those Python versions [here](https://www.python.org/downloads/ "Python download").
+GridPath is tested on Python 3.11, 3.12, and 3.13. Get one of those Python 
+versions [here](https://www.python.org/downloads/ "Python download").
 
 ## GridPath Python environment
 You should create a Python environment for your GridPath installation, e.g. via 
 `venv`, [a lightweight environment manager](https://docs.python.org/3/library/venv.html "venv") 
-that is part of the standard Python distribution. Make sure to [create](https://docs.python.org/3/library/venv.html#creating-virtual-environments "create") [activate](https://docs.python.org/3/library/venv.html#how-venvs-work "activate") the environment before installing GridPath.
+that is part of the standard Python distribution. Make sure to [create](https://docs.python.org/3/library/venv.html#creating-virtual-environments "create") and [activate](https://docs.python.org/3/library/venv.html#how-venvs-work "activate") the environment before installing GridPath.
 
 ## Install GridPath from PyPi
 
