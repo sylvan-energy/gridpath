@@ -384,6 +384,18 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro_w_balancing_types"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_stor_stress_hrz(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_stor_stress_hrz" example. A stor_stress_hrz storage
+        project builds up its state of charge over the first
+        (average-condition) horizon and enters the second (stress) horizon,
+        which has higher load, with the accumulated energy.
+        :return:
+        """
+        scenario_name = "2horizons_w_stor_stress_hrz"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods(self):
         """
         Check validation and objective function value of "2periods" example

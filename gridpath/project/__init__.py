@@ -169,6 +169,7 @@ def add_model_components(
             "gen_var",
             "gen_var_must_take",
             "stor",
+            "stor_stress_hrz",
             "gen_var_stor_hyb",
             "fuel_prod",
             "dispatchable_load",

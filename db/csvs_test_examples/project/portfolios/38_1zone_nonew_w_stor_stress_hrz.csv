@@ -1,0 +1,7 @@
+project,specified,new_build,capacity_type
+Coal,,,gen_spec
+Gas_CCGT,,,gen_spec
+Gas_CT,,,gen_spec
+Nuclear,,,gen_spec
+Wind,,,gen_spec
+Battery_Stress_Hrz,,,stor_spec

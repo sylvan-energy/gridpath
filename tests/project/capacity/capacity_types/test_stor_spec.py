@@ -104,7 +104,9 @@ class TestStorSpec(unittest.TestCase):
         instance = m.create_instance(data)
 
         # Set: STOR_SPEC_OPR_PRDS
-        expected_proj_period_set = sorted([("Battery_Specified", 2020)])
+        expected_proj_period_set = sorted(
+            [("Battery_Stress_Hrz", 2020), ("Battery_Specified", 2020)]
+        )
         actual_proj_period_set = sorted(
             [(prj, period) for (prj, period) in instance.STOR_SPEC_OPR_PRDS]
         )
@@ -112,7 +114,7 @@ class TestStorSpec(unittest.TestCase):
 
         # Params: stor_spec_power_capacity_mw
         expected_specified_power_cap = OrderedDict(
-            sorted({("Battery_Specified", 2020): 6}.items())
+            sorted({("Battery_Stress_Hrz", 2020): 6, ("Battery_Specified", 2020): 6}.items())
         )
         actual_specified_power_cap = OrderedDict(
             sorted(
@@ -126,7 +128,7 @@ class TestStorSpec(unittest.TestCase):
 
         # Params: storage_specified_energy_capacity_mw
         expected_specified_energy_cap = OrderedDict(
-            sorted({("Battery_Specified", 2020): 6}.items())
+            sorted({("Battery_Stress_Hrz", 2020): 6, ("Battery_Specified", 2020): 6}.items())
         )
         actual_specified_energy_cap = OrderedDict(
             sorted(
@@ -140,7 +142,12 @@ class TestStorSpec(unittest.TestCase):
 
         # Params: stor_spec_fixed_cost_per_mw_yr
         expected_fixed_cost_per_mw = OrderedDict(
-            sorted({("Battery_Specified", 2020): 10000}.items())
+            sorted(
+                {
+                    ("Battery_Stress_Hrz", 2020): 10000,
+                    ("Battery_Specified", 2020): 10000,
+                }.items()
+            )
         )
         actual_fixed_cost_per_mw = OrderedDict(
             sorted(
@@ -154,7 +161,9 @@ class TestStorSpec(unittest.TestCase):
 
         # Params: stor_spec_fixed_cost_per_stor_mwh_yr
         expected_fixed_cost_per_mwh = OrderedDict(
-            sorted({("Battery_Specified", 2020): 5000}.items())
+            sorted(
+                {("Battery_Stress_Hrz", 2020): 5000, ("Battery_Specified", 2020): 5000}.items()
+            )
         )
         actual_fixed_cost_per_mwh = OrderedDict(
             sorted(
