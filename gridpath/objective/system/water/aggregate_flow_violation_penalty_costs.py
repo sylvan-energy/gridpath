@@ -83,7 +83,7 @@ def add_model_components(
         :return:
         """
         return sum(
-            mod.Water_Link_Hrz_Min_Flow_Violation_Expression[wl, bt, h]
+            mod.Water_Link_Hrz_Min_Flow_Violation_Avg_Vol_per_Sec_Expression[wl, bt, h]
             * mod.hrz_min_flow_violation_penalty_cost_per_hour[wl]
             * sum(mod.hrs_in_tmp[tmp] for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, h])
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]

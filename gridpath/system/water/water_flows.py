@@ -372,7 +372,7 @@ def add_model_components(
         )
 
     m.Water_Link_Maximum_Flow_Constraint = Constraint(
-        m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT, rule=max_tmp_flow_rule
+        m.WATER_LINK_DEPARTURE_ARRIVAL_TMPS, rule=max_tmp_flow_rule
     )
 
     def min_total_hrz_flow_constraint_rule(mod, wl, bt, hrz):

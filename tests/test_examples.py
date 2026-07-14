@@ -1696,6 +1696,27 @@ class TestExamples(unittest.TestCase):
         scenario_name = "hydro_system_exog_elev_w_gen_ramp_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_hydro_system_exog_elev_w_binding_tmp_flow_max(self):
+        """
+        Check that per-timepoint max water flow bounds are enforced: peak-hour
+        flow caps on the water links limit hydro power output below the load
+        level, resulting in unserved energy.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_flow_and_volume_violations(self):
+        """
+        Check water system violation penalties: a horizon min flow
+        requirement, a reservoir target release, and a reservoir minimum
+        volume are all set above achievable levels with violations allowed,
+        so their respective penalty costs must show up in the objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_flow_and_volume_violations"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_dsm_examples(self):
         scenario_name = "dsm_examples"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
