@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,6 +43,8 @@ from gridpath.project.common_functions import (
     check_boundary_type,
 )
 from gridpath.project.operations.operational_types.common_functions import (
+    get_monthly_avg_power_expression,
+    get_total_weighted_hrs_in_period,
     load_optype_model_data,
     write_tab_file_model_inputs,
     validate_opchars,
@@ -261,14 +264,13 @@ def add_model_components(
         base_net_requirement minus the project energy averaged over the
         period
         """
+        prd = mod.period[tmp]
         return mod.EnergyLoadFollowing_Provide_Power_MW[
             prj, tmp
         ] == mod.EnergyLoadFollowing_LZ_Load_in_Tmp[prj, tmp] - (
-            mod.base_net_requirement_mwh[prj, mod.period[tmp]]
-            - mod.Energy_MWh[prj, mod.period[tmp]]
-        ) / sum(
-            mod.hrs_in_tmp[prd_tmp] * mod.tmp_weight[prd_tmp]
-            for prd_tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
+            mod.base_net_requirement_mwh[prj, prd] - mod.Energy_MWh[prj, prd]
+        ) / get_total_weighted_hrs_in_period(
+            mod, prd
         )
 
     m.EnergyLoadFollowing_Power_Constraint = Constraint(
@@ -276,24 +278,15 @@ def add_model_components(
     )
 
     def monthly_peak_deviation_rule(mod, prj, tmp):
-        if mod.energy_load_following_peak_deviation_demand_charge == 0:
+        prd = mod.period[tmp]
+        mnth = mod.month[tmp]
+        if mod.energy_load_following_peak_deviation_demand_charge[prj, prd, mnth] == 0:
             return Constraint.Skip
         else:
-            return mod.EnergyLoadFollowing_Peak_Deviation_in_Month[
-                prj, mod.period[tmp], mod.month[tmp]
-            ] >= (
+            return mod.EnergyLoadFollowing_Peak_Deviation_in_Month[prj, prd, mnth] >= (
                 mod.EnergyLoadFollowing_Provide_Power_MW[prj, tmp]
-                - sum(
-                    mod.EnergyLoadFollowing_Provide_Power_MW[prj, _tmp]
-                    * mod.hrs_in_tmp[_tmp]
-                    * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-                / sum(
-                    mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
+                - get_monthly_avg_power_expression(
+                    mod, "EnergyLoadFollowing_Provide_Power_MW", prj, prd, mnth
                 )
             )
 

@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,6 +52,7 @@ from gridpath.project.common_functions import (
     check_boundary_type,
 )
 from gridpath.project.operations.operational_types.common_functions import (
+    # get_monthly_avg_power_expression,  # for the commented-out peak-deviation constraint
     load_optype_model_data,
     load_hydro_opchars,
     write_tab_file_model_inputs,
@@ -214,13 +216,19 @@ def add_model_components(
         m.ENERGY_SLICE_HRZ_SHAPING_OPR_BT_HRZS, within=NonNegativeReals
     )
 
-    m.energy_slice_hrz_shaping_peak_deviation_demand_charge = Param(
-        m.ENERGY_SLICE_HRZ_SHAPING,
-        m.PERIODS,
-        m.MONTHS,
-        within=NonNegativeReals,
-        default=0,
-    )
+    # NOTE: the peak-deviation demand charge feature is not wired up for this
+    # operational type -- there is no tab-file or database load path for the
+    # demand charge param, so it is always at its default of 0 and the
+    # components below could never affect the model. They are commented out
+    # until the input wiring is added; see energy_load_following for a fully
+    # wired-up implementation of the same feature.
+    # m.energy_slice_hrz_shaping_peak_deviation_demand_charge = Param(
+    #     m.ENERGY_SLICE_HRZ_SHAPING,
+    #     m.PERIODS,
+    #     m.MONTHS,
+    #     within=NonNegativeReals,
+    #     default=0,
+    # )
 
     # Expressions
     def slice_init(mod, prj, prd):
@@ -246,12 +254,12 @@ def add_model_components(
         m.ENERGY_SLICE_HRZ_SHAPING_OPR_TMPS, within=NonNegativeReals
     )
 
-    m.EnergySliceHrzShaping_Peak_Deviation_in_Month = Var(
-        m.ENERGY_SLICE_HRZ_SHAPING_OPR_PRDS,
-        m.MONTHS,
-        within=NonNegativeReals,
-        initialize=0,
-    )
+    # m.EnergySliceHrzShaping_Peak_Deviation_in_Month = Var(
+    #     m.ENERGY_SLICE_HRZ_SHAPING_OPR_PRDS,
+    #     m.MONTHS,
+    #     within=NonNegativeReals,
+    #     initialize=0,
+    # )
 
     # Constraints
     ###########################################################################
@@ -335,31 +343,27 @@ def add_model_components(
     )
 
     # Demand charge
-    def monthly_peak_deviation_rule(mod, prj, tmp):
-        if mod.energy_slice_hrz_shaping_peak_deviation_demand_charge == 0:
-            return Constraint.Skip
-        else:
-            return mod.EnergySliceHrzShaping_Peak_Deviation_in_Month[
-                prj, mod.period[tmp], mod.month[tmp]
-            ] >= (
-                mod.EnergySliceHrzShaping_Provide_Power_MW[prj, tmp]
-                - sum(
-                    mod.EnergySliceHrzShaping_Provide_Power_MW[prj, _tmp]
-                    * mod.hrs_in_tmp[_tmp]
-                    * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-                / sum(
-                    mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-            )
-
-    m.EnergySliceHrzShaping_Peak_Deviation_in_Month_Constraint = Constraint(
-        m.ENERGY_SLICE_HRZ_SHAPING_OPR_TMPS, rule=monthly_peak_deviation_rule
-    )
+    # def monthly_peak_deviation_rule(mod, prj, tmp):
+    #     prd = mod.period[tmp]
+    #     mnth = mod.month[tmp]
+    #     if (
+    #         mod.energy_slice_hrz_shaping_peak_deviation_demand_charge[prj, prd, mnth]
+    #         == 0
+    #     ):
+    #         return Constraint.Skip
+    #     else:
+    #         return mod.EnergySliceHrzShaping_Peak_Deviation_in_Month[
+    #             prj, prd, mnth
+    #         ] >= (
+    #             mod.EnergySliceHrzShaping_Provide_Power_MW[prj, tmp]
+    #             - get_monthly_avg_power_expression(
+    #                 mod, "EnergySliceHrzShaping_Provide_Power_MW", prj, prd, mnth
+    #             )
+    #         )
+    #
+    # m.EnergySliceHrzShaping_Peak_Deviation_in_Month_Constraint = Constraint(
+    #     m.ENERGY_SLICE_HRZ_SHAPING_OPR_TMPS, rule=monthly_peak_deviation_rule
+    # )
 
 
 # Operational Type Methods
@@ -371,11 +375,17 @@ def power_provision_rule(mod, prj, tmp):
     return mod.EnergySliceHrzShaping_Provide_Power_MW[prj, tmp]
 
 
-def peak_deviation_monthly_demand_charge_cost_rule(mod, prj, prd, mnth):
-    return (
-        mod.EnergySliceHrzShaping_Peak_Deviation_in_Month[prj, prd, mnth]
-        * mod.energy_slice_hrz_shaping_peak_deviation_demand_charge[prj, prd, mnth]
-    )
+# NOTE: the peak-deviation demand charge feature is not wired up for this
+# operational type -- there is no tab-file or database load path for the
+# demand charge param, so it is always at its default of 0 and the
+# components below could never affect the model. They are commented out
+# until the input wiring is added; see energy_load_following for a fully
+# wired-up implementation of the same feature.
+# def peak_deviation_monthly_demand_charge_cost_rule(mod, prj, prd, mnth):
+#     return (
+#         mod.EnergySliceHrzShaping_Peak_Deviation_in_Month[prj, prd, mnth]
+#         * mod.energy_slice_hrz_shaping_peak_deviation_demand_charge[prj, prd, mnth]
+#     )
 
 
 def power_delta_rule(mod, prj, tmp):

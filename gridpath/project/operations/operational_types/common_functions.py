@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,6 +31,76 @@ from gridpath.auxiliary.validations import (
     validate_values,
     validate_column_monotonicity,
 )
+
+MONTHLY_AVG_POWER_CACHE_ATTR = "_gridpath_monthly_avg_power_expressions"
+
+
+def get_monthly_avg_power_expression(mod, power_var_name, prj, prd, mnth):
+    """
+    :param mod:
+    :param power_var_name: name of the project power provision Var,
+        indexed by (project, timepoint)
+    :param prj:
+    :param prd:
+    :param mnth:
+    :return: an expression for the project's weighted average power over
+        the (period, month) timepoints
+
+    The monthly peak-deviation rules of the energy operational types need
+    the project's average power over the month for every one of the
+    month's timepoints. Building the average inside the per-timepoint rule
+    would rescan all of the period's timepoints on every call (quadratic
+    in timepoints), so we build each (project, period, month) average
+    expression once and cache it on the model instance; the constraints
+    for the month's timepoints all share the cached expression.
+    """
+    cache = getattr(mod, MONTHLY_AVG_POWER_CACHE_ATTR, None)
+    if cache is None:
+        # Group each period's timepoints by month in a single pass
+        tmps_by_prd_month = {}
+        for _prd in mod.PERIODS:
+            for _tmp in mod.TMPS_IN_PRD[_prd]:
+                tmps_by_prd_month.setdefault((_prd, mod.month[_tmp]), []).append(_tmp)
+        cache = {"tmps_by_prd_month": tmps_by_prd_month, "avg_expressions": {}}
+        setattr(mod, MONTHLY_AVG_POWER_CACHE_ATTR, cache)
+
+    key = (power_var_name, prj, prd, mnth)
+    if key not in cache["avg_expressions"]:
+        power_var = getattr(mod, power_var_name)
+        month_tmps = cache["tmps_by_prd_month"][prd, mnth]
+        cache["avg_expressions"][key] = sum(
+            power_var[prj, _tmp] * mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp]
+            for _tmp in month_tmps
+        ) / sum(mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp] for _tmp in month_tmps)
+
+    return cache["avg_expressions"][key]
+
+
+TOTAL_WEIGHTED_HRS_IN_PRD_CACHE_ATTR = "_gridpath_total_weighted_hrs_by_prd"
+
+
+def get_total_weighted_hrs_in_period(mod, prd):
+    """
+    :param mod:
+    :param prd:
+    :return: the total weighted hours (hrs_in_tmp x tmp_weight) over the
+        period's timepoints
+
+    This is a pure-data sum over all of the period's timepoints, so
+    compute it once per period and cache it on the model instance instead
+    of recomputing it inside per-timepoint constraint rules.
+    """
+    cache = getattr(mod, TOTAL_WEIGHTED_HRS_IN_PRD_CACHE_ATTR, None)
+    if cache is None:
+        cache = {}
+        setattr(mod, TOTAL_WEIGHTED_HRS_IN_PRD_CACHE_ATTR, cache)
+
+    if prd not in cache:
+        cache[prd] = sum(
+            mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp] for _tmp in mod.TMPS_IN_PRD[prd]
+        )
+
+    return cache[prd]
 
 
 def determine_relevant_timepoints(mod, g, tmp, min_time):
