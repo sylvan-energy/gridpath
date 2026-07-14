@@ -819,7 +819,7 @@ class TestWaterFlows(unittest.TestCase):
         self.assertDictEqual(expected_arr_tmp, actual_arr_tmp)
 
         # Min hrz flows
-        expected_min_hrz_flow = {}
+        expected_min_hrz_flow = {("Water_Link_23", "day", 202001): 10}
         actual_min_hrz_flow = {
             (wl, bt, hrz): instance.min_bt_hrz_flow_avg_vol_per_second[wl, bt, hrz]
             for (wl, bt, hrz) in instance.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT

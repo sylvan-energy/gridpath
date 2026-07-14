@@ -363,7 +363,7 @@ def add_model_components(
         return (
             mod.Reservoir_Starting_Volume_WaterVolumeUnit[r, tmp]
             + mod.Min_Reservoir_Storage_Violation[r, tmp]
-            * mod.allow_max_volume_violation[r]
+            * mod.allow_min_volume_violation[r]
             >= mod.minimum_volume_volumeunit_by_tmp[r, tmp]
         )
 
@@ -378,7 +378,7 @@ def add_model_components(
             mod.Reservoir_Starting_Volume_WaterVolumeUnit[r, tmp]
             <= mod.maximum_volume_volumeunit_by_tmp[r, tmp]
             + mod.Max_Reservoir_Storage_Violation[r, tmp]
-            * mod.allow_min_volume_violation[r]
+            * mod.allow_max_volume_violation[r]
         )
 
     m.Maximum_Water_Storage_Constraint = Constraint(
