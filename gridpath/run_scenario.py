@@ -38,6 +38,7 @@ from pyomo.environ import (
     SolverFactory,
     SolverStatus,
     TerminationCondition,
+    TransformationFactory,
 )
 
 # from pyomo.util.infeasible import log_infeasible_constraints
@@ -64,6 +65,10 @@ from gridpath.common_functions import (
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.auxiliary.scaling import (
+    assign_scaling_factors,
+    propagate_scaled_solution,
+)
 
 
 def create_problem(
@@ -178,7 +183,40 @@ def solve_problem(parsed_arguments, instance):
     # Solve
     if not parsed_arguments.quiet:
         print("Solving...")
-    results = solve(instance, parsed_arguments)
+
+    power_scale_factor = getattr(parsed_arguments, "power_scale_factor", 1.0)
+    dollar_scale_factor = getattr(parsed_arguments, "dollar_scale_factor", 1.0)
+
+    # No scaling requested: solve the instance directly (the default path -- no
+    # suffix, no clone, no transformation).
+    if power_scale_factor == 1.0 and dollar_scale_factor == 1.0:
+        results = solve(instance, parsed_arguments)
+        return instance, results
+
+    # Scaling requested: assign scaling factors, solve a scaled clone, then map
+    # the solution (variable values and duals) back onto the original instance,
+    # which stays in native units. Everything downstream (results export,
+    # objective value, duals) reads the original instance and is unchanged.
+    assign_scaling_factors(
+        instance,
+        power_scale_factor=power_scale_factor,
+        dollar_scale_factor=dollar_scale_factor,
+    )
+    scaler = TransformationFactory("core.scale_model")
+    scaled_instance = scaler.create_using(instance)
+    results = solve(scaled_instance, parsed_arguments)
+    # Map the scaled solution back onto the original (native-unit) instance. We
+    # use our own back-mapping rather than scaler.propagate_solution because the
+    # latter raises if the solver left any constraint without a dual (which
+    # happens, e.g. non-binding market limits under CBC); ours skips those, as
+    # GridPath's export path already treats a missing dual as None.
+    propagate_scaled_solution(scaled_instance, instance)
+
+    # Release the scaled clone promptly (it doubles peak memory for large
+    # models); matches the garbage-collection discipline elsewhere in this
+    # module.
+    del scaled_instance
+    gc.collect()
 
     return instance, results
 
@@ -1611,6 +1649,31 @@ def main(args=None):
         args = sys.argv[1:]
     # Parse arguments
     parsed_args = parse_arguments(args)
+
+    # Numerical scaling is applied at solve time (see solve_problem), so it is
+    # incompatible with the paths that skip solving and instead load a solution
+    # from a file (whose values are in unknown units) or only write the problem
+    # file (which would be written unscaled). Fail fast rather than silently
+    # mis-handle these.
+    scaling_requested = (
+        parsed_args.power_scale_factor != 1.0 or parsed_args.dollar_scale_factor != 1.0
+    )
+    if scaling_requested:
+        incompatible = [
+            flag
+            for flag in (
+                "load_cplex_solution",
+                "load_gurobi_solution",
+                "load_highs_solution",
+                "create_lp_problem_file_only",
+            )
+            if getattr(parsed_args, flag, False)
+        ]
+        if incompatible:
+            raise ValueError(
+                "--power_scale_factor / --dollar_scale_factor cannot be "
+                "combined with {}.".format(", ".join("--" + f for f in incompatible))
+            )
 
     scenario_directory = determine_scenario_directory(
         scenario_location=parsed_args.scenario_location,
