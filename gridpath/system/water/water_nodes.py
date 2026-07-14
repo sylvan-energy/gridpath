@@ -86,28 +86,28 @@ def add_model_components(
     )
 
     # ### Derived Sets ### #
-    def water_links_to_by_water_node_rule(mod, wn):
-        wl_list = []
+    # Build the whole indexed structure in one pass over WATER_LINKS rather
+    # than rescanning WATER_LINKS for every node
+    def water_links_to_by_water_node_init(mod):
+        links_by_node = {wn: [] for wn in mod.WATER_NODES}
         for wl in mod.WATER_LINKS:
-            if mod.water_node_to[wl] == wn:
-                wl_list.append(wl)
+            links_by_node[mod.water_node_to[wl]].append(wl)
 
-        return wl_list
+        return links_by_node
 
-    def water_links_from_by_water_node_rule(mod, wn):
-        wl_list = []
+    def water_links_from_by_water_node_init(mod):
+        links_by_node = {wn: [] for wn in mod.WATER_NODES}
         for wl in mod.WATER_LINKS:
-            if mod.water_node_from[wl] == wn:
-                wl_list.append(wl)
+            links_by_node[mod.water_node_from[wl]].append(wl)
 
-        return wl_list
+        return links_by_node
 
     m.WATER_LINKS_TO_BY_WATER_NODE = Set(
-        m.WATER_NODES, initialize=water_links_to_by_water_node_rule
+        m.WATER_NODES, initialize=water_links_to_by_water_node_init
     )
 
     m.WATER_LINKS_FROM_BY_WATER_NODE = Set(
-        m.WATER_NODES, initialize=water_links_from_by_water_node_rule
+        m.WATER_NODES, initialize=water_links_from_by_water_node_init
     )
 
 
