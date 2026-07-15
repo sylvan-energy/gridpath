@@ -52,14 +52,6 @@ previous horizon (linked) for projects of this type.
 Reserves, linked timepoints, and exogenously specified state of charge are
 not supported for this operational type.
 
-.. note:: Model construction performance: most components in this module
-    are indexed by project-timepoint, so their rules are called once per
-    index. Per-index work that only depends on the project is hoisted into
-    locals, horizon-level structures are built by iterating the small
-    project-horizon sets rather than filtering timepoint-level supersets,
-    and derived sets initialized by filtering another set do not
-    re-declare that set as :code:`within` (the domain check would be
-    redundant with the initializer).
 """
 
 import os.path
