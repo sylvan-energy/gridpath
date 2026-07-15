@@ -13,9 +13,12 @@
 # limitations under the License.
 
 
+import csv
 from importlib import import_module
 import os.path
+import shutil
 import sys
+import tempfile
 import unittest
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
@@ -219,6 +222,105 @@ class TestStorStressHrz(unittest.TestCase):
         self.assertDictEqual(
             expected_avg_bt_hrzs_by_prj_prd, actual_avg_bt_hrzs_by_prj_prd
         )
+
+    def test_multiple_stress_horizons_anchored_independently(self):
+        """
+        With multiple stress horizons in a period, each one's first
+        timepoint must be independently anchored to the period's
+        average-condition stored energy (stress horizons are alternative
+        stress events, not sequential drawdowns of a shared budget). The
+        shared test data has one stress horizon per period, so build a
+        modified copy in which day horizon 202002 is split into two stress
+        horizons (202002 and 202003).
+        """
+        tmpdir = tempfile.mkdtemp()
+        try:
+            test_data_copy = os.path.join(tmpdir, "test_data")
+            shutil.copytree(TEST_DATA_DIRECTORY, test_data_copy)
+            inputs_dir = os.path.join(test_data_copy, "inputs")
+
+            # Move the second half of day horizon 202002's timepoints to a
+            # new day horizon 202003
+            hrz_tmp_file = os.path.join(
+                inputs_dir, "horizon_user_defined_timepoints.tab"
+            )
+            with open(hrz_tmp_file) as f:
+                rows = list(csv.reader(f, delimiter="\t"))
+            for row in rows[1:]:
+                if row[0] == "202002" and row[1] == "day" and int(row[2]) >= 20200213:
+                    row[0] = "202003"
+            with open(hrz_tmp_file, "w", newline="") as f:
+                csv.writer(f, delimiter="\t", lineterminator="\n").writerows(rows)
+
+            hrz_file = os.path.join(inputs_dir, "horizons_user_defined.tab")
+            with open(hrz_file) as f:
+                rows = list(csv.reader(f, delimiter="\t"))
+            idx = next(
+                i for i, r in enumerate(rows) if r[0] == "202002" and r[1] == "day"
+            )
+            rows.insert(idx + 1, ["202003", "day", "linear"])
+            with open(hrz_file, "w", newline="") as f:
+                csv.writer(f, delimiter="\t", lineterminator="\n").writerows(rows)
+
+            # Designate both as stress horizons
+            hrz_type_file = os.path.join(
+                inputs_dir, "stor_stress_hrz_horizon_types.tab"
+            )
+            with open(hrz_type_file, "w", newline="") as f:
+                writer = csv.writer(f, delimiter="\t", lineterminator="\n")
+                writer.writerow(
+                    ["balancing_type_horizon", "horizon", "stor_stress_hrz_type"]
+                )
+                writer.writerow(["day", "202002", "stress"])
+                writer.writerow(["day", "202003", "stress"])
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=test_data_copy,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
+            prj = "Battery_Stress_Hrz"
+
+            # Both horizons are stress horizons of the project
+            self.assertListEqual(
+                [(prj, "day", 202002), (prj, "day", 202003)],
+                sorted(instance.STOR_STRESS_HRZ_STRESS_OPR_BT_HRZ),
+            )
+
+            # Each stress horizon's first timepoint is anchored to the same
+            # average-condition stored-energy expression
+            avg_expr = str(
+                instance.StorStressHrz_Avg_Hrz_Stored_Energy_MWh[prj, 2020].expr
+            ).strip("()")
+            for hrz in (202002, 202003):
+                first_tmp = instance.first_hrz_tmp["day", hrz]
+                constraint_expr = str(
+                    instance.StorStressHrz_Stress_Hrz_Energy_Tracking_Constraint[
+                        prj, first_tmp
+                    ].expr
+                )
+                lhs, rhs = constraint_expr.split("  ==  ")
+                self.assertEqual(
+                    f"StorStressHrz_Starting_Energy_in_Storage_MWh"
+                    f"[{prj},{first_tmp}]",
+                    lhs.strip(),
+                )
+                self.assertEqual(avg_expr, rhs.strip().strip("()"))
+
+                # And each has its own last-timepoint ending-energy bounds
+                for constraint in (
+                    instance.StorStressHrz_Stress_Hrz_Last_Tmp_Min_Ending_Energy_Constraint,
+                    instance.StorStressHrz_Stress_Hrz_Last_Tmp_Max_Ending_Energy_Constraint,
+                ):
+                    self.assertIn((prj, "day", hrz), constraint)
+        finally:
+            shutil.rmtree(tmpdir)
 
 
 if __name__ == "__main__":

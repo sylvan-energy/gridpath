@@ -39,6 +39,12 @@ balancing type), designated via the :code:`stor_stress_hrz_type` input:
   storage enters the stress event with whatever it accumulated under
   average conditions.
 
+  A period may have multiple stress horizons: each one *independently*
+  starts at the period's full average-condition energy build-up. Stress
+  horizons are alternative stress events (e.g. different reliability
+  events the system must be able to ride through with the same
+  accumulated energy), not sequential drawdowns of a shared budget.
+
 Every period that contains a stress horizon for a project of this type
 must also contain at least one average-condition horizon for that project
 (otherwise the starting state of charge for the stress horizon is
