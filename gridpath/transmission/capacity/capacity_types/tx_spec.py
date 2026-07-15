@@ -130,9 +130,7 @@ def add_model_components(
     m.tx_spec_min_cap_mw = Param(
         m.TX_SPEC_OPR_PRDS, within=Reals, default=Negative_Infinity
     )
-    m.tx_spec_max_cap_mw = Param(
-        m.TX_SPEC_OPR_PRDS, within=Reals, default=Infinity
-    )
+    m.tx_spec_max_cap_mw = Param(m.TX_SPEC_OPR_PRDS, within=Reals, default=Infinity)
     m.tx_spec_fixed_cost_per_mw_yr = Param(
         m.TX_SPEC_OPR_PRDS, within=NonNegativeReals, default=0
     )
