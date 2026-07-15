@@ -58,3 +58,4 @@ DSM_Load_Component_Shift	2020	1
 DSM_Load_Component_Shift	2030	1																	
 Gen_Simple_No_Load_Balance_Power	2020	100																	
 Gen_Simple_No_Load_Balance_Power	2030	100																	
+Battery_Stress_Hrz	2020	6					6				10000					5000			

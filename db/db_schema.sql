@@ -2947,6 +2947,30 @@ CREATE TABLE inputs_project_stor_exog_state_of_charge_iterations
     PRIMARY KEY (project, stor_exog_state_of_charge_scenario_id)
 );
 
+-- Stress-horizon storage (stor_stress_hrz) horizon types: designates each horizon as an
+-- "average" (average-condition) or "stress" horizon; horizons not in the
+-- inputs default to "average"
+DROP TABLE IF EXISTS subscenarios_project_stor_stress_hrz_types;
+CREATE TABLE subscenarios_project_stor_stress_hrz_types
+(
+    stor_stress_hrz_type_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                          VARCHAR(32),
+    description                   VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_project_stor_stress_hrz_types;
+CREATE TABLE inputs_project_stor_stress_hrz_types
+(
+    stor_stress_hrz_type_scenario_id INTEGER,
+    balancing_type_horizon        VARCHAR(32),
+    horizon                       INTEGER,
+    stor_stress_hrz_type             VARCHAR(16),
+    PRIMARY KEY (stor_stress_hrz_type_scenario_id, balancing_type_horizon,
+                 horizon),
+    FOREIGN KEY (stor_stress_hrz_type_scenario_id) REFERENCES
+        subscenarios_project_stor_stress_hrz_types (stor_stress_hrz_type_scenario_id)
+);
+
 -- Cap factor limits
 DROP TABLE IF EXISTS subscenarios_project_cap_factor_limits;
 CREATE TABLE subscenarios_project_cap_factor_limits
@@ -5980,6 +6004,7 @@ CREATE TABLE scenarios
     water_network_scenario_id                                   INTEGER,
     project_portfolio_scenario_id                               INTEGER,
     project_operational_chars_scenario_id                       INTEGER,
+    stor_stress_hrz_type_scenario_id                               INTEGER,
     project_availability_scenario_id                            INTEGER,
     fuel_scenario_id                                            INTEGER,
     project_load_zone_scenario_id                               INTEGER,
@@ -6145,6 +6170,8 @@ CREATE TABLE scenarios
         subscenarios_project_portfolios (project_portfolio_scenario_id),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),
+    FOREIGN KEY (stor_stress_hrz_type_scenario_id) REFERENCES
+        subscenarios_project_stor_stress_hrz_types (stor_stress_hrz_type_scenario_id),
     FOREIGN KEY (project_availability_scenario_id) REFERENCES
         subscenarios_project_availability (project_availability_scenario_id),
     FOREIGN KEY (fuel_scenario_id) REFERENCES
@@ -6475,6 +6502,7 @@ CREATE TABLE results_project_period
     carbon_credits_zone                    VARCHAR(32),
     carbon_credits_generated_tCO2          FLOAT,
     carbon_credits_purchased_tCO2          FLOAT,
+    stor_stress_hrz_avg_hrz_stored_energy_mwh     FLOAT,
     PRIMARY KEY (scenario_id, project, weather_iteration, hydro_iteration,
                  availability_iteration, period, subproblem_id, stage_id)
 );
@@ -8440,6 +8468,10 @@ SELECT scenario_id,
         FROM subscenarios_project_operational_chars
         WHERE project_operational_chars_scenario_id =
               scenarios.project_operational_chars_scenario_id)                       AS project_operating_chars,
+       (SELECT name
+        FROM subscenarios_project_stor_stress_hrz_types
+        WHERE stor_stress_hrz_type_scenario_id =
+              scenarios.stor_stress_hrz_type_scenario_id)                               AS stor_stress_hrz_types,
        (SELECT name
         FROM subscenarios_project_availability
         WHERE project_availability_scenario_id =

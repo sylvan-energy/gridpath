@@ -121,6 +121,7 @@ class TestExogenousAvailabilityType(unittest.TestCase):
                 "Wind_z2",
                 "Battery",
                 "Battery_Binary",
+                "Battery_Stress_Hrz",
                 "Battery_Specified",
                 "Hydro",
                 "Hydro_NonCurtailable",
