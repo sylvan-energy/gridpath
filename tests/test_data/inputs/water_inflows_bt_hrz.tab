@@ -1,0 +1,3 @@
+water_node	balancing_type	horizon	exogenous_water_inflow_rate_avg_vol_per_sec
+Water_Node_2	day	202001	0.5
+Water_Node_3	day	202002	0.25

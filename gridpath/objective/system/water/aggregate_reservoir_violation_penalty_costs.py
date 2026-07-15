@@ -44,7 +44,7 @@ def add_model_components(
         """
         return sum(
             mod.Target_Release_Violation_VolUnit[r, bt, h]
-            * mod.max_volume_violation_cost[r]
+            * mod.target_release_violation_cost[r]
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
             * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
             for (

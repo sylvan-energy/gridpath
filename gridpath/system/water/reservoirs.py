@@ -165,34 +165,51 @@ def add_model_components(
         m.WATER_NODE_RESERVOIR_BT_HRZS_WITH_MIN_VOL_REQUIRMENTS, within=NonNegativeReals
     )
 
-    def max_volume_by_tmp_init(mod, r, tmp):
-        vals = [mod.maximum_volume_volumeunit[r]]
+    # Build the timepoint-level bounds in one pass over the horizon
+    # requirements (rather than rescanning them for every reservoir-timepoint)
+    # and store values only where a horizon requirement tightens the static
+    # bound; everywhere else the default returns the static bound. If
+    # multiple bt-hrzs include a timepoint, the most binding value applies.
+    def max_volume_by_tmp_init(mod):
+        max_vol_by_tmp = {}
+        for r, bt, hrz in mod.WATER_NODE_RESERVOIR_BT_HRZS_WITH_MAX_VOL_REQUIRMENTS:
+            hrz_max = mod.hrz_maximum_volume_volumeunit[r, bt, hrz]
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+                if (r, tmp) in max_vol_by_tmp:
+                    max_vol_by_tmp[r, tmp] = min(max_vol_by_tmp[r, tmp], hrz_max)
+                else:
+                    max_vol_by_tmp[r, tmp] = min(
+                        mod.maximum_volume_volumeunit[r], hrz_max
+                    )
 
-        for _r, bt, hrz in mod.WATER_NODE_RESERVOIR_BT_HRZS_WITH_MAX_VOL_REQUIRMENTS:
-            if _r == r and tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
-                vals.append(mod.hrz_maximum_volume_volumeunit[_r, bt, hrz])
-
-        tmp_val = min(vals)
-
-        return tmp_val
+        return max_vol_by_tmp
 
     m.maximum_volume_volumeunit_by_tmp = Param(
-        m.WATER_NODES_W_RESERVOIRS, m.TMPS, initialize=max_volume_by_tmp_init
+        m.WATER_NODES_W_RESERVOIRS,
+        m.TMPS,
+        initialize=max_volume_by_tmp_init,
+        default=lambda mod, r, tmp: mod.maximum_volume_volumeunit[r],
     )
 
-    def min_volume_by_tmp_init(mod, r, tmp):
-        vals = [mod.minimum_volume_volumeunit[r]]
+    def min_volume_by_tmp_init(mod):
+        min_vol_by_tmp = {}
+        for r, bt, hrz in mod.WATER_NODE_RESERVOIR_BT_HRZS_WITH_MIN_VOL_REQUIRMENTS:
+            hrz_min = mod.hrz_minimum_volume_volumeunit[r, bt, hrz]
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+                if (r, tmp) in min_vol_by_tmp:
+                    min_vol_by_tmp[r, tmp] = max(min_vol_by_tmp[r, tmp], hrz_min)
+                else:
+                    min_vol_by_tmp[r, tmp] = max(
+                        mod.minimum_volume_volumeunit[r], hrz_min
+                    )
 
-        for _r, bt, hrz in mod.WATER_NODE_RESERVOIR_BT_HRZS_WITH_MIN_VOL_REQUIRMENTS:
-            if _r == r and tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
-                vals.append(mod.hrz_minimum_volume_volumeunit[_r, bt, hrz])
-
-        tmp_val = max(vals)
-
-        return tmp_val
+        return min_vol_by_tmp
 
     m.minimum_volume_volumeunit_by_tmp = Param(
-        m.WATER_NODES_W_RESERVOIRS, m.TMPS, initialize=min_volume_by_tmp_init
+        m.WATER_NODES_W_RESERVOIRS,
+        m.TMPS,
+        initialize=min_volume_by_tmp_init,
+        default=lambda mod, r, tmp: mod.minimum_volume_volumeunit[r],
     )
 
     # Release targets
@@ -241,16 +258,6 @@ def add_model_components(
         m.WATER_NODES_W_RESERVOIRS,
         m.TMPS,
         within=NonNegativeReals,
-    )
-
-    # Expressions
-    # TODO: implement the correct calculation; depends on area, which depends
-    #  on elevation
-    # Losses
-    m.Evaporative_Losses = Expression(
-        m.WATER_NODES_W_RESERVOIRS,
-        m.TMPS,
-        initialize=lambda mod, r, tmp: mod.evaporation_coefficient[r],
     )
 
     # Slack variables
@@ -360,10 +367,12 @@ def add_model_components(
     )
 
     def reservoir_storage_min_bound_constraint_rule(mod, r, tmp):
+        if mod.allow_min_volume_violation[r]:
+            violation = mod.Min_Reservoir_Storage_Violation[r, tmp]
+        else:
+            violation = 0
         return (
-            mod.Reservoir_Starting_Volume_WaterVolumeUnit[r, tmp]
-            + mod.Min_Reservoir_Storage_Violation[r, tmp]
-            * mod.allow_max_volume_violation[r]
+            mod.Reservoir_Starting_Volume_WaterVolumeUnit[r, tmp] + violation
             >= mod.minimum_volume_volumeunit_by_tmp[r, tmp]
         )
 
@@ -374,11 +383,13 @@ def add_model_components(
     )
 
     def reservoir_storage_max_bound_constraint_rule(mod, r, tmp):
+        if mod.allow_max_volume_violation[r]:
+            violation = mod.Max_Reservoir_Storage_Violation[r, tmp]
+        else:
+            violation = 0
         return (
             mod.Reservoir_Starting_Volume_WaterVolumeUnit[r, tmp]
-            <= mod.maximum_volume_volumeunit_by_tmp[r, tmp]
-            + mod.Max_Reservoir_Storage_Violation[r, tmp]
-            * mod.allow_min_volume_violation[r]
+            <= mod.maximum_volume_volumeunit_by_tmp[r, tmp] + violation
         )
 
     m.Maximum_Water_Storage_Constraint = Constraint(
@@ -390,6 +401,10 @@ def add_model_components(
     # Target releases
     def reservoir_target_release_constraint_rule(mod, wn, bt, hrz):
         """ """
+        if mod.allow_target_release_violation[wn]:
+            violation = mod.Target_Release_Violation_VolUnit[wn, bt, hrz]
+        else:
+            violation = 0
         return (
             sum(
                 mod.Gross_Reservoir_Release_Rate_Vol_Per_Sec[wn, tmp]
@@ -403,8 +418,7 @@ def add_model_components(
                 * mod.hrs_in_tmp[tmp]
                 for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
             )
-            - mod.Target_Release_Violation_VolUnit[wn, bt, hrz]
-            * mod.allow_target_release_violation[wn]
+            - violation
         )
 
     m.Water_Node_Target_Release_Constraint = Constraint(
@@ -473,57 +487,46 @@ def add_model_components(
 
     def reservoir_storage_tracking_rule(mod, wn, tmp):
         """ """
-        # No constraint in the first timepoint of a linear horizon (no
-        # previous timepoints for tracking reservoir levels)
-        if check_if_first_timepoint(
-            mod=mod, tmp=tmp, balancing_type=mod.water_system_balancing_type
-        ) and check_boundary_type(
-            mod=mod,
-            tmp=tmp,
-            balancing_type=mod.water_system_balancing_type,
-            boundary_type="linear",
-        ):
-            return Constraint.Skip
-        # TODO: add linked horizons
-        elif check_if_first_timepoint(
-            mod=mod, tmp=tmp, balancing_type=mod.water_system_balancing_type
-        ) and check_boundary_type(
-            mod=mod,
-            tmp=tmp,
-            balancing_type=mod.water_system_balancing_type,
-            boundary_type="linked",
-        ):
-            current_tmp_starting_water_volume = None
-            prev_tmp_starting_water_volume = None
-
-            # Inflows and releases
-            prev_tmp_inflow = None
-            prev_tmp_outflow = None
-            raise (
-                UserWarning(
-                    "Linked horizons have not been implemented for "
-                    "water system feature."
+        balancing_type = mod.water_system_balancing_type
+        if check_if_first_timepoint(mod=mod, tmp=tmp, balancing_type=balancing_type):
+            # No constraint in the first timepoint of a linear horizon (no
+            # previous timepoints for tracking reservoir levels)
+            if check_boundary_type(
+                mod=mod,
+                tmp=tmp,
+                balancing_type=balancing_type,
+                boundary_type="linear",
+            ):
+                return Constraint.Skip
+            # TODO: add linked horizons
+            elif check_boundary_type(
+                mod=mod,
+                tmp=tmp,
+                balancing_type=balancing_type,
+                boundary_type="linked",
+            ):
+                raise (
+                    UserWarning(
+                        "Linked horizons have not been implemented for "
+                        "water system feature."
+                    )
                 )
-            )
-        else:
-            current_tmp_starting_water_volume = (
-                mod.Reservoir_Starting_Volume_WaterVolumeUnit[wn, tmp]
-            )
-            prev_tmp_starting_water_volume = (
-                mod.Reservoir_Starting_Volume_WaterVolumeUnit[
-                    wn, mod.prev_tmp[tmp, mod.water_system_balancing_type]
-                ]
-            )
 
-            # Inflows and releases; these are already calculated
-            # based on per sec flows and hours in the timepoint
-            prev_tmp_inflow = get_total_inflow_for_reservoir_tracking_volunit(
-                mod, wn, mod.prev_tmp[tmp, mod.water_system_balancing_type]
-            )
+        prev_tmp = mod.prev_tmp[tmp, balancing_type]
+        current_tmp_starting_water_volume = (
+            mod.Reservoir_Starting_Volume_WaterVolumeUnit[wn, tmp]
+        )
+        prev_tmp_starting_water_volume = mod.Reservoir_Starting_Volume_WaterVolumeUnit[
+            wn, prev_tmp
+        ]
 
-            prev_tmp_outflow = get_total_reservoir_release_volunit(
-                mod, wn, mod.prev_tmp[tmp, mod.water_system_balancing_type]
-            )
+        # Inflows and releases; these are already calculated
+        # based on per sec flows and hours in the timepoint
+        prev_tmp_inflow = get_total_inflow_for_reservoir_tracking_volunit(
+            mod, wn, prev_tmp
+        )
+
+        prev_tmp_outflow = get_total_reservoir_release_volunit(mod, wn, prev_tmp)
 
         return current_tmp_starting_water_volume == (
             prev_tmp_starting_water_volume + prev_tmp_inflow - prev_tmp_outflow

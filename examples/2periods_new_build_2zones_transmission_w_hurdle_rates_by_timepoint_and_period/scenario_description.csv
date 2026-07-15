@@ -153,6 +153,7 @@ market_volume_total_in_tmp_scenario_id,NULL
 market_volume_total_in_prd_scenario_id,NULL
 water_node_reservoir_scenario_id,NULL
 water_flow_scenario_id,NULL
-water_inflow_scenario_id,NULL
+water_inflow_tmp_scenario_id,NULL
+water_inflow_bt_hrz_scenario_id,NULL
 water_powerhouse_scenario_id,NULL
 tuning_scenario_id,NULL

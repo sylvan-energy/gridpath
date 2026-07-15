@@ -129,11 +129,12 @@ def add_model_components(
     def water_link_departure_arrival_tmp_init(mod):
         wl_dep_arr_tmp = []
         for wl in mod.WATER_LINKS:
+            transport_time = mod.water_link_flow_transport_time_hours[wl]
             for departure_tmp in mod.TMPS:
                 arrival_tmp = determine_future_timepoint(
                     mod=mod,
                     dep_tmp=departure_tmp,
-                    time_from_dep_tmp=mod.water_link_flow_transport_time_hours[wl],
+                    time_from_dep_tmp=transport_time,
                 )
                 if arrival_tmp is not None:
                     wl_dep_arr_tmp.append((wl, departure_tmp, arrival_tmp))
@@ -141,9 +142,11 @@ def add_model_components(
         return wl_dep_arr_tmp
 
     m.TMPS_AND_OUTSIDE_HORIZON = Set(initialize=m.TMPS | {"tmp_outside_horizon"})
+    # No within= domain check: this set is derived from model data by
+    # construction, so membership is guaranteed and the per-element check
+    # would only add construction time on the largest water set
     m.WATER_LINK_DEPARTURE_ARRIVAL_TMPS = Set(
         dimen=3,
-        within=m.WATER_LINKS * m.TMPS * m.TMPS_AND_OUTSIDE_HORIZON,
         initialize=water_link_departure_arrival_tmp_init,
     )
 
@@ -236,11 +239,12 @@ def add_model_components(
     def ramp_limit_tmps_set_init(mod):
         ramp_limit_tmps = []
         for water_link, ramp_limit in mod.WATER_LINK_RAMP_LIMITS:
+            n_hours = mod.water_link_ramp_limit_n_hours[water_link, ramp_limit]
             for tmp in mod.TMPS:
                 dep_to_arr_tmps = determine_future_timepoint(
                     mod,
                     tmp,
-                    mod.water_link_ramp_limit_n_hours[water_link, ramp_limit],
+                    n_hours,
                     keep_tmps=True,
                 )
                 for arr_tmp in dep_to_arr_tmps:
@@ -248,9 +252,9 @@ def add_model_components(
 
         return ramp_limit_tmps
 
+    # No within= domain check: derived from model data by construction
     m.WATER_LINK_RAMP_LIMIT_DEP_ARR_TMPS = Set(
         dimen=4,
-        within=m.WATER_LINK_RAMP_LIMITS * m.TMPS * m.TMPS_AND_OUTSIDE_HORIZON,
         initialize=ramp_limit_tmps_set_init,
     )
 
@@ -350,12 +354,17 @@ def add_model_components(
 
     # ### Constraints ### #
     def min_tmp_flow_rule(mod, wl, dep_tmp, arr_tmp):
+        min_flow = mod.min_tmp_flow_vol_per_second[wl, dep_tmp]
+        # Flow and violation are both non-negative, so a bound of 0 (the
+        # default) can never bind
+        if min_flow == 0:
+            return Constraint.Skip
         return (
             mod.Water_Link_Flow_Rate_Vol_per_Sec[wl, dep_tmp, arr_tmp]
             + mod.Water_Link_Min_Flow_Violation_Vol_per_Sec_Expression[
                 wl, dep_tmp, arr_tmp
             ]
-            >= mod.min_tmp_flow_vol_per_second[wl, dep_tmp]
+            >= min_flow
         )
 
     m.Water_Link_Minimum_Flow_Constraint = Constraint(
@@ -363,16 +372,19 @@ def add_model_components(
     )
 
     def max_tmp_flow_rule(mod, wl, dep_tmp, arr_tmp):
+        max_flow = mod.max_tmp_flow_vol_per_second[wl, dep_tmp]
+        if max_flow == float("inf"):
+            return Constraint.Skip
         return (
             mod.Water_Link_Flow_Rate_Vol_per_Sec[wl, dep_tmp, arr_tmp]
             - mod.Water_Link_Max_Flow_Violation_Vol_per_Sec_Expression[
                 wl, dep_tmp, arr_tmp
             ]
-            <= mod.max_tmp_flow_vol_per_second[wl, dep_tmp]
+            <= max_flow
         )
 
     m.Water_Link_Maximum_Flow_Constraint = Constraint(
-        m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT, rule=max_tmp_flow_rule
+        m.WATER_LINK_DEPARTURE_ARRIVAL_TMPS, rule=max_tmp_flow_rule
     )
 
     def min_total_hrz_flow_constraint_rule(mod, wl, bt, hrz):
@@ -400,12 +412,16 @@ def add_model_components(
 
     m.WATER_LINK_UPSTREAM_WATER_NODES = Set(within=m.WATER_LINKS * m.WATER_NODES)
 
+    def upstream_water_nodes_by_water_link_init(mod):
+        nodes_by_link = {wl: [] for wl in mod.WATER_LINKS}
+        for _wl, wn in mod.WATER_LINK_UPSTREAM_WATER_NODES:
+            nodes_by_link[_wl].append(wn)
+
+        return nodes_by_link
+
     m.UPSTREAM_WATER_NODES_BY_WATER_LINK = Set(
         m.WATER_LINKS,
-        within=m.WATER_NODES,
-        initialize=lambda mod, wl: [
-            wn for (_wl, wn) in mod.WATER_LINK_UPSTREAM_WATER_NODES if wl == _wl
-        ],
+        initialize=upstream_water_nodes_by_water_link_init,
     )
 
     def max_total_hrz_flow_constraint_rule(mod, wl, bt, hrz):
@@ -418,7 +434,8 @@ def add_model_components(
         specified, the max_bt_hrz_flow_avg_vol_per_second will bind.
         """
         upstream_exogenous_inflows = sum(
-            mod.exogenous_water_inflow_rate_vol_per_sec[wn, tmp] * mod.hrs_in_tmp[tmp]
+            mod.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+            * mod.hrs_in_tmp[tmp]
             for wn in mod.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
             for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
         )
@@ -458,6 +475,13 @@ def add_model_components(
         if future_tmp == "tmp_outside_horizon":
             return Constraint.Skip
         else:
+            allowed_flow_delta = mod.water_link_ramp_limit_tmp_allowed_flow_delta[
+                wl, ramp_limit, tmp
+            ]
+            # No constraint for timepoints without a specified limit (the
+            # default is infinity)
+            if allowed_flow_delta == float("inf"):
+                return Constraint.Skip
             return (
                 mod.water_link_ramp_limit_up_or_down[wl, ramp_limit]
                 * (
@@ -468,7 +492,7 @@ def add_model_components(
                         wl, tmp, mod.arrival_timepoint[wl, tmp]
                     ]
                 )
-                <= mod.water_link_ramp_limit_tmp_allowed_flow_delta[wl, ramp_limit, tmp]
+                <= allowed_flow_delta
             )
 
     m.Water_Link_Flow_Ramp_Constraint = Constraint(
@@ -482,7 +506,20 @@ def determine_future_timepoint(mod, dep_tmp, time_from_dep_tmp, keep_tmps=False)
     issues. You could also see issues if timepoints don't receive any flows
     because of short durations. This functionality is new and not yet
     extensively tested, so proceed with caution.
+
+    The result depends only on the arguments (not on which water link is
+    asking), so it is cached on the model instance: links sharing a
+    transport time would otherwise redo the same walk through the
+    timepoints for every (link, timepoint) pair.
     """
+    cache = getattr(mod, "_gridpath_future_tmp_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(mod, "_gridpath_future_tmp_cache", cache)
+    cache_key = (dep_tmp, time_from_dep_tmp, keep_tmps)
+    if cache_key in cache:
+        return cache[cache_key]
+
     dep_to_arr_tmps_list = []
     # If travel time is less than the hours in the departure timepoint,
     # balancing happens within the departure timepoint
@@ -569,10 +606,10 @@ def determine_future_timepoint(mod, dep_tmp, time_from_dep_tmp, keep_tmps=False)
                 arr_tmp = mod.next_tmp[arr_tmp, mod.water_system_balancing_type]
                 if keep_tmps:
                     dep_to_arr_tmps_list.append(arr_tmp)
-    if keep_tmps:
-        return dep_to_arr_tmps_list
-    else:
-        return arr_tmp
+    result = dep_to_arr_tmps_list if keep_tmps else arr_tmp
+    cache[cache_key] = result
+
+    return result
 
 
 def load_model_data(
@@ -1136,7 +1173,8 @@ def export_results(
             m.threshold_side_stream_avg_vol_per_second[wl, bt, hrz],
             # upstream_exogenous_inflows_avg_vol_per_second
             sum(
-                m.exogenous_water_inflow_rate_vol_per_sec[wn, tmp] * m.hrs_in_tmp[tmp]
+                m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+                * m.hrs_in_tmp[tmp]
                 for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
                 for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
             )
@@ -1146,7 +1184,7 @@ def export_results(
             + max(
                 (
                     sum(
-                        m.exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+                        m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
                         * m.hrs_in_tmp[tmp]
                         for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
                         for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]

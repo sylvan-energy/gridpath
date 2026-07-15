@@ -62,9 +62,10 @@ def add_model_components(
         """
         endogenous_flows = 0
         for wl in mod.WATER_LINKS_TO_BY_WATER_NODE[wn]:
-            if mod.departure_timepoint[wl, tmp] != "tmp_outside_horizon":
+            dep_tmp = mod.departure_timepoint[wl, tmp]
+            if dep_tmp != "tmp_outside_horizon":
                 endogenous_flows += mod.Water_Link_Flow_Rate_Vol_per_Sec[
-                    wl, mod.departure_timepoint[wl, tmp], tmp
+                    wl, dep_tmp, tmp
                 ]
 
         return endogenous_flows
@@ -82,7 +83,7 @@ def add_model_components(
         """
 
         return (
-            mod.exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+            mod.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
             + mod.Endogenous_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]
         )
 

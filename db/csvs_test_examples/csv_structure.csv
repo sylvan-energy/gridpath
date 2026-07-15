@@ -208,7 +208,8 @@ markets/volume_totals_in_tmp,markets,market_volume_total_in_tmp_scenario_id,mark
 markets/volume_totals_in_prd,markets,market_volume_total_in_prd_scenario_id,market_volume_totals_in_prd,simple,,0,,,,,
 water/water_system_params,water,water_system_params_scenario_id,system_water_system_params,simple,,0,,,,,
 water/water_network,water,water_network_scenario_id,geography_water_network,simple,,0,,,,,
-water/inflows,water,water_inflow_scenario_id,system_water_inflows,simple,,0,,,,,
+water/inflows,water,water_inflow_tmp_scenario_id,system_water_inflows,simple,,0,,,,,
+water/inflows/bt_hrz,water,water_inflow_bt_hrz_scenario_id,system_water_inflows_bt_hrz,simple,,0,,,,,
 ,water,volume_hrz_bounds_scenario_id,system_water_node_reservoirs_volume_horizon_bounds,simple,,1,water_node,,ignore,water_reservoir_scenario_id,system_water_reservoirs
 water/reservoirs/target_volumes,water,target_volume_scenario_id,system_water_node_reservoirs_target_volumes,simple,,1,water_node,,,water_reservoir_scenario_id,system_water_reservoirs
 water/reservoirs/target_release,water,target_release_scenario_id,system_water_node_reservoirs_target_releases,simple,,1,water_node,,,water_reservoir_scenario_id,system_water_reservoirs

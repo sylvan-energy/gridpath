@@ -248,9 +248,9 @@ class TestReservoirs(unittest.TestCase):
 
         # Param: allow_min_volume_violation
         e_allow_min_volume_violation = {
-            "Water_Node_1": 0,
-            "Water_Node_2": 0,
-            "Water_Node_3": 0,
+            "Water_Node_1": 1,
+            "Water_Node_2": 1,
+            "Water_Node_3": 1,
         }
         a_allow_min_volume_violation = {
             r: instance.allow_min_volume_violation[r]
@@ -260,9 +260,9 @@ class TestReservoirs(unittest.TestCase):
 
         # Param: min_volume_violation_cost
         e_min_volume_violation_cost = {
-            "Water_Node_1": 0,
-            "Water_Node_2": 0,
-            "Water_Node_3": 0,
+            "Water_Node_1": 110,
+            "Water_Node_2": 120,
+            "Water_Node_3": 130,
         }
         a_min_volume_violation_cost = {
             r: instance.min_volume_violation_cost[r]
@@ -272,9 +272,9 @@ class TestReservoirs(unittest.TestCase):
 
         # Param: allow_max_volume_violation
         e_allow_max_volume_violation = {
-            "Water_Node_1": 0,
-            "Water_Node_2": 0,
-            "Water_Node_3": 0,
+            "Water_Node_1": 1,
+            "Water_Node_2": 1,
+            "Water_Node_3": 1,
         }
         a_allow_max_volume_violation = {
             r: instance.allow_max_volume_violation[r]
@@ -284,9 +284,9 @@ class TestReservoirs(unittest.TestCase):
 
         # Param: max_volume_violation_cost
         e_max_volume_violation_cost = {
-            "Water_Node_1": 0,
-            "Water_Node_2": 0,
-            "Water_Node_3": 0,
+            "Water_Node_1": 210,
+            "Water_Node_2": 220,
+            "Water_Node_3": 230,
         }
         a_max_volume_violation_cost = {
             r: instance.max_volume_violation_cost[r]
@@ -296,9 +296,9 @@ class TestReservoirs(unittest.TestCase):
 
         # Param: allow_target_release_violation
         e_allow_target_release_violation = {
-            "Water_Node_1": 0,
-            "Water_Node_2": 0,
-            "Water_Node_3": 0,
+            "Water_Node_1": 1,
+            "Water_Node_2": 1,
+            "Water_Node_3": 1,
         }
         a_allow_target_release_violation = {
             r: instance.allow_target_release_violation[r]
@@ -310,9 +310,9 @@ class TestReservoirs(unittest.TestCase):
 
         # Param: target_release_violation_cost
         e_target_release_violation_cost = {
-            "Water_Node_1": 0,
-            "Water_Node_2": 0,
-            "Water_Node_3": 0,
+            "Water_Node_1": 15000,
+            "Water_Node_2": 16000,
+            "Water_Node_3": 17000,
         }
         a_target_release_violation_cost = {
             r: instance.target_release_violation_cost[r]
