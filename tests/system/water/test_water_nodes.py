@@ -128,6 +128,57 @@ class TestWaterNodes(unittest.TestCase):
         }
         self.assertDictEqual(expected_min_bound, actual_min_bound)
 
+        # Set: WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS
+        expected_bt_hrz = sorted(
+            [("Water_Node_2", "day", 202001), ("Water_Node_3", "day", 202002)]
+        )
+        actual_bt_hrz = sorted(
+            [
+                (wn, bt, hrz)
+                for (wn, bt, hrz) in instance.WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS
+            ]
+        )
+        self.assertListEqual(expected_bt_hrz, actual_bt_hrz)
+
+        # Param: exogenous_water_inflow_rate_avg_vol_per_sec
+        expected_avg_inflow = {
+            ("Water_Node_2", "day", 202001): 0.5,
+            ("Water_Node_3", "day", 202002): 0.25,
+        }
+        actual_avg_inflow = {
+            (wn, bt, hrz): instance.exogenous_water_inflow_rate_avg_vol_per_sec[
+                wn, bt, hrz
+            ]
+            for (wn, bt, hrz) in instance.WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS
+        }
+        self.assertDictEqual(expected_avg_inflow, actual_avg_inflow)
+
+        # Param: total_exogenous_water_inflow_rate_vol_per_sec
+        # The timepoint-level and horizon-level inflows are additive: the
+        # horizon-level average rate is added in each of the horizon's
+        # timepoints
+        hrz_tmp_df = pd.read_csv(
+            os.path.join(
+                TEST_DATA_DIRECTORY, "inputs", "horizon_user_defined_timepoints.tab"
+            ),
+            sep="\t",
+        )
+        expected_total = dict(expected_min_bound)
+        for (wn, bt, hrz), avg_rate in expected_avg_inflow.items():
+            hrz_tmps = hrz_tmp_df.loc[
+                (hrz_tmp_df["balancing_type_horizon"] == bt)
+                & (hrz_tmp_df["horizon"] == hrz),
+                "timepoint",
+            ]
+            for tmp in hrz_tmps:
+                expected_total[wn, tmp] = expected_total[wn, tmp] + avg_rate
+        actual_total = {
+            (wn, tmp): instance.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+            for wn in instance.WATER_NODES
+            for tmp in instance.TMPS
+        }
+        self.assertDictEqual(expected_total, actual_total)
+
         # Set: WATER_LINKS_TO_BY_WATER_NODE
         expected_l = {
             "Water_Node_1": [],

@@ -1717,6 +1717,19 @@ class TestExamples(unittest.TestCase):
         scenario_name = "hydro_system_exog_elev_w_flow_and_volume_violations"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_hydro_system_exog_elev_w_bt_hrz_inflows(self):
+        """
+        Check horizon-level average exogenous water inflows: same as
+        hydro_system_exog_elev, but with part of each node's inflow moved
+        from the timepoint-level inputs to horizon-level average inputs
+        (spread across the horizon's timepoints, additive with the
+        timepoint-level inflows). The totals are unchanged, so this
+        scenario must reproduce the hydro_system_exog_elev objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_bt_hrz_inflows"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_dsm_examples(self):
         scenario_name = "dsm_examples"
         self.validate_and_test_example_generic(scenario_name=scenario_name)

@@ -434,7 +434,8 @@ def add_model_components(
         specified, the max_bt_hrz_flow_avg_vol_per_second will bind.
         """
         upstream_exogenous_inflows = sum(
-            mod.exogenous_water_inflow_rate_vol_per_sec[wn, tmp] * mod.hrs_in_tmp[tmp]
+            mod.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+            * mod.hrs_in_tmp[tmp]
             for wn in mod.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
             for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
         )
@@ -1172,7 +1173,8 @@ def export_results(
             m.threshold_side_stream_avg_vol_per_second[wl, bt, hrz],
             # upstream_exogenous_inflows_avg_vol_per_second
             sum(
-                m.exogenous_water_inflow_rate_vol_per_sec[wn, tmp] * m.hrs_in_tmp[tmp]
+                m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+                * m.hrs_in_tmp[tmp]
                 for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
                 for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
             )
@@ -1182,7 +1184,7 @@ def export_results(
             + max(
                 (
                     sum(
-                        m.exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+                        m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
                         * m.hrs_in_tmp[tmp]
                         for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
                         for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]

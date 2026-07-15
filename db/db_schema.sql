@@ -1661,6 +1661,25 @@ CREATE TABLE inputs_system_water_inflows
         subscenarios_system_water_inflows (water_inflow_scenario_id)
 );
 
+-- Average inflows by horizon; these are spread uniformly across the
+-- horizon's timepoints in the model and are additive with the
+-- timepoint-level inflows from inputs_system_water_inflows; shares the
+-- water_inflow_scenario_id subscenario with that table
+DROP TABLE IF EXISTS inputs_system_water_inflows_bt_hrz;
+CREATE TABLE inputs_system_water_inflows_bt_hrz
+(
+    water_inflow_scenario_id                    INTEGER,
+    water_node                                  TEXT,
+    hydro_iteration                             INTEGER DEFAULT 0 NOT NULL,
+    balancing_type                              TEXT,
+    horizon                                     INTEGER,
+    exogenous_water_inflow_rate_avg_vol_per_sec FLOAT,
+    PRIMARY KEY (water_inflow_scenario_id, water_node, balancing_type,
+                 horizon, hydro_iteration),
+    FOREIGN KEY (water_inflow_scenario_id) REFERENCES
+        subscenarios_system_water_inflows (water_inflow_scenario_id)
+);
+
 -- water_powerhouses
 DROP TABLE IF EXISTS subscenarios_system_water_powerhouses;
 CREATE TABLE subscenarios_system_water_powerhouses
