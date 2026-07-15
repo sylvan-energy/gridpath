@@ -273,8 +273,8 @@ def get_inputs_from_database(
     bt_hrz_water_inflows = c2.execute(f"""SELECT water_node, balancing_type, horizon,
                 exogenous_water_inflow_rate_avg_vol_per_sec
                 FROM inputs_system_water_inflows_bt_hrz
-                WHERE water_inflow_scenario_id =
-                {subscenarios.WATER_INFLOW_SCENARIO_ID}
+                WHERE water_inflow_bt_hrz_scenario_id =
+                {subscenarios.WATER_INFLOW_BT_HRZ_SCENARIO_ID}
                 AND water_node IN (
                     SELECT water_node_from as water_node
                     FROM inputs_geography_water_network
