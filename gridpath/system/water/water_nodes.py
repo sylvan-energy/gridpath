@@ -1,4 +1,5 @@
 # Copyright 2016-2025 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +29,9 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.project.operations.operational_types.common_functions import (
+    write_tab_file_model_inputs,
+)
 
 
 def add_model_components(
@@ -78,11 +82,70 @@ def add_model_components(
     | will be calculated based on the number of hours in the timepoint. This  |
     | parameter defaults to 0.                                                |
     +-------------------------------------------------------------------------+
+    | | :code:`exogenous_water_inflow_rate_avg_vol_per_sec`                   |
+    | | *Defined over*: :code:`WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS`     |
+    | | *Within*: :code:`Reals`                                               |
+    |                                                                         |
+    | Average water inflow rate at the node over the horizon, in volume       |
+    | units per second. This inflow is spread uniformly across the horizon's  |
+    | timepoints and is additive with the timepoint-level inflow rate. Use    |
+    | this parameter to reduce data requirements when inflows are defined     |
+    | over longer periods of time (e.g. days) rather than by timepoint.       |
+    +-------------------------------------------------------------------------+
+    | | :code:`total_exogenous_water_inflow_rate_vol_per_sec`                 |
+    | | *Defined over*: :code:`WATER_NODES, TMPS`                             |
+    | | *Default*: :code:`0`                                                  |
+    |                                                                         |
+    | Derived param: the total exogenous inflow rate at the node in the       |
+    | timepoint, i.e. the timepoint-level inflow rate plus the horizon-level  |
+    | average inflow rate of each horizon the timepoint belongs to. This is   |
+    | the parameter the rest of the model should use.                         |
+    +-------------------------------------------------------------------------+
     """
     # #### Parameters #### #
-    # Inflow rate, defined in volume units per second
+    # Inflow rate by timepoint, defined in volume units per second
     m.exogenous_water_inflow_rate_vol_per_sec = Param(
         m.WATER_NODES, m.TMPS, default=0, within=Reals
+    )
+
+    # Average inflow rate by horizon, defined in volume units per second;
+    # spread uniformly across the horizon's timepoints and additive with the
+    # timepoint-level inflow rate
+    m.WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS = Set(
+        dimen=3, within=m.WATER_NODES * m.BLN_TYPE_HRZS
+    )
+
+    m.exogenous_water_inflow_rate_avg_vol_per_sec = Param(
+        m.WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS, within=Reals
+    )
+
+    def total_exogenous_water_inflow_rate_init(mod):
+        """
+        Total exogenous inflow rate by node-timepoint: the timepoint-level
+        inflow rate plus the average inflow rate of each horizon the
+        timepoint belongs to (the horizon-level inflows are spread
+        uniformly, i.e. the average rate is added in each of the horizon's
+        timepoints). Built as a sparse dict in one pass over each input's
+        data; (node, timepoint) indices with no data fall back to the
+        param default of 0.
+        """
+        total = {
+            (wn, tmp): mod.exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
+            for (wn, tmp) in mod.exogenous_water_inflow_rate_vol_per_sec.sparse_keys()
+        }
+        for wn, bt, hrz in mod.WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS:
+            avg_rate = mod.exogenous_water_inflow_rate_avg_vol_per_sec[wn, bt, hrz]
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+                total[wn, tmp] = total.get((wn, tmp), 0) + avg_rate
+
+        return total
+
+    m.total_exogenous_water_inflow_rate_vol_per_sec = Param(
+        m.WATER_NODES,
+        m.TMPS,
+        default=0,
+        within=Reals,
+        initialize=total_exogenous_water_inflow_rate_init,
     )
 
     # ### Derived Sets ### #
@@ -123,19 +186,41 @@ def load_model_data(
     stage,
 ):
 
-    data_portal.load(
-        filename=os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "water_inflows.tab",
-        ),
-        param=m.exogenous_water_inflow_rate_vol_per_sec,
+    # Both inflow files are optional: inflows may be specified by timepoint,
+    # by horizon (spread across the horizon's timepoints), or both (they are
+    # additive); a node-timepoint with no data defaults to an inflow of 0
+    tmp_fname = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
+        "water_inflows.tab",
     )
+    if os.path.exists(tmp_fname):
+        data_portal.load(
+            filename=tmp_fname,
+            param=m.exogenous_water_inflow_rate_vol_per_sec,
+        )
+
+    bt_hrz_fname = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
+        "water_inflows_bt_hrz.tab",
+    )
+    if os.path.exists(bt_hrz_fname):
+        data_portal.load(
+            filename=bt_hrz_fname,
+            index=m.WATER_NODE_BT_HRZS_WITH_EXOGENOUS_INFLOWS,
+            param=m.exogenous_water_inflow_rate_avg_vol_per_sec,
+        )
 
 
 def get_inputs_from_database(
@@ -183,7 +268,35 @@ def get_inputs_from_database(
                 ;
                 """
     )
-    return water_inflows
+
+    c2 = conn.cursor()
+    bt_hrz_water_inflows = c2.execute(f"""SELECT water_node, balancing_type, horizon,
+                exogenous_water_inflow_rate_avg_vol_per_sec
+                FROM inputs_system_water_inflows_bt_hrz
+                WHERE water_inflow_scenario_id =
+                {subscenarios.WATER_INFLOW_SCENARIO_ID}
+                AND water_node IN (
+                    SELECT water_node_from as water_node
+                    FROM inputs_geography_water_network
+                    WHERE water_network_scenario_id =
+                    {subscenarios.WATER_NETWORK_SCENARIO_ID}
+                    UNION
+                    SELECT water_node_to as water_node
+                    FROM inputs_geography_water_network
+                    WHERE water_network_scenario_id =
+                    {subscenarios.WATER_NETWORK_SCENARIO_ID}
+                )
+                AND (balancing_type, horizon)
+                IN (SELECT DISTINCT balancing_type_horizon, horizon
+                    FROM inputs_temporal_horizon_timepoints
+                    WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+                    AND subproblem_id = {subproblem}
+                    )
+                AND hydro_iteration = {hydro_iteration}
+                ;
+                """)
+
+    return water_inflows, bt_hrz_water_inflows
 
 
 def validate_inputs(
@@ -242,7 +355,7 @@ def write_model_inputs(
         weather_iteration, hydro_iteration, availability_iteration, subproblem, stage
     )
 
-    inflows = get_inputs_from_database(
+    inflows, bt_hrz_inflows = get_inputs_from_database(
         scenario_id,
         subscenarios,
         db_weather_iteration,
@@ -253,30 +366,49 @@ def write_model_inputs(
         conn,
     )
 
-    with open(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "water_inflows.tab",
-        ),
-        "w",
-        newline="",
-    ) as f:
-        writer = csv.writer(f, delimiter="\t", lineterminator="\n")
+    # Optional file with timepoint-level inflows; not written if the
+    # scenario has no timepoint-level inflow data (e.g. inflows specified
+    # by horizon only)
+    inflow_rows = inflows.fetchall()
+    if inflow_rows:
+        with open(
+            os.path.join(
+                scenario_directory,
+                weather_iteration,
+                hydro_iteration,
+                availability_iteration,
+                subproblem,
+                stage,
+                "inputs",
+                "water_inflows.tab",
+            ),
+            "w",
+            newline="",
+        ) as f:
+            writer = csv.writer(f, delimiter="\t", lineterminator="\n")
 
-        # Write header
-        writer.writerow(
-            [
-                "water_node",
-                "timepoint",
-                "exogenous_water_inflow_rate_vol_per_sec",
-            ]
-        )
+            # Write header
+            writer.writerow(
+                [
+                    "water_node",
+                    "timepoint",
+                    "exogenous_water_inflow_rate_vol_per_sec",
+                ]
+            )
 
-        for row in inflows:
-            writer.writerow(row)
+            for row in inflow_rows:
+                writer.writerow(row)
+
+    # Optional file with horizon-level average inflows; not written if the
+    # scenario has no horizon-level inflow data
+    write_tab_file_model_inputs(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        fname="water_inflows_bt_hrz.tab",
+        data=bt_hrz_inflows,
+        replace_nulls=True,
+    )

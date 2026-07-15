@@ -174,7 +174,7 @@ def export_results(
                 if wn in m.WATER_NODES_W_RESERVOIRS
                 else None
             ),
-            m.exogenous_water_inflow_rate_vol_per_sec[wn, tmp],
+            m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp],
             value(m.Endogenous_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]),
             value(m.Gross_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]),
             value(
