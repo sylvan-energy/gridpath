@@ -186,19 +186,24 @@ def load_model_data(
     stage,
 ):
 
-    data_portal.load(
-        filename=os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "water_inflows.tab",
-        ),
-        param=m.exogenous_water_inflow_rate_vol_per_sec,
+    # Both inflow files are optional: inflows may be specified by timepoint,
+    # by horizon (spread across the horizon's timepoints), or both (they are
+    # additive); a node-timepoint with no data defaults to an inflow of 0
+    tmp_fname = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
+        "water_inflows.tab",
     )
+    if os.path.exists(tmp_fname):
+        data_portal.load(
+            filename=tmp_fname,
+            param=m.exogenous_water_inflow_rate_vol_per_sec,
+        )
 
     bt_hrz_fname = os.path.join(
         scenario_directory,
@@ -361,33 +366,38 @@ def write_model_inputs(
         conn,
     )
 
-    with open(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "water_inflows.tab",
-        ),
-        "w",
-        newline="",
-    ) as f:
-        writer = csv.writer(f, delimiter="\t", lineterminator="\n")
+    # Optional file with timepoint-level inflows; not written if the
+    # scenario has no timepoint-level inflow data (e.g. inflows specified
+    # by horizon only)
+    inflow_rows = inflows.fetchall()
+    if inflow_rows:
+        with open(
+            os.path.join(
+                scenario_directory,
+                weather_iteration,
+                hydro_iteration,
+                availability_iteration,
+                subproblem,
+                stage,
+                "inputs",
+                "water_inflows.tab",
+            ),
+            "w",
+            newline="",
+        ) as f:
+            writer = csv.writer(f, delimiter="\t", lineterminator="\n")
 
-        # Write header
-        writer.writerow(
-            [
-                "water_node",
-                "timepoint",
-                "exogenous_water_inflow_rate_vol_per_sec",
-            ]
-        )
+            # Write header
+            writer.writerow(
+                [
+                    "water_node",
+                    "timepoint",
+                    "exogenous_water_inflow_rate_vol_per_sec",
+                ]
+            )
 
-        for row in inflows:
-            writer.writerow(row)
+            for row in inflow_rows:
+                writer.writerow(row)
 
     # Optional file with horizon-level average inflows; not written if the
     # scenario has no horizon-level inflow data
