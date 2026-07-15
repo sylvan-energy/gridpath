@@ -68,6 +68,7 @@ from gridpath.auxiliary.module_list import determine_modules, load_modules
 from gridpath.auxiliary.scaling import (
     assign_scaling_factors,
     propagate_scaled_solution,
+    invert_scaled_solution_in_place,
 )
 
 
@@ -193,20 +194,33 @@ def solve_problem(parsed_arguments, instance):
         results = solve(instance, parsed_arguments)
         return instance, results
 
-    # Scaling requested: assign scaling factors, solve a scaled clone, then map
-    # the solution (variable values and duals) back onto the original instance,
-    # which stays in native units. Everything downstream (results export,
-    # objective value, duals) reads the original instance and is unchanged.
+    # Scaling requested: assign scaling factors on the instance, then either
+    # (out_of_place) solve a scaled clone and map the solution back onto the
+    # pristine original, or (in_place) scale the instance itself and invert the
+    # solution afterward. Both leave the instance handed downstream in native
+    # units, so results export / objective / duals code is unchanged.
     assign_scaling_factors(
         instance,
         power_scale_factor=power_scale_factor,
         dollar_scale_factor=dollar_scale_factor,
     )
     scaler = TransformationFactory("core.scale_model")
+    scale_mode = getattr(parsed_arguments, "scale_mode", "out_of_place")
+
+    if scale_mode == "in_place":
+        # Scale the model itself (no clone -> ~half the peak memory and faster
+        # setup for large models), solve it, then restore native units on the
+        # same instance.
+        scaler.apply_to(instance, rename=False)
+        results = solve(instance, parsed_arguments)
+        invert_scaled_solution_in_place(instance)
+        return instance, results
+
+    # out_of_place (default): solve a scaled clone, then map the solution
+    # (variable values and duals) back onto the original native-unit instance.
     scaled_instance = scaler.create_using(instance)
     results = solve(scaled_instance, parsed_arguments)
-    # Map the scaled solution back onto the original (native-unit) instance. We
-    # use our own back-mapping rather than scaler.propagate_solution because the
+    # Use our own back-mapping rather than scaler.propagate_solution because the
     # latter raises if the solver left any constraint without a dual (which
     # happens, e.g. non-binding market limits under CBC); ours skips those, as
     # GridPath's export path already treats a missing dual as None.

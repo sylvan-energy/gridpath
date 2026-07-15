@@ -58,6 +58,17 @@ class TestScaledExamples(test_examples.TestExamples):
     POWER_SCALE_FACTOR = 1000.0
     DOLLAR_SCALE_FACTOR = 1000000.0
 
+    # Which scaling implementation to exercise ("out_of_place" or "in_place").
+    # Both must give identical native-unit results; the unit tests in
+    # test_scaling.py check that equivalence directly. This suite runs the
+    # default (out_of_place) mode. To sweep the full example set through the
+    # in_place path, subclass and flip this attribute:
+    #     class TestScaledExamplesInPlace(TestScaledExamples):
+    #         SCALE_MODE = "in_place"
+    # (not added as an always-on suite -- it would roughly triple example
+    # runtime for little marginal signal over the unit-level equivalence tests).
+    SCALE_MODE = "out_of_place"
+
     # Relative tolerance on the objective: |actual - expected| <= tol * |expected|.
     # Most scenarios match to machine precision (~1e-13). Degenerate LPs, though,
     # can settle on a different equally-optimal vertex once scaling perturbs the
@@ -137,6 +148,8 @@ class TestScaledExamples(test_examples.TestExamples):
             str(self.POWER_SCALE_FACTOR),
             "--dollar_scale_factor",
             str(self.DOLLAR_SCALE_FACTOR),
+            "--scale_mode",
+            self.SCALE_MODE,
         ] + additional_args
 
         if solver is not None:

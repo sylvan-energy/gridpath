@@ -54,7 +54,7 @@ a localized change here if a model needs it.
 """
 
 from pyomo.environ import Suffix, Var, Constraint, Objective
-from pyomo.core.expr import identify_variables
+from pyomo.core.expr import identify_variables, replace_expressions
 
 
 # Name tokens (split on "_") that mark a variable as power/energy or dollars.
@@ -291,6 +291,75 @@ def propagate_scaled_solution(scaled_instance, instance):
                 instance.dual[original_con[k]] = (
                     scaled_instance.dual[scaled_con[k]]
                     * factor_map[scaled_con[k]]
+                    / objective_factor
+                )
+
+    return instance
+
+
+def invert_scaled_solution_in_place(instance):
+    """Un-scale a solved model that was scaled in place, restoring native units.
+
+    Counterpart to ``propagate_scaled_solution`` for the in-place path: instead
+    of cloning the model (``create_using``) and mapping the solution back onto a
+    pristine original, the model itself was scaled with ``apply_to(rename=False)``
+    and solved. This reverses the scaling on the solved model so that everything
+    downstream reads native units:
+
+        * Objective expression: ``apply_to`` rewrote it as
+          ``s_obj * (expression in scaled variables)``. We substitute each scaled
+          variable ``v -> v * s_v`` (recovering the native-variable expression,
+          still multiplied by ``s_obj``) and then divide the whole objective by
+          ``s_obj``. This matters because ``save_objective_function_value`` reads
+          ``instance.NPV()`` directly; without this it would be off by ``s_obj``.
+        * Variable values: ``v <- v / s_v`` (native units).
+        * Duals: ``dual <- dual * s_c / s_obj`` (same formula as
+          ``propagate_scaled_solution``).
+
+    Named cost/revenue ``Expression`` components are NOT rewritten by scaling
+    (only ``Constraint``/``Objective``/``Var`` are), so once variable values are
+    native they already evaluate to native dollars and need no adjustment.
+
+    The instance must have been scaled with ``TransformationFactory(
+    'core.scale_model').apply_to(instance, rename=False)`` (which stores the
+    ``component_scaling_factor_map`` this reads) and then solved.
+
+    Args:
+        instance: The in-place-scaled, solved model to restore to native units.
+
+    Returns:
+        The instance, with objective, variable values, and duals in native units.
+    """
+    factor_map = instance.component_scaling_factor_map
+
+    objective_factor = 1.0
+    active_objectives = list(
+        instance.component_data_objects(Objective, active=True, descend_into=True)
+    )
+    for obj in active_objectives:
+        objective_factor = factor_map[obj]
+        break
+
+    # Reverse the objective substitution: undo v -> v / s_v (i.e. put back
+    # v -> v * s_v), then remove the objective row factor s_obj.
+    for obj in active_objectives:
+        substitution = {id(v): v * factor_map[v] for v in identify_variables(obj.expr)}
+        obj.expr = replace_expressions(obj.expr, substitution) / objective_factor
+
+    # Un-scale variable values.
+    for var in instance.component_data_objects(Var, descend_into=True):
+        if var.value is not None:
+            var.set_value(var.value / factor_map[var], skip_validation=True)
+
+    # Rescale duals (skip any constraint the solver left without a dual).
+    if hasattr(instance, "dual"):
+        for constraint in instance.component_data_objects(
+            Constraint, active=True, descend_into=True
+        ):
+            if constraint in instance.dual:
+                instance.dual[constraint] = (
+                    instance.dual[constraint]
+                    * factor_map[constraint]
                     / objective_factor
                 )
 

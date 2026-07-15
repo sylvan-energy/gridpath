@@ -94,7 +94,9 @@ def _build_dispatch_model():
     return m
 
 
-def _fake_parsed_arguments(power_scale_factor, dollar_scale_factor):
+def _fake_parsed_arguments(
+    power_scale_factor, dollar_scale_factor, scale_mode="out_of_place"
+):
     """Build a minimal parsed-arguments stand-in for solve_problem/solve.
 
     Points the (non-existent) scenario directory at a temp location so that no
@@ -104,6 +106,7 @@ def _fake_parsed_arguments(power_scale_factor, dollar_scale_factor):
         quiet=True,
         power_scale_factor=power_scale_factor,
         dollar_scale_factor=dollar_scale_factor,
+        scale_mode=scale_mode,
         solver=None,
         solver_executable=None,
         mute_solver_output=True,
@@ -210,23 +213,23 @@ class TestScaledSolveEquivalence(unittest.TestCase):
         if not SolverFactory("cbc").available():
             raise unittest.SkipTest("cbc not available")
 
-    def _solve(self, power_scale_factor, dollar_scale_factor):
+    def _solve(
+        self, power_scale_factor, dollar_scale_factor, scale_mode="out_of_place"
+    ):
         instance = _build_dispatch_model()
-        args = _fake_parsed_arguments(power_scale_factor, dollar_scale_factor)
+        args = _fake_parsed_arguments(
+            power_scale_factor, dollar_scale_factor, scale_mode=scale_mode
+        )
         solved, _ = run_scenario.solve_problem(args, instance)
         gen = {t: value(solved.GenSimple_Provide_Power_MW[t]) for t in solved.T}
         use = {t: value(solved.Unserved_Energy_MW[t]) for t in solved.T}
         price = {t: solved.dual[solved.Meet_Load_Constraint[t]] for t in solved.T}
         return value(solved.NPV), gen, use, price
 
-    def test_objective_variables_and_duals_match(self):
-        base_obj, base_gen, base_use, base_price = self._solve(1.0, 1.0)
-        scl_obj, scl_gen, scl_use, scl_price = self._solve(POWER_SCALE, DOLLAR_SCALE)
-
-        # Objective (native dollars): 800*30 + 4000*30 + 1000*500 = 644000.
+    def _check_matches_native(self, base, scaled):
+        base_obj, base_gen, base_use, base_price = base
+        scl_obj, scl_gen, scl_use, scl_price = scaled
         self.assertAlmostEqual(base_obj, scl_obj, places=3)
-        self.assertAlmostEqual(base_obj, 644000.0, places=1)
-
         for t in base_gen:
             self.assertAlmostEqual(base_gen[t], scl_gen[t], places=4, msg=f"gen[{t}]")
             self.assertAlmostEqual(base_use[t], scl_use[t], places=4, msg=f"use[{t}]")
@@ -235,8 +238,20 @@ class TestScaledSolveEquivalence(unittest.TestCase):
                 base_price[t], scl_price[t], places=4, msg=f"price[{t}]"
             )
 
+    def test_out_of_place_matches_native(self):
+        base = self._solve(1.0, 1.0)
+        scaled = self._solve(POWER_SCALE, DOLLAR_SCALE, scale_mode="out_of_place")
+        # Objective (native dollars): 800*30 + 4000*30 + 1000*500 = 644000.
+        self.assertAlmostEqual(base[0], 644000.0, places=1)
+        self._check_matches_native(base, scaled)
         # tmp 2 is short 1000 MW -> its marginal price is the $500/MWh penalty.
-        self.assertAlmostEqual(scl_price[2], 500.0, places=3)
+        self.assertAlmostEqual(scaled[3][2], 500.0, places=3)
+
+    def test_in_place_matches_native(self):
+        base = self._solve(1.0, 1.0)
+        scaled = self._solve(POWER_SCALE, DOLLAR_SCALE, scale_mode="in_place")
+        self._check_matches_native(base, scaled)
+        self.assertAlmostEqual(scaled[3][2], 500.0, places=3)
 
     def test_no_scaling_path_leaves_no_suffix(self):
         # The (1.0, 1.0) default path must not touch the instance (no clone, no
