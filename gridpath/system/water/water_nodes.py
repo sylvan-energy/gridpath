@@ -245,8 +245,8 @@ def get_inputs_from_database(
     water_inflows = c.execute(
         f"""SELECT water_node, timepoint, exogenous_water_inflow_rate_vol_per_sec
                 FROM inputs_system_water_inflows
-                WHERE water_inflow_scenario_id = 
-                {subscenarios.WATER_INFLOW_SCENARIO_ID}
+                WHERE water_inflow_tmp_scenario_id = 
+                {subscenarios.WATER_INFLOW_TMP_SCENARIO_ID}
                 AND water_node IN (
                     SELECT water_node_from as water_node
                     FROM inputs_geography_water_network

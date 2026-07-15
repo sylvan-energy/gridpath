@@ -1642,7 +1642,7 @@ CREATE TABLE inputs_system_water_flow_ramp_limit_bt_hrz_values
 DROP TABLE IF EXISTS subscenarios_system_water_inflows;
 CREATE TABLE subscenarios_system_water_inflows
 (
-    water_inflow_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    water_inflow_tmp_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name                     VARCHAR(32),
     description              VARCHAR(128)
 );
@@ -1650,15 +1650,15 @@ CREATE TABLE subscenarios_system_water_inflows
 DROP TABLE IF EXISTS inputs_system_water_inflows;
 CREATE TABLE inputs_system_water_inflows
 (
-    water_inflow_scenario_id                INTEGER,
+    water_inflow_tmp_scenario_id                INTEGER,
     water_node                              TEXT,
     hydro_iteration                         INTEGER DEFAULT 0 NOT NULL,
     timepoint                               FLOAT,
     exogenous_water_inflow_rate_vol_per_sec TEXT,
-    PRIMARY KEY (water_inflow_scenario_id, water_node, timepoint,
+    PRIMARY KEY (water_inflow_tmp_scenario_id, water_node, timepoint,
                  hydro_iteration),
-    FOREIGN KEY (water_inflow_scenario_id) REFERENCES
-        subscenarios_system_water_inflows (water_inflow_scenario_id)
+    FOREIGN KEY (water_inflow_tmp_scenario_id) REFERENCES
+        subscenarios_system_water_inflows (water_inflow_tmp_scenario_id)
 );
 
 -- Average inflows by horizon; these are spread uniformly across the
@@ -6071,7 +6071,7 @@ CREATE TABLE scenarios
     market_volume_total_in_prd_scenario_id                      INTEGER,
     water_node_reservoir_scenario_id                            INTEGER,
     water_flow_scenario_id                                      INTEGER,
-    water_inflow_scenario_id                                    INTEGER,
+    water_inflow_tmp_scenario_id                                    INTEGER,
     water_inflow_bt_hrz_scenario_id                             INTEGER,
     water_powerhouse_scenario_id                                INTEGER,
     tuning_scenario_id                                          INTEGER,
@@ -6381,8 +6381,8 @@ CREATE TABLE scenarios
         subscenarios_system_water_node_reservoirs (water_node_reservoir_scenario_id),
     FOREIGN KEY (water_flow_scenario_id) REFERENCES
         subscenarios_system_water_flows (water_flow_scenario_id),
-    FOREIGN KEY (water_inflow_scenario_id) REFERENCES
-        subscenarios_system_water_inflows (water_inflow_scenario_id),
+    FOREIGN KEY (water_inflow_tmp_scenario_id) REFERENCES
+        subscenarios_system_water_inflows (water_inflow_tmp_scenario_id),
     FOREIGN KEY (water_inflow_bt_hrz_scenario_id) REFERENCES
         subscenarios_system_water_inflows_bt_hrz (water_inflow_bt_hrz_scenario_id),
     FOREIGN KEY (water_powerhouse_scenario_id) REFERENCES
@@ -8800,8 +8800,8 @@ SELECT scenario_id,
               scenarios.water_flow_scenario_id)                                      AS water_flows,
        (SELECT name
         FROM subscenarios_system_water_inflows
-        WHERE water_inflow_scenario_id =
-              scenarios.water_inflow_scenario_id)                                    AS water_inflows,
+        WHERE water_inflow_tmp_scenario_id =
+              scenarios.water_inflow_tmp_scenario_id)                                    AS water_inflows,
        (SELECT name
         FROM subscenarios_system_water_inflows_bt_hrz
         WHERE water_inflow_bt_hrz_scenario_id =
