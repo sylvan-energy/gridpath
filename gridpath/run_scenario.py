@@ -1432,27 +1432,14 @@ def solve(instance, parsed_arguments):
         # to load a solution from a solve that didn't produce one (e.g. an
         # infeasible problem), whereas we want to inspect the termination
         # condition and continue gracefully
+        # Note: HiGHS's default LP algorithm (dual simplex after presolve)
+        # can fail without a conclusive status (termination condition
+        # 'unknown' or 'error') on numerically challenging problems, e.g.
+        # those with very large objective coefficients such as GridPath's
+        # constraint-violation penalties; setting 'presolve, off' in the
+        # scenario's solver options makes HiGHS take a different (slower
+        # but more robust) solution path
         results = optimizer.solve(instance, load_solutions=False, **solve_kwargs)
-
-        # HiGHS's default LP algorithm (dual simplex after presolve) can
-        # fail without a conclusive status on numerically challenging
-        # problems, e.g. those with very large objective coefficients such
-        # as GridPath's constraint-violation penalties; retry once with
-        # presolve off, which takes a different (slower but more robust)
-        # solution path
-        if (
-            solver_name in ("highs", "appsi_highs")
-            and len(results.solution) == 0
-            and str(results.solver.termination_condition) in ("unknown", "error")
-        ):
-            warnings.warn(
-                f"HiGHS solve ended without a conclusive result (termination "
-                f"condition "
-                f"'{results.solver.termination_condition}'); retrying with "
-                f"presolve off."
-            )
-            optimizer.options["presolve"] = "off"
-            results = optimizer.solve(instance, load_solutions=False, **solve_kwargs)
 
         # Load the solution into the model instance if one was found
         if len(results.solution) > 0:
