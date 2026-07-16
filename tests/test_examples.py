@@ -48,6 +48,14 @@ WINDOWS = True if platform.system() == "Windows" else False
 PYTHON_VERSION = platform.python_version()
 
 
+# Relative tolerance for comparing objective function values: some example
+# objective function values are very large (1e14+ when constraint-violation
+# penalties are incurred), where floating-point differences across platforms
+# and Python versions exceed any fixed absolute tolerance (one ULP at 1e15
+# is ~0.125), so we also allow a relative difference
+OBJECTIVE_REL_TOL = 1e-9
+
+
 class TestExamples(unittest.TestCase):
     """ """
 
@@ -67,7 +75,10 @@ class TestExamples(unittest.TestCase):
             if isinstance(value, dict):
                 self.assertDictAlmostEqual(d1[key], d2[key], places=places, msg=msg)
             else:
-                self.assertAlmostEqual(d1[key], d2[key], places=places, msg=msg)
+                # Use the absolute tolerance implied by *places* or the
+                # relative tolerance, whichever is looser
+                delta = max(0.5 * 10**-places, OBJECTIVE_REL_TOL * abs(d1[key]))
+                self.assertAlmostEqual(d1[key], d2[key], delta=delta, msg=msg)
 
     def check_validation(self, test):
         """
@@ -180,15 +191,7 @@ class TestExamples(unittest.TestCase):
         df.at[scenario_name, "actual_objective"] = actual_objective
         df.to_csv(TEST_SCENARIOS_CSV, index=True)
 
-        if scenario_name == "test_new_solar_carbon_cap_dac":
-            # This test is particularly sensitive to platform and
-            # Python version, so we relax the precision of the test a bit
-            # more
-            places = -1
-        else:
-            places = 1
-
-        self.assertDictAlmostEqual(expected_objective, actual_objective, places=places)
+        self.assertDictAlmostEqual(expected_objective, actual_objective, places=1)
 
     @classmethod
     def setUpClass(cls):
@@ -1087,10 +1090,6 @@ class TestExamples(unittest.TestCase):
         """
         Check validation and objective function value of
         "test_new_solar_carbon_cap_dac" example.
-
-        Note that the same version of Cbc (v2.10.12) produces a slightly
-        different objective function for this problem on Windows/Linux than on
-        Mac as of Python v3.12.
         :return:
         """
         scenario_name = "test_new_solar_carbon_cap_dac"
