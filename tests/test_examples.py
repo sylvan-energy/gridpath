@@ -75,6 +75,13 @@ class TestExamples(unittest.TestCase):
             if isinstance(value, dict):
                 self.assertDictAlmostEqual(d1[key], d2[key], places=places, msg=msg)
             else:
+                # A None value means no objective function value was
+                # obtained, e.g. because the solve failed
+                self.assertIsNotNone(
+                    d2[key],
+                    msg=f"No objective function value for {key} (the solve "
+                    f"may have failed; expected {d1[key]})",
+                )
                 # Use the absolute tolerance implied by *places* or the
                 # relative tolerance, whichever is looser
                 delta = max(0.5 * 10**-places, OBJECTIVE_REL_TOL * abs(d1[key]))
@@ -1940,7 +1947,9 @@ def objective_values_to_float(objective):
     """
     if isinstance(objective, dict):
         return {k: objective_values_to_float(v) for k, v in objective.items()}
-    return float(objective)
+    # A failed solve produces a None objective value; keep it as None so
+    # that the objective-value comparison can report it
+    return None if objective is None else float(objective)
 
 
 def objective_function_overwrite(scenario_name, starting_objective):
