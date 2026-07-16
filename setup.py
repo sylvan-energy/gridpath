@@ -33,17 +33,18 @@ setup(
     long_description_content_type="text/markdown",
     url="https://www.gridpath.io",
     project_urls={
-        "Discussions": "https://github.com/blue-marble/gridpath/discussions",
+        "Discussions": "https://github.com/sylvan-energy/gridpath/discussions",
         "Documentation": "https://gridpath.readthedocs.io/en/latest/",
-        "Issues": "https://github.com/blue-marble/gridpath/issues",
-        "Source Code": "https://github.com/blue-marble/gridpath",
+        "Issues": "https://github.com/sylvan-energy/gridpath/issues",
+        "Source Code": "https://github.com/sylvan-energy/gridpath",
     },
-    maintainer="Blue Marble Analytics LLC",
-    maintainer_email="info@gridpath.io",
+    maintainer="Sylvan Energy Analytics LLC",
+    maintainer_email="info@sylvan.energy",
     license="Apache v2",
     platforms=["MacOS", "Windows", "Linux"],
     keywords=["energy", "electricity", "power", "renewables", "planning", "operations"],
     packages=find_packages(),
+    py_modules=["version"],  # so the DB metadata can record the version
     install_requires=[
         "Pyomo==6.9.4",  # Optimization modeling language
         "pandas==2.3.2",  # Data-processing
@@ -66,6 +67,7 @@ setup(
     include_package_data=True,
     entry_points={
         "console_scripts": [
+            "gridpath = gridpath.cli:main",
             "gridpath_run = gridpath.run_scenario:main",
             "gridpath_run_parallel = gridpath.run_scenario_parallel:main",
             "gridpath_run_e2e = gridpath.run_end_to_end:main",

@@ -1,6 +1,6 @@
-transmission_line,operational_type,tx_simple_loss_factor,losses_tuning_cost_per_mw,reactance_ohms
-Tx1,tx_simple_binary,,,
-Tx_new,tx_simple_binary,,,
-Tx2,tx_simple_binary,,,
-Tx3,tx_simple_binary,,,
-Tx2_new,tx_simple_binary,,,
+transmission_line,operational_type,tx_simple_loss_factor,losses_tuning_cost_per_mw,reactance_ohms,tx_curtailment_cost_scenario_id,tx_losses_factor_curtailment
+Tx1,tx_simple_binary,,,,,
+Tx_new,tx_simple_binary,,,,,
+Tx2,tx_simple_binary,,,,,
+Tx3,tx_simple_binary,,,,,
+Tx2_new,tx_simple_binary,,,,,

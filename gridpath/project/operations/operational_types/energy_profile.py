@@ -36,6 +36,10 @@ from gridpath.auxiliary.validations import (
     validate_idxs,
 )
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.common_functions import (
     check_if_first_timepoint,
     check_boundary_type,
@@ -122,7 +126,6 @@ def add_model_components(
 
     m.ENERGY_PROFILE_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -133,7 +136,6 @@ def add_model_components(
 
     m.ENERGY_PROFILE_OPR_PRDS = Set(
         dimen=2,
-        within=m.PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_PRDS",
@@ -231,10 +233,7 @@ def add_model_components(
                 Model will add  constraint to ensure project {} cannot provide 
                 upward reserves
                 """.format(g, g, g))
-            return (
-                sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
-                == 0
-            )
+            return headroom_provision_rule(d, mod, g, tmp) == 0
         else:
             return Constraint.Skip
 
@@ -259,10 +258,7 @@ def add_model_components(
                 projects.tab. Model will add constraint to ensure project {} 
                 cannot provide downward reserves.
                 """.format(g, g, g))
-            return (
-                sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
-                == 0
-            )
+            return footroom_provision_rule(d, mod, g, tmp) == 0
         else:
             return Constraint.Skip
 

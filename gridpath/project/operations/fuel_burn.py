@@ -36,7 +36,10 @@ from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
     subset_init_by_set_membership,
 )
-from gridpath.project.operations.common_functions import load_operational_type_modules
+from gridpath.project.operations.common_functions import (
+    load_operational_type_modules,
+    resolve_op_type_rules,
+)
 import gridpath.project.operations.operational_types as op_type_init
 
 
@@ -184,7 +187,6 @@ def add_model_components(
 
     m.FUEL_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.FUEL_PRJS
         ),
@@ -193,42 +195,24 @@ def add_model_components(
     m.FUEL_PRJS_FUEL_OPR_TMPS = Set(
         dimen=3,
         initialize=lambda mod: sorted(
-            list(
-                set(
-                    (g, f, tmp)
-                    for (g, tmp) in mod.FUEL_PRJ_OPR_TMPS
-                    for _g, f in mod.FUEL_PRJ_FUELS
-                    if g == _g
-                ),
-            )
+            (g, f, tmp)
+            for (g, tmp) in mod.FUEL_PRJ_OPR_TMPS
+            for f in mod.FUELS_BY_PRJ[g]
         ),
     )
 
     m.FUEL_PRJS_FUEL_GROUP_OPR_TMPS = Set(
         dimen=3,
-        initialize=lambda mod: sorted(
-            list(
-                set(
-                    (g, fg, tmp)
-                    for (g, tmp) in mod.FUEL_PRJ_OPR_TMPS
-                    for _g, fg, f in mod.FUEL_PRJ_FUELS_FUEL_GROUP
-                    if g == _g
-                ),
-            )
-        ),
+        initialize=fuel_prjs_fuel_group_opr_tmps_init,
     )
 
     m.HR_CURVE_PRJS_OPR_TMPS_SGMS = Set(
         dimen=3,
         initialize=lambda mod: sorted(
-            list(
-                set(
-                    (g, tmp, s)
-                    for (g, tmp) in mod.PRJ_OPR_TMPS
-                    for _g, p, s in mod.HR_CURVE_PRJS_PRDS_SGMS
-                    if g == _g and mod.period[tmp] == p
-                ),
-            )
+            (g, tmp, s)
+            for (g, p, s) in mod.HR_CURVE_PRJS_PRDS_SGMS
+            if p in mod.OPR_PRDS_BY_PRJ[g]
+            for tmp in mod.TMPS_IN_PRD[p]
         ),
     )
 
@@ -244,7 +228,6 @@ def add_model_components(
 
     m.STARTUP_FUEL_PRJ_OPR_TMPS = Set(
         dimen=2,
-        within=m.FUEL_PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="FUEL_PRJ_OPR_TMPS",
@@ -256,14 +239,9 @@ def add_model_components(
     m.STARTUP_FUEL_PRJS_FUEL_OPR_TMPS = Set(
         dimen=3,
         initialize=lambda mod: sorted(
-            list(
-                set(
-                    (g, f, tmp)
-                    for (g, tmp) in mod.STARTUP_FUEL_PRJ_OPR_TMPS
-                    for _g, f in mod.FUEL_PRJ_FUELS
-                    if g == _g
-                ),
-            )
+            (g, f, tmp)
+            for (g, tmp) in mod.STARTUP_FUEL_PRJ_OPR_TMPS
+            for f in mod.FUELS_BY_PRJ[g]
         ),
     )
 
@@ -296,18 +274,28 @@ def add_model_components(
     # Expressions
     ###########################################################################
 
+    # Resolve each op type's fuel rules once
+    fuel_burn_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "fuel_burn_rule", op_type_init
+    )
+    startup_fuel_burn_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "startup_fuel_burn_rule", op_type_init
+    )
+    fuel_contribution_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "fuel_contribution_rule", op_type_init
+    )
+    fuel_burn_by_ll_rule_by_op_type = resolve_op_type_rules(
+        imported_operational_modules, "fuel_burn_by_ll_rule", op_type_init
+    )
+
     def fuel_burn_rule(mod, prj, tmp):
         """
         Emissions from each project based on operational type
         (and whether a project burns fuel)
         """
-        op_type = mod.operational_type[prj]
-        if hasattr(imported_operational_modules[op_type], "fuel_burn_rule"):
-            fuel_burn_simple = imported_operational_modules[op_type].fuel_burn_rule(
-                mod, prj, tmp
-            )
-        else:
-            fuel_burn_simple = op_type_init.fuel_burn_rule(mod, prj, tmp)
+        fuel_burn_simple = fuel_burn_rule_by_op_type[mod.operational_type[prj]](
+            mod, prj, tmp
+        )
 
         return fuel_burn_simple + (
             mod.HR_Curve_Prj_Fuel_Burn[prj, tmp] if prj in mod.HR_CURVE_PRJS else 0
@@ -321,13 +309,9 @@ def add_model_components(
         they are zero for others. Get the appropriate expression for each
         generator based on its operational type.
         """
-        op_type = mod.operational_type[prj]
-        if hasattr(imported_operational_modules[op_type], "startup_fuel_burn_rule"):
-            return imported_operational_modules[op_type].startup_fuel_burn_rule(
-                mod, prj, tmp
-            )
-        else:
-            return op_type_init.startup_fuel_burn_rule(mod, prj, tmp)
+        return startup_fuel_burn_rule_by_op_type[mod.operational_type[prj]](
+            mod, prj, tmp
+        )
 
     m.Startup_Fuel_Burn_MMBtu = Expression(
         m.STARTUP_FUEL_PRJ_OPR_TMPS, rule=startup_fuel_burn_rule
@@ -355,15 +339,9 @@ def add_model_components(
         """
         Fuel contribution from each fuel project based on operational type.
         """
-        op_type = mod.operational_type[prj]
-        if hasattr(imported_operational_modules[op_type], "fuel_contribution_rule"):
-            fuel_contribution = imported_operational_modules[
-                op_type
-            ].fuel_contribution_rule(mod, prj, tmp)
-        else:
-            fuel_contribution = op_type_init.fuel_contribution_rule(mod, prj, tmp)
-
-        return fuel_contribution
+        return fuel_contribution_rule_by_op_type[mod.operational_type[prj]](
+            mod, prj, tmp
+        )
 
     m.Fuel_Contribution_FuelUnit = Expression(
         m.FUEL_PRJ_OPR_TMPS, rule=fuel_contribution_rule
@@ -379,8 +357,7 @@ def add_model_components(
         """
         return sum(
             mod.Project_Opr_Fuel_Burn_by_Fuel[g, f, tmp]
-            for (_g, _fg, f) in mod.FUEL_PRJ_FUELS_FUEL_GROUP
-            if f in mod.FUELS_BY_FUEL_GROUP[fg] and fg == _fg and g == _g
+            for f in _fuels_by_prj_fuel_group(mod).get((g, fg), ())
         )
 
     m.Opr_Fuel_Burn_by_Fuel_Group_MMBtu = Expression(
@@ -404,13 +381,9 @@ def add_model_components(
         are out rather than it being forced to run below minimum stable level
         at very inefficient operating points.
         """
-        gen_op_type = mod.operational_type[prj]
-        if hasattr(imported_operational_modules[gen_op_type], "fuel_burn_by_ll_rule"):
-            fuel_burn_by_ll = imported_operational_modules[
-                gen_op_type
-            ].fuel_burn_by_ll_rule(mod, prj, tmp, s)
-        else:
-            fuel_burn_by_ll = op_type_init.fuel_burn_by_ll_rule(mod, prj, tmp, s)
+        fuel_burn_by_ll = fuel_burn_by_ll_rule_by_op_type[mod.operational_type[prj]](
+            mod, prj, tmp, s
+        )
 
         return mod.HR_Curve_Prj_Fuel_Burn[prj, tmp] >= fuel_burn_by_ll
 
@@ -559,6 +532,42 @@ def add_model_components(
     m.Max_Fuel_Fraction_of_Blend_Contribution_Constraint = Constraint(
         m.FUEL_PRJS_FUEL_OPR_TMPS, rule=max_fraction_of_fuel_blend_contribution_rule
     )
+
+
+# Set and Expression Rule Helpers
+###############################################################################
+
+
+def fuel_prjs_fuel_group_opr_tmps_init(mod):
+    """
+    Fuel projects' fuel groups and the projects' operational timepoints.
+    """
+    fuel_groups_by_prj = {}
+    for g, fg, f in mod.FUEL_PRJ_FUELS_FUEL_GROUP:
+        fuel_groups_by_prj.setdefault(g, set()).add(fg)
+
+    return sorted(
+        (g, fg, tmp)
+        for (g, tmp) in mod.FUEL_PRJ_OPR_TMPS
+        for fg in fuel_groups_by_prj.get(g, ())
+    )
+
+
+def _fuels_by_prj_fuel_group(mod):
+    """
+    Map each (project, fuel group) to its fuels, resolved once per model
+    instance; the fuel-group fuel burn rule is called once per
+    project-fuel-group-timepoint.
+    """
+    fuels = getattr(mod, "_gridpath_fuels_by_prj_fuel_group", None)
+    if fuels is None:
+        fuels = {}
+        for g, fg, f in mod.FUEL_PRJ_FUELS_FUEL_GROUP:
+            if f in mod.FUELS_BY_FUEL_GROUP[fg]:
+                fuels.setdefault((g, fg), []).append(f)
+        mod._gridpath_fuels_by_prj_fuel_group = fuels
+
+    return fuels
 
 
 # Input-Output

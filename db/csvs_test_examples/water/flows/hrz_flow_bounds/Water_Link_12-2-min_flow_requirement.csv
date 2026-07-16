@@ -1,0 +1,3 @@
+﻿balancing_type,horizon,min_bt_hrz_flow_avg_vol_per_second,max_bt_hrz_flow_avg_vol_per_second,threshold_side_stream_avg_vol_per_second
+half_day,1,0.01,,
+half_day,2,0.01,,

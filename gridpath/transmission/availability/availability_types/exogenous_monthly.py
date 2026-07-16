@@ -37,6 +37,10 @@ from gridpath.auxiliary.validations import (
 )
 from gridpath.project.common_functions import determine_project_subset
 
+# The exogenous monthly derates are fixed input data, so the
+# availability derate is a constant in the model
+DERATE_IS_CONSTANT = True
+
 
 def add_model_components(
     m,

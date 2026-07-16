@@ -47,6 +47,7 @@ Settings
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import numpy as np
 import os.path
 import pandas as pd
@@ -67,7 +68,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
     parser.add_argument("-r", "--region", default="WECC")
@@ -107,6 +108,8 @@ def get_tx_opchar(
     df["tx_simple_loss_factor"] = tx_simple_loss_factor
     df["losses_tuning_cost_per_mw"] = losses_tuning_cost_per_mw
     df["reactance_ohms"] = None
+    df["tx_curtailment_cost_scenario_id"] = None
+    df["tx_losses_factor_curtailment"] = None
 
     df.to_csv(
         os.path.join(output_directory, f"{subscenario_id}_{subscenario_name}.csv"),

@@ -23,6 +23,7 @@ The main()_ function of this script can also be called with the
 
 import warnings
 from argparse import ArgumentParser
+import datetime
 import os.path
 import pandas as pd
 import sys
@@ -35,9 +36,14 @@ from gridpath.common_functions import (
     get_required_e2e_arguments_parser,
     get_temporal_structure_csv_overwrite_parser,
     get_import_results_parser,
+    get_version_parser,
     ensure_empty_string,
 )
-from db.common_functions import connect_to_database, spin_on_database_lock
+from db.common_functions import (
+    connect_to_database,
+    spin_on_database_lock,
+    update_db_last_modified,
+)
 from db.utilities.scenario import delete_scenario_results
 from gridpath.auxiliary.module_list import determine_modules, load_modules
 from gridpath.auxiliary.scenario_chars import (
@@ -228,11 +234,11 @@ def import_scenario_results_into_database(
                             import_objective_function_value(
                                 db=db,
                                 scenario_id=scenario_id,
-                                weather_iteration=weather_iteration_str,
-                                hydro_iteration=hydro_iteration_str,
+                                weather_iteration=weather_iteration,
+                                hydro_iteration=hydro_iteration,
                                 availability_iteration=availability_iteration,
-                                subproblem=subproblem_str,
-                                stage=stage_str,
+                                subproblem=subproblem,
+                                stage=stage,
                                 results_directory=results_directory,
                             )
                             import_subproblem_stage_results_into_database(
@@ -365,6 +371,7 @@ def parse_arguments(args):
             get_required_e2e_arguments_parser(),
             get_temporal_structure_csv_overwrite_parser(),
             get_import_results_parser(),
+            get_version_parser(),
         ],
     )
     parsed_arguments = parser.parse_known_args(args=args)[0]
@@ -396,7 +403,11 @@ def main(args=None):
     c = conn.cursor()
 
     if not parsed_arguments.quiet:
-        print("Importing results... (connected to database {})".format(db_path))
+        print(
+            "Importing results, started on {}... (connected to database {})".format(
+                datetime.datetime.now(), db_path
+            )
+        )
 
     scenario_id, scenario_name = get_scenario_id_and_name(
         scenario_id_arg=scenario_id_arg,
@@ -450,6 +461,8 @@ def main(args=None):
         ignore_incomplete=ignore_incomplete,
         quiet=quiet,
     )
+
+    update_db_last_modified(conn=conn, modification_type="results_import")
 
     # Close the database connection
     conn.commit()

@@ -27,12 +27,17 @@ the database, specify the scenario name with the *--scenario* flag and use the
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import os.path
 import pandas as pd
 import sys
 import warnings
 
-from db.common_functions import connect_to_database, spin_on_database_lock
+from db.common_functions import (
+    connect_to_database,
+    spin_on_database_lock,
+    update_db_last_modified,
+)
 from db.utilities.common_functions import confirm
 
 
@@ -44,7 +49,7 @@ def parse_arguments(args):
 
     Parse the known arguments.
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     # Database name and location options
     parser.add_argument(
@@ -425,6 +430,8 @@ def main(args=None):
                     load_scenario_from_df(
                         conn=conn, scenarios_df=csv_to_df, scenario_name=scenario
                     )
+
+    update_db_last_modified(conn=conn, modification_type="scenarios")
 
     conn.commit()
     conn.close()

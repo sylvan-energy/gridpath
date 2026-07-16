@@ -59,9 +59,12 @@ from gridpath.common_functions import (
     get_scenario_name_parser,
     get_required_e2e_arguments_parser,
     get_run_scenario_parser,
+    get_version_parser,
     create_logs_directory_if_not_exists,
     Logging,
     ensure_empty_string,
+    string_from_time,
+    append_to_timing_summary_file,
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
@@ -70,6 +73,51 @@ from gridpath.auxiliary.scaling import (
     propagate_scaled_solution,
     invert_scaled_solution_in_place,
 )
+
+
+def start_step(step, quiet):
+    """
+    :param step: name of the run-scenario step that is starting
+    :param quiet: boolean
+    :return: the step start time
+
+    Print the step name and start time, and return the start time so the
+    duration can be reported when the step finishes (see
+    *report_step_timing*).
+    """
+    step_start_time = datetime.datetime.now()
+    if not quiet:
+        print("{}, started on {}...".format(step, step_start_time))
+
+    return step_start_time
+
+
+def report_step_timing(step, step_start_time, quiet, timing_summary_file_path=None):
+    """
+    :param step: name of the run-scenario step that just finished
+    :param step_start_time: the step start time
+    :param quiet: boolean
+    :param timing_summary_file_path: the timing summary file path (None if
+        not logging)
+    :return:
+
+    Print the step end time and duration (indented under the step's own
+    starting print statement) and append the step's timing to the timing
+    summary file.
+    """
+    step_end_time = datetime.datetime.now()
+    if not quiet:
+        print(
+            "...'{}' finished on {} (duration {})".format(
+                step, step_end_time, step_end_time - step_start_time
+            )
+        )
+    append_to_timing_summary_file(
+        timing_summary_file_path,
+        "... {}: started on {}, finished on {}, duration {}".format(
+            step, step_start_time, step_end_time, step_end_time - step_start_time
+        ),
+    )
 
 
 def create_problem(
@@ -81,12 +129,15 @@ def create_problem(
     stage,
     multi_stage,
     parsed_arguments,
+    timing_summary_file_path=None,
 ):
     """
     :param scenario_directory: the main scenario directory
     :param subproblem: the horizon subproblem name
     :param stage: the stage subproblem name
     :param parsed_arguments: the user-defined script arguments
+    :param timing_summary_file_path: the timing summary file path (None if
+        not logging)
     :return: modules_to_use (list of module names used in scenario),
         loaded_modules (Python objects), dynamic_inputs (the populated
         dynamic components class), instance (the problem instance), results
@@ -124,8 +175,7 @@ def create_problem(
     )
 
     # Create the abstract model; some components are initialized here
-    if not parsed_arguments.quiet:
-        print("Building model...")
+    step_start_time = start_step(step="Building model", quiet=parsed_arguments.quiet)
     create_abstract_model(
         model,
         dynamic_components,
@@ -137,17 +187,24 @@ def create_problem(
         subproblem,
         stage,
     )
+    report_step_timing(
+        step="Building model",
+        step_start_time=step_start_time,
+        quiet=parsed_arguments.quiet,
+        timing_summary_file_path=timing_summary_file_path,
+    )
 
     if parsed_arguments.report_timing:
         report_timing()
 
-    # Create a dual suffix component
-    # TODO: maybe this shouldn't always be needed
-    model.dual = Suffix(direction=Suffix.IMPORT)
+    # Create a dual suffix component unless the user asked to skip duals;
+    # duals are imported for every constraint in the model, which adds
+    # significant memory and solution-load time
+    if not parsed_arguments.skip_duals:
+        model.dual = Suffix(direction=Suffix.IMPORT)
 
     # Load the scenario data
-    if not parsed_arguments.quiet:
-        print("Loading data...")
+    step_start_time = start_step(step="Loading data", quiet=parsed_arguments.quiet)
     scenario_data = load_scenario_data(
         model,
         dynamic_components,
@@ -159,10 +216,23 @@ def create_problem(
         subproblem,
         stage,
     )
+    report_step_timing(
+        step="Loading data",
+        step_start_time=step_start_time,
+        quiet=parsed_arguments.quiet,
+        timing_summary_file_path=timing_summary_file_path,
+    )
 
-    if not parsed_arguments.quiet:
-        print("Creating problem instance...")
+    step_start_time = start_step(
+        step="Creating problem instance", quiet=parsed_arguments.quiet
+    )
     instance = create_problem_instance(model, scenario_data)
+    report_step_timing(
+        step="Creating problem instance",
+        step_start_time=step_start_time,
+        quiet=parsed_arguments.quiet,
+        timing_summary_file_path=timing_summary_file_path,
+    )
 
     # Fix variables if modules request so
     instance = fix_variables(
@@ -180,18 +250,22 @@ def create_problem(
     return dynamic_components, instance
 
 
-def solve_problem(parsed_arguments, instance):
+def solve_problem(parsed_arguments, instance, timing_summary_file_path=None):
     # Solve
-    if not parsed_arguments.quiet:
-        print("Solving...")
-
     power_scale_factor = getattr(parsed_arguments, "power_scale_factor", 1.0)
     dollar_scale_factor = getattr(parsed_arguments, "dollar_scale_factor", 1.0)
 
     # No scaling requested: solve the instance directly (the default path -- no
     # suffix, no clone, no transformation).
     if power_scale_factor == 1.0 and dollar_scale_factor == 1.0:
+        step_start_time = start_step(step="Solving", quiet=parsed_arguments.quiet)
         results = solve(instance, parsed_arguments)
+        report_step_timing(
+            step="Solving",
+            step_start_time=step_start_time,
+            quiet=parsed_arguments.quiet,
+            timing_summary_file_path=timing_summary_file_path,
+        )
         return instance, results
 
     # Scaling requested: assign scaling factors on the instance, then either
@@ -212,14 +286,28 @@ def solve_problem(parsed_arguments, instance):
         # setup for large models), solve it, then restore native units on the
         # same instance.
         scaler.apply_to(instance, rename=False)
+        step_start_time = start_step(step="Solving", quiet=parsed_arguments.quiet)
         results = solve(instance, parsed_arguments)
+        report_step_timing(
+            step="Solving",
+            step_start_time=step_start_time,
+            quiet=parsed_arguments.quiet,
+            timing_summary_file_path=timing_summary_file_path,
+        )
         invert_scaled_solution_in_place(instance)
         return instance, results
 
     # out_of_place (default): solve a scaled clone, then map the solution
     # (variable values and duals) back onto the original native-unit instance.
     scaled_instance = scaler.create_using(instance)
+    step_start_time = start_step(step="Solving", quiet=parsed_arguments.quiet)
     results = solve(scaled_instance, parsed_arguments)
+    report_step_timing(
+        step="Solving",
+        step_start_time=step_start_time,
+        quiet=parsed_arguments.quiet,
+        timing_summary_file_path=timing_summary_file_path,
+    )
     # Use our own back-mapping rather than scaler.propagate_solution because the
     # latter raises if the solver left any constraint without a dual (which
     # happens, e.g. non-binding market limits under CBC); ours skips those, as
@@ -299,6 +387,10 @@ def run_optimization_for_subproblem_stage(
             gc.collect()
             return None  # Exit early without creating logger
 
+    # The step timing summary is written to its own file in the logs
+    # directory (i.e. only when logging), as the run progresses
+    timing_summary_file_path = None
+
     # If directed to do so, log optimization run (only if actually solving)
     if parsed_arguments.log:
         logs_directory = create_logs_directory_if_not_exists(
@@ -318,14 +410,25 @@ def run_optimization_for_subproblem_stage(
         # you assign to sys.stdout (in this case the Logging object). The
         # write method of Logging writes both to sys.stdout and a log file
         # (see auxiliary/auxiliary.py)
+        log_start_time = datetime.datetime.now()
         logger = Logging(
             logs_dir=logs_directory,
-            start_time=datetime.datetime.now(),
+            start_time=log_start_time,
             e2e=False,
             process_id=None,
         )
         sys.stdout = logger
         sys.stderr = logger
+
+        # The timing summary gets its own text file in the logs directory,
+        # named consistently with the run's log file
+        timing_summary_file_path = os.path.join(
+            logs_directory,
+            "opt_timing_summary_{}.txt".format(string_from_time(log_start_time)),
+        )
+        append_to_timing_summary_file(
+            timing_summary_file_path, "Optimization step timing summary:"
+        )
 
     if not skip_solve:
         # If directed, set temporary file directory to be the logs directory
@@ -399,6 +502,7 @@ def run_optimization_for_subproblem_stage(
                 stage=stage_directory,
                 multi_stage=multi_stage,
                 parsed_arguments=parsed_arguments,
+                timing_summary_file_path=timing_summary_file_path,
             )
 
             if parsed_arguments.create_lp_problem_file_only:
@@ -441,6 +545,7 @@ def run_optimization_for_subproblem_stage(
                 solved_instance, results = solve_problem(
                     parsed_arguments=parsed_arguments,
                     instance=instance,
+                    timing_summary_file_path=timing_summary_file_path,
                 )
 
         # Save the scenario results to disk
@@ -456,6 +561,7 @@ def run_optimization_for_subproblem_stage(
             results,
             dynamic_components,
             parsed_arguments,
+            timing_summary_file_path=timing_summary_file_path,
         )
 
         # If logging, we need to return sys.stdout to original (i.e. stop writing
@@ -926,6 +1032,7 @@ def save_results(
     results,
     dynamic_components,
     parsed_arguments,
+    timing_summary_file_path=None,
 ):
     """
     :param scenario_directory:
@@ -934,6 +1041,8 @@ def save_results(
     :param instance: model instance (solution loaded after solving by default)
     :param dynamic_components:
     :param parsed_arguments:
+    :param timing_summary_file_path: the timing summary file path (None if
+        not logging)
     :return:
 
     Create a results directory for the (sub)problem.
@@ -942,8 +1051,7 @@ def save_results(
     Save objective function value.
     Save constraint duals.
     """
-    if not parsed_arguments.quiet:
-        print("Saving results...")
+    step_start_time = start_step(step="Saving results", quiet=parsed_arguments.quiet)
 
     # TODO: how best to handle non-empty results directories?
     results_directory = os.path.join(
@@ -1052,22 +1160,30 @@ def save_results(
             instance=instance,
         )
 
-        save_duals(
-            scenario_directory=scenario_directory,
-            weather_iteration=weather_iteration,
-            hydro_iteration=hydro_iteration,
-            availability_iteration=availability_iteration,
-            subproblem=subproblem,
-            stage=stage,
-            multi_stage=multi_stage,
-            instance=instance,
-            dynamic_components=dynamic_components,
-            verbose=parsed_arguments.verbose,
-        )
+        if not parsed_arguments.skip_duals:
+            save_duals(
+                scenario_directory=scenario_directory,
+                weather_iteration=weather_iteration,
+                hydro_iteration=hydro_iteration,
+                availability_iteration=availability_iteration,
+                subproblem=subproblem,
+                stage=stage,
+                multi_stage=multi_stage,
+                instance=instance,
+                dynamic_components=dynamic_components,
+                verbose=parsed_arguments.verbose,
+            )
 
         # Force garbage collection to release file descriptors immediately
         # This prevents "too many open files" errors when processing many iterations
         gc.collect()
+
+        report_step_timing(
+            step="Saving results",
+            step_start_time=step_start_time,
+            quiet=parsed_arguments.quiet,
+            timing_summary_file_path=timing_summary_file_path,
+        )
     # If solver status is not ok, don't export results and print some
     # messages for the user
     else:
@@ -1633,6 +1749,7 @@ def parse_arguments(args):
             get_scenario_name_parser(),
             get_required_e2e_arguments_parser(),
             get_run_scenario_parser(),
+            get_version_parser(),
         ],
     )
 
@@ -1706,6 +1823,13 @@ def main(args=None):
     scenario_structure = get_scenario_structure_from_disk(
         scenario_directory=scenario_directory
     )
+
+    if not parsed_args.quiet:
+        print(
+            "Running scenario {}, started on {}...".format(
+                parsed_args.scenario, datetime.datetime.now()
+            )
+        )
 
     # Run the scenario (can be multiple optimization subproblems)
     expected_objective_values = run_scenario(
@@ -1830,17 +1954,19 @@ def load_cplex_xml_solution(
         if not var_id in ["ONE_VAR_CONSTANT", "x2"]:
             symbol_map.bySymbol[var_id].value = float(value)
 
-    # Constraints
-    for type_tag in root.findall("linearConstraints/constraint"):
-        constraint_id_w_extra_symbols, const_index, dual = (
-            type_tag.get("name"),
-            type_tag.get("index"),
-            type_tag.get("dual"),
-        )
-        if not constraint_id_w_extra_symbols == "c_e_ONE_VAR_CONSTANT":
-            # constraint_id = constraint_id_w_extra_symbols[4:-1]
-            constraint_id = constraint_id_w_extra_symbols
-            instance.dual[symbol_map.bySymbol[constraint_id]] = float(dual)
+    # Constraints (only if the instance was created with a dual suffix,
+    # i.e. not with --skip_duals)
+    if hasattr(instance, "dual"):
+        for type_tag in root.findall("linearConstraints/constraint"):
+            constraint_id_w_extra_symbols, const_index, dual = (
+                type_tag.get("name"),
+                type_tag.get("index"),
+                type_tag.get("dual"),
+            )
+            if not constraint_id_w_extra_symbols == "c_e_ONE_VAR_CONSTANT":
+                # constraint_id = constraint_id_w_extra_symbols[4:-1]
+                constraint_id = constraint_id_w_extra_symbols
+                instance.dual[symbol_map.bySymbol[constraint_id]] = float(dual)
 
     # Solver status
     header = root.findall("header")[0]  # Need a check that there is only one element
@@ -1886,11 +2012,13 @@ def load_gurobi_json_solution(
         if not var_id == "ONE_VAR_CONSTANT":
             symbol_map.bySymbol[var_id]().value = float(value)
 
-    # Constraints
-    for c in solution["Constrs"]:
-        constraint_id, dual = c["CTag"][0][4:], c["Pi"]
-        if not constraint_id == "ONE_VAR_CONSTAN":
-            instance.dual[symbol_map.bySymbol[constraint_id]()] = float(dual)
+    # Constraints (only if the instance was created with a dual suffix,
+    # i.e. not with --skip_duals)
+    if hasattr(instance, "dual"):
+        for c in solution["Constrs"]:
+            constraint_id, dual = c["CTag"][0][4:], c["Pi"]
+            if not constraint_id == "ONE_VAR_CONSTAN":
+                instance.dual[symbol_map.bySymbol[constraint_id]()] = float(dual)
 
     # Solver status
     # TODO: what are the types
@@ -1976,9 +2104,11 @@ def load_highs_xml_solution(
                     symbol_map.bySymbol[var_id].value = float(value)
 
         # Parse constraint dual values (c_ constraints only) from dual rows
+        # (only if the instance was created with a dual suffix, i.e. not
+        # with --skip_duals)
         elif section == "dual_rows":
             parts = line.split()
-            if len(parts) == 2:
+            if len(parts) == 2 and hasattr(instance, "dual"):
                 constraint_id, dual = parts[0], parts[1]
                 if (
                     constraint_id.startswith("c_")

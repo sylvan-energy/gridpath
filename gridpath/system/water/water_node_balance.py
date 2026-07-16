@@ -74,7 +74,7 @@ def add_model_components(
         based on the departure timepoint). These flows have the
         "tmp_outside_horizon" index for the arrival timepoint.
         """
-        if [wl for wl in mod.WATER_LINKS_FROM_BY_WATER_NODE[wn]]:
+        if len(mod.WATER_LINKS_FROM_BY_WATER_NODE[wn]) > 0:
             # For nodes with reservoirs, set to reservoir release
             if wn in mod.WATER_NODES_W_RESERVOIRS:
                 return (
@@ -174,7 +174,7 @@ def export_results(
                 if wn in m.WATER_NODES_W_RESERVOIRS
                 else None
             ),
-            m.exogenous_water_inflow_rate_vol_per_sec[wn, tmp],
+            m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp],
             value(m.Endogenous_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]),
             value(m.Gross_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]),
             value(
@@ -188,9 +188,12 @@ def export_results(
                 else None
             ),
             (
-                value(m.Evaporative_Losses[wn, tmp])
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
+                # # TODO: implement the correct evaporative-loss calculation;
+                # #  depends on area, which depends on elevation
+                # m.evaporation_coefficient[wn]
+                # if wn in m.WATER_NODES_W_RESERVOIRS
+                # else None
+                None
             ),
             value(m.Gross_Water_Node_Outflow_Rate_Vol_per_Sec[wn, tmp]),
         ]

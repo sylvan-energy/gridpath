@@ -384,6 +384,18 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro_w_balancing_types"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_stor_stress_hrz(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_stor_stress_hrz" example. A stor_stress_hrz storage
+        project builds up its state of charge over the first
+        (average-condition) horizon and enters the second (stress) horizon,
+        which has higher load, with the accumulated energy.
+        :return:
+        """
+        scenario_name = "2horizons_w_stor_stress_hrz"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods(self):
         """
         Check validation and objective function value of "2periods" example
@@ -445,6 +457,25 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_2zones_transmission_w_losses"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_2zones_transmission_w_losses_curtailment_cost(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_transmission_w_losses_curtailment_cost"
+        example, in which a curtailment cost is applied to transmission
+        losses
+
+        Note: the objective function should differ from that of
+        2periods_new_build_2zones_transmission_w_losses by exactly the total
+        transmission curtailment cost
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_transmission_w_losses_curtailment_cost"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_2zones_transmission_w_losses_opp_dir(self):
         """
         Check validation and objective function value of
@@ -464,6 +495,16 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "2periods_new_build_rps"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_rps_w_tx_losses(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_rps_w_tx_losses" example, in which transmission
+        losses count against the period energy target
+        :return:
+        """
+        scenario_name = "2periods_new_build_rps_w_tx_losses"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_2periods_new_build_rps_percent_target(self):
@@ -1618,6 +1659,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_generic_policy"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_generic_policy_w_tx_losses(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_generic_policy_w_tx_losses" example, in which
+        transmission losses count against the policy requirement via the
+        tx_losses compliance type
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_w_tx_losses"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_open_data(self):
         """
         Check validation and objective function value of "open_data" example
@@ -1654,6 +1706,53 @@ class TestExamples(unittest.TestCase):
     def test_hydro_system_exog_elev_w_gen_ramp_limits(self):
         """ """
         scenario_name = "hydro_system_exog_elev_w_gen_ramp_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_binding_tmp_flow_max(self):
+        """
+        Check that per-timepoint max water flow bounds are enforced: peak-hour
+        flow caps on the water links limit hydro power output below the load
+        level, resulting in unserved energy.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_flow_and_volume_violations(self):
+        """
+        Check water system violation penalties: a horizon min flow
+        requirement, a reservoir target release, and a reservoir minimum
+        volume are all set above achievable levels with violations allowed,
+        so their respective penalty costs must show up in the objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_flow_and_volume_violations"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_bt_hrz_inflows(self):
+        """
+        Check horizon-level average exogenous water inflows: same as
+        hydro_system_exog_elev, but with part of each node's inflow moved
+        from the timepoint-level inputs to horizon-level average inputs
+        (spread across the horizon's timepoints, additive with the
+        timepoint-level inflows). The totals are unchanged, so this
+        scenario must reproduce the hydro_system_exog_elev objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_bt_hrz_inflows"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_hrz_only_inflows(self):
+        """
+        Check that the timepoint-level inflow inputs can be skipped
+        entirely: same as hydro_system_exog_elev, but with all inflows
+        specified as horizon-level averages (no water_inflows.tab is
+        written for this scenario). The base inflows are constant within
+        the day, so the totals are unchanged and this scenario must
+        reproduce the hydro_system_exog_elev objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_hrz_only_inflows"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_dsm_examples(self):

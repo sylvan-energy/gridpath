@@ -45,6 +45,10 @@ from gridpath.auxiliary.auxiliary import (
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.common_functions import (
     check_if_first_timepoint,
     check_boundary_type,
@@ -81,7 +85,6 @@ def add_model_components(
 
     m.GEN_HYDRO_WATER_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -190,6 +193,71 @@ def add_model_components(
         m.GEN_HYDRO_WATER_BT_HRZ_W_TOTAL_RAMP_DOWN_LIMITS, within=NonNegativeReals
     )
 
+    # Index the ramp components only where ramp limit data exist: every
+    # index of a Var/Constraint costs rule-call time and per-object memory
+    # even if the component can never bind there
+
+    def bt_hrz_ramp_up_limit_prj_opr_tmps_init(mod):
+        prj_tmps = []
+        seen = set()
+        for prj, bt, hrz in mod.GEN_HYDRO_WATER_BT_HRZ_W_BT_HRZ_RAMP_UP_RATE_LIMITS:
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+                if (prj, tmp) not in seen and (
+                    prj,
+                    tmp,
+                ) in mod.GEN_HYDRO_WATER_OPR_TMPS:
+                    seen.add((prj, tmp))
+                    prj_tmps.append((prj, tmp))
+
+        return prj_tmps
+
+    m.GEN_HYDRO_WATER_BT_HRZ_RAMP_UP_LIMIT_PRJ_OPR_TMPS = Set(
+        dimen=2, initialize=bt_hrz_ramp_up_limit_prj_opr_tmps_init
+    )
+
+    def bt_hrz_ramp_down_limit_prj_opr_tmps_init(mod):
+        prj_tmps = []
+        seen = set()
+        for prj, bt, hrz in mod.GEN_HYDRO_WATER_BT_HRZ_W_BT_HRZ_RAMP_DOWN_RATE_LIMITS:
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+                if (prj, tmp) not in seen and (
+                    prj,
+                    tmp,
+                ) in mod.GEN_HYDRO_WATER_OPR_TMPS:
+                    seen.add((prj, tmp))
+                    prj_tmps.append((prj, tmp))
+
+        return prj_tmps
+
+    m.GEN_HYDRO_WATER_BT_HRZ_RAMP_DOWN_LIMIT_PRJ_OPR_TMPS = Set(
+        dimen=2, initialize=bt_hrz_ramp_down_limit_prj_opr_tmps_init
+    )
+
+    def total_ramp_up_limit_prj_opr_tmps_init(mod):
+        prjs = {
+            prj for (prj, bt, hrz) in mod.GEN_HYDRO_WATER_BT_HRZ_W_TOTAL_RAMP_UP_LIMITS
+        }
+        return [
+            (prj, tmp) for (prj, tmp) in mod.GEN_HYDRO_WATER_OPR_TMPS if prj in prjs
+        ]
+
+    m.GEN_HYDRO_WATER_TOTAL_RAMP_UP_LIMIT_PRJ_OPR_TMPS = Set(
+        dimen=2, initialize=total_ramp_up_limit_prj_opr_tmps_init
+    )
+
+    def total_ramp_down_limit_prj_opr_tmps_init(mod):
+        prjs = {
+            prj
+            for (prj, bt, hrz) in mod.GEN_HYDRO_WATER_BT_HRZ_W_TOTAL_RAMP_DOWN_LIMITS
+        }
+        return [
+            (prj, tmp) for (prj, tmp) in mod.GEN_HYDRO_WATER_OPR_TMPS if prj in prjs
+        ]
+
+    m.GEN_HYDRO_WATER_TOTAL_RAMP_DOWN_LIMIT_PRJ_OPR_TMPS = Set(
+        dimen=2, initialize=total_ramp_down_limit_prj_opr_tmps_init
+    )
+
     # Linked Params
     ###########################################################################
 
@@ -213,27 +281,29 @@ def add_model_components(
     m.GenHydroWater_Power_MW = Var(m.GEN_HYDRO_WATER_OPR_TMPS, within=Reals)
 
     m.GenHydroWater_Ramp_Up_MW = Var(
-        m.GEN_HYDRO_WATER_OPR_TMPS,
+        m.GEN_HYDRO_WATER_TOTAL_RAMP_UP_LIMIT_PRJ_OPR_TMPS,
         within=NonNegativeReals,
         initialize=0,
     )
 
     m.GenHydroWater_Ramp_Down_MW = Var(
-        m.GEN_HYDRO_WATER_OPR_TMPS, within=NonNegativeReals, initialize=0
+        m.GEN_HYDRO_WATER_TOTAL_RAMP_DOWN_LIMIT_PRJ_OPR_TMPS,
+        within=NonNegativeReals,
+        initialize=0,
     )
 
     # Expressions
     ###########################################################################
 
     def upwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
+        return headroom_provision_rule(d, mod, g, tmp)
 
     m.GenHydroWater_Upwards_Reserves_MW = Expression(
         m.GEN_HYDRO_WATER_OPR_TMPS, rule=upwards_reserve_rule
     )
 
     def downwards_reserve_rule(mod, g, tmp):
-        return sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
+        return footroom_provision_rule(d, mod, g, tmp)
 
     m.GenHydroWater_Downwards_Reserves_MW = Expression(
         m.GEN_HYDRO_WATER_OPR_TMPS, rule=downwards_reserve_rule
@@ -262,20 +332,23 @@ def add_model_components(
     )
 
     m.GenHydroWater_Ramp_Up_Variable_Constraint = Constraint(
-        m.GEN_HYDRO_WATER_OPR_TMPS,
+        m.GEN_HYDRO_WATER_TOTAL_RAMP_UP_LIMIT_PRJ_OPR_TMPS,
         rule=ramp_up_variable_constraint_rule,
     )
 
     m.GenHydroWater_Ramp_Down_Variable_Constraint = Constraint(
-        m.GEN_HYDRO_WATER_OPR_TMPS, rule=ramp_down_variable_constraint_rule
+        m.GEN_HYDRO_WATER_TOTAL_RAMP_DOWN_LIMIT_PRJ_OPR_TMPS,
+        rule=ramp_down_variable_constraint_rule,
     )
 
     m.GenHydroWater_BT_Hrz_Ramp_Up_Rate_Constraint = Constraint(
-        m.GEN_HYDRO_WATER_OPR_TMPS, rule=enforce_bt_hrz_ramp_up_rate_constraint_rule
+        m.GEN_HYDRO_WATER_BT_HRZ_RAMP_UP_LIMIT_PRJ_OPR_TMPS,
+        rule=enforce_bt_hrz_ramp_up_rate_constraint_rule,
     )
 
     m.GenHydroWater_BT_Hrz_Ramp_Down_Rate_Constraint = Constraint(
-        m.GEN_HYDRO_WATER_OPR_TMPS, rule=enforce_bt_hrz_ramp_down_rate_constraint_rule
+        m.GEN_HYDRO_WATER_BT_HRZ_RAMP_DOWN_LIMIT_PRJ_OPR_TMPS,
+        rule=enforce_bt_hrz_ramp_down_rate_constraint_rule,
     )
 
     m.GenHydroWater_Total_Ramp_Up_Constraint = Constraint(
@@ -344,10 +417,11 @@ def enforce_ramp_up_constraint_rule(mod, g, tmp):
     take place during the duration of the first timepoint, and the
     ramp rate limit is adjusted for the duration of the first timepoint.
     """
+    balancing_type = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linear",
     ):
         return Constraint.Skip
@@ -355,7 +429,7 @@ def enforce_ramp_up_constraint_rule(mod, g, tmp):
         if check_if_boundary_type_and_first_timepoint(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=balancing_type,
             boundary_type="linked",
         ):
             prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
@@ -364,18 +438,16 @@ def enforce_ramp_up_constraint_rule(mod, g, tmp):
                 g, 0
             ]
         else:
-            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
-                mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
-            prev_tmp_power = mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            prev_tmp = mod.prev_tmp[tmp, balancing_type]
+            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[prev_tmp]
+            prev_tmp_power = mod.GenHydroWater_Power_MW[g, prev_tmp]
             prev_tmp_downwards_reserves = mod.GenHydroWater_Downwards_Reserves_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
+                g, prev_tmp
             ]
         # If you can ramp up the total project's capacity within the
         # previous timepoint, skip the constraint (it won't bind)
-        if mod.gen_hydro_water_ramp_up_when_on_rate[g] * 60 * prev_tmp_hrs_in_tmp >= 1:
+        ramp_up_rate = mod.gen_hydro_water_ramp_up_when_on_rate[g]
+        if ramp_up_rate * 60 * prev_tmp_hrs_in_tmp >= 1:
             return Constraint.Skip
         else:
             return (
@@ -383,9 +455,7 @@ def enforce_ramp_up_constraint_rule(mod, g, tmp):
                 + mod.GenHydroWater_Upwards_Reserves_MW[g, tmp]
             ) - (
                 prev_tmp_power - prev_tmp_downwards_reserves
-            ) <= mod.gen_hydro_water_ramp_up_when_on_rate[
-                g
-            ] * 60 * prev_tmp_hrs_in_tmp * mod.Capacity_MW[
+            ) <= ramp_up_rate * 60 * prev_tmp_hrs_in_tmp * mod.Capacity_MW[
                 g, mod.period[tmp]
             ] * mod.Availability_Derate[
                 g, tmp
@@ -394,10 +464,15 @@ def enforce_ramp_up_constraint_rule(mod, g, tmp):
 
 def enforce_bt_hrz_ramp_up_rate_constraint_rule(mod, g, tmp):
     """ """
+    # Check the skip conditions before doing any other work: no constraint
+    # for timepoints without a specified limit (the default is infinity)
+    if mod.gen_hydro_water_bt_hrz_ramp_up_limit_mw_per_tmp[g, tmp] == float("inf"):
+        return Constraint.Skip
+    balancing_type = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linear",
     ):
         return Constraint.Skip
@@ -405,7 +480,7 @@ def enforce_bt_hrz_ramp_up_rate_constraint_rule(mod, g, tmp):
         if check_if_boundary_type_and_first_timepoint(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=balancing_type,
             boundary_type="linked",
         ):
             raise UserWarning(
@@ -413,32 +488,33 @@ def enforce_bt_hrz_ramp_up_rate_constraint_rule(mod, g, tmp):
                 "implemented for gen_hydro_water"
             )
         else:
-            prev_tmp_power = mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            prev_tmp = mod.prev_tmp[tmp, balancing_type]
+            prev_tmp_power = mod.GenHydroWater_Power_MW[g, prev_tmp]
             prev_tmp_downwards_reserves = mod.GenHydroWater_Downwards_Reserves_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
+                g, prev_tmp
             ]
 
-        if mod.gen_hydro_water_bt_hrz_ramp_up_limit_mw_per_tmp[g, tmp] == float("inf"):
-            return Constraint.Skip
-        else:
-            return (
-                mod.GenHydroWater_Power_MW[g, tmp]
-                + mod.GenHydroWater_Upwards_Reserves_MW[g, tmp]
-            ) - (
-                prev_tmp_power - prev_tmp_downwards_reserves
-            ) <= mod.gen_hydro_water_bt_hrz_ramp_up_limit_mw_per_tmp[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+        return (
+            mod.GenHydroWater_Power_MW[g, tmp]
+            + mod.GenHydroWater_Upwards_Reserves_MW[g, tmp]
+        ) - (
+            prev_tmp_power - prev_tmp_downwards_reserves
+        ) <= mod.gen_hydro_water_bt_hrz_ramp_up_limit_mw_per_tmp[
+            g, prev_tmp
+        ]
 
 
 def enforce_bt_hrz_ramp_down_rate_constraint_rule(mod, g, tmp):
     """ """
+    # Check the skip conditions before doing any other work: no constraint
+    # for timepoints without a specified limit (the default is infinity)
+    if mod.gen_hydro_water_bt_hrz_ramp_down_limit_mw_per_tmp[g, tmp] == float("inf"):
+        return Constraint.Skip
+    balancing_type = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linear",
     ):
         return Constraint.Skip
@@ -446,7 +522,7 @@ def enforce_bt_hrz_ramp_down_rate_constraint_rule(mod, g, tmp):
         if check_if_boundary_type_and_first_timepoint(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=balancing_type,
             boundary_type="linked",
         ):
             raise UserWarning(
@@ -454,24 +530,16 @@ def enforce_bt_hrz_ramp_down_rate_constraint_rule(mod, g, tmp):
                 "implemented for gen_hydro_water"
             )
         else:
-            prev_tmp_power = mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            prev_tmp = mod.prev_tmp[tmp, balancing_type]
+            prev_tmp_power = mod.GenHydroWater_Power_MW[g, prev_tmp]
             prev_tmp_upwards_reserves = mod.GenHydroWater_Upwards_Reserves_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
+                g, prev_tmp
             ]
 
-        if mod.gen_hydro_water_bt_hrz_ramp_down_limit_mw_per_tmp[g, tmp] == float(
-            "inf"
-        ):
-            return Constraint.Skip
-        else:
-            return (prev_tmp_power + prev_tmp_upwards_reserves) - (
-                mod.GenHydroWater_Power_MW[g, tmp]
-                - mod.GenHydroWater_Downwards_Reserves_MW[g, tmp]
-            ) <= mod.gen_hydro_water_bt_hrz_ramp_down_limit_mw_per_tmp[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+        return (prev_tmp_power + prev_tmp_upwards_reserves) - (
+            mod.GenHydroWater_Power_MW[g, tmp]
+            - mod.GenHydroWater_Downwards_Reserves_MW[g, tmp]
+        ) <= mod.gen_hydro_water_bt_hrz_ramp_down_limit_mw_per_tmp[g, prev_tmp]
 
 
 def enforce_ramp_down_constraint_rule(mod, g, tmp):
@@ -488,10 +556,11 @@ def enforce_ramp_down_constraint_rule(mod, g, tmp):
     take place during the duration of the first timepoint, and the
     ramp rate limit is adjusted for the duration of the first timepoint.
     """
+    balancing_type = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linear",
     ):
         return Constraint.Skip
@@ -499,7 +568,7 @@ def enforce_ramp_down_constraint_rule(mod, g, tmp):
         if check_if_boundary_type_and_first_timepoint(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=balancing_type,
             boundary_type="linked",
         ):
             prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
@@ -508,21 +577,16 @@ def enforce_ramp_down_constraint_rule(mod, g, tmp):
                 g, 0
             ]
         else:
-            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
-                mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
-            prev_tmp_power = mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            prev_tmp = mod.prev_tmp[tmp, balancing_type]
+            prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[prev_tmp]
+            prev_tmp_power = mod.GenHydroWater_Power_MW[g, prev_tmp]
             prev_tmp_upwards_reserves = mod.GenHydroWater_Upwards_Reserves_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
+                g, prev_tmp
             ]
         # If you can ramp down the total project's capacity within the
         # previous timepoint, skip the constraint (it won't bind)
-        if (
-            mod.gen_hydro_water_ramp_down_when_on_rate[g] * 60 * prev_tmp_hrs_in_tmp
-            >= 1
-        ):
+        ramp_down_rate = mod.gen_hydro_water_ramp_down_when_on_rate[g]
+        if ramp_down_rate * 60 * prev_tmp_hrs_in_tmp >= 1:
             return Constraint.Skip
         else:
             return (
@@ -530,9 +594,7 @@ def enforce_ramp_down_constraint_rule(mod, g, tmp):
                 - mod.GenHydroWater_Downwards_Reserves_MW[g, tmp]
             ) - (
                 prev_tmp_power + prev_tmp_upwards_reserves
-            ) >= -mod.gen_hydro_water_ramp_down_when_on_rate[
-                g
-            ] * 60 * prev_tmp_hrs_in_tmp * mod.Capacity_MW[
+            ) >= -ramp_down_rate * 60 * prev_tmp_hrs_in_tmp * mod.Capacity_MW[
                 g, mod.period[tmp]
             ] * mod.Availability_Derate[
                 g, tmp
@@ -541,17 +603,18 @@ def enforce_ramp_down_constraint_rule(mod, g, tmp):
 
 def ramp_up_variable_constraint_rule(mod, g, tmp):
     """ """
+    balancing_type = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linear",
     ):
         return Constraint.Skip
     elif check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linked",
     ):
         # TODO: not implemented
@@ -562,25 +625,24 @@ def ramp_up_variable_constraint_rule(mod, g, tmp):
         return (
             mod.GenHydroWater_Ramp_Up_MW[g, tmp]
             >= mod.GenHydroWater_Power_MW[g, tmp]
-            - mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            - mod.GenHydroWater_Power_MW[g, mod.prev_tmp[tmp, balancing_type]]
         )
 
 
 def ramp_down_variable_constraint_rule(mod, g, tmp):
     """ """
+    balancing_type = mod.balancing_type_project[g]
     if check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linear",
     ):
         return Constraint.Skip
     elif check_if_boundary_type_and_first_timepoint(
         mod=mod,
         tmp=tmp,
-        balancing_type=mod.balancing_type_project[g],
+        balancing_type=balancing_type,
         boundary_type="linked",
     ):
         # TODO: not implemented
@@ -590,9 +652,7 @@ def ramp_down_variable_constraint_rule(mod, g, tmp):
     else:
         return (
             mod.GenHydroWater_Ramp_Down_MW[g, tmp]
-            >= mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            >= mod.GenHydroWater_Power_MW[g, mod.prev_tmp[tmp, balancing_type]]
             - mod.GenHydroWater_Power_MW[g, tmp]
         )
 
@@ -658,19 +718,18 @@ def power_delta_rule(mod, g, tmp):
     This rule is only used in tuning costs, so fine to skip for linked
     horizon's first timepoint.
     """
-    if check_if_first_timepoint(
-        mod=mod, tmp=tmp, balancing_type=mod.balancing_type_project[g]
-    ) and (
+    balancing_type = mod.balancing_type_project[g]
+    if check_if_first_timepoint(mod=mod, tmp=tmp, balancing_type=balancing_type) and (
         check_boundary_type(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=balancing_type,
             boundary_type="linear",
         )
         or check_boundary_type(
             mod=mod,
             tmp=tmp,
-            balancing_type=mod.balancing_type_project[g],
+            balancing_type=balancing_type,
             boundary_type="linked",
         )
     ):
@@ -678,9 +737,7 @@ def power_delta_rule(mod, g, tmp):
     else:
         return (
             mod.GenHydroWater_Power_MW[g, tmp]
-            - mod.GenHydroWater_Power_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
+            - mod.GenHydroWater_Power_MW[g, mod.prev_tmp[tmp, balancing_type]]
         )
 
 

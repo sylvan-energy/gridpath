@@ -23,7 +23,7 @@ import os.path
 from pyomo.environ import Set, Param, Reals, NonNegativeReals, Expression, value, Any
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 
 from gridpath.system.policy.generic_policy import POLICY_ZONE_PRD_DF, POLICY_MH_DF
 
@@ -520,9 +520,7 @@ def export_results(
             data=data,
         )
 
-        for c in results_columns:
-            getattr(d, POLICY_ZONE_PRD_DF)[c] = None
-        getattr(d, POLICY_ZONE_PRD_DF).update(results_df)
+        update_results_df(getattr(d, POLICY_ZONE_PRD_DF), results_df)
 
     if m.POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ:
         results_columns = ["policy_month_hour_requirement"]
@@ -541,6 +539,4 @@ def export_results(
             results_columns=results_columns,
             data=data,
         )
-        for c in results_columns:
-            getattr(d, POLICY_MH_DF)[c] = None
-        getattr(d, POLICY_MH_DF).update(results_df)
+        update_results_df(getattr(d, POLICY_MH_DF), results_df)

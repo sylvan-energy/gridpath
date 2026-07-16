@@ -21,7 +21,7 @@ stor operational type) in order to force smoother dispatch.
 
 import csv
 import os.path
-from pyomo.environ import Param, Var, Expression, Constraint, NonNegativeReals
+from pyomo.environ import Param, Set, Var, Expression, Constraint, NonNegativeReals
 
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
 from gridpath.auxiliary.db_interface import directories_to_db_values
@@ -114,28 +114,69 @@ def add_model_components(
         required_operational_modules
     )
 
+    # Sets
+    ###########################################################################
+
+    # The tuning cost components are only needed for projects with a
+    # nonzero ramp tuning cost, so define them over those projects'
+    # operational timepoints only, not all of PRJ_OPR_TMPS
+    m.TUNING_COST_PRJ_OPR_TMPS = Set(
+        dimen=2,
+        initialize=tuning_cost_prj_opr_tmps_init,
+    )
+
     # Expressions
     ###########################################################################
 
-    def ramp_rule(mod, g, tmp):
-        gen_op_type = mod.operational_type[g]
-        return imported_operational_modules[gen_op_type].power_delta_rule(mod, g, tmp)
+    # Resolve each op type's power delta rule once, not per index
+    power_delta_rule_by_op_type = {
+        op_m: imported_operational_modules[op_m].power_delta_rule
+        for op_m in required_operational_modules
+    }
 
-    m.Ramp_Expression = Expression(m.PRJ_OPR_TMPS, rule=ramp_rule)
+    def ramp_rule(mod, g, tmp):
+        return power_delta_rule_by_op_type[mod.operational_type[g]](mod, g, tmp)
+
+    m.Ramp_Expression = Expression(m.TUNING_COST_PRJ_OPR_TMPS, rule=ramp_rule)
 
     # Variables
     ###########################################################################
 
-    m.Ramp_Up_Tuning_Cost = Var(m.PRJ_OPR_TMPS, within=NonNegativeReals)
+    m.Ramp_Up_Tuning_Cost = Var(m.TUNING_COST_PRJ_OPR_TMPS, within=NonNegativeReals)
 
-    m.Ramp_Down_Tuning_Cost = Var(m.PRJ_OPR_TMPS, within=NonNegativeReals)
+    m.Ramp_Down_Tuning_Cost = Var(m.TUNING_COST_PRJ_OPR_TMPS, within=NonNegativeReals)
 
     # Constraints
     ###########################################################################
 
-    m.Ramp_Up_Tuning_Cost_Constraint = Constraint(m.PRJ_OPR_TMPS, rule=ramp_up_rule)
+    m.Ramp_Up_Tuning_Cost_Constraint = Constraint(
+        m.TUNING_COST_PRJ_OPR_TMPS, rule=ramp_up_rule
+    )
 
-    m.Ramp_Down_Tuning_Cost_Constraint = Constraint(m.PRJ_OPR_TMPS, rule=ramp_down_rule)
+    m.Ramp_Down_Tuning_Cost_Constraint = Constraint(
+        m.TUNING_COST_PRJ_OPR_TMPS, rule=ramp_down_rule
+    )
+
+
+# Set Rules
+###############################################################################
+
+
+def tuning_cost_prj_opr_tmps_init(mod):
+    """
+    Projects with a nonzero ramp tuning cost and their operational
+    timepoints (mirrors how PRJ_OPR_TMPS is constructed).
+    """
+    tuning_cost_prjs = [
+        prj for prj in mod.PROJECTS if mod.ramp_tuning_cost_per_mw[prj] != 0
+    ]
+
+    return [
+        (prj, tmp)
+        for prj in tuning_cost_prjs
+        for prd in mod.OPR_PRDS_BY_PRJ[prj]
+        for tmp in mod.TMPS_IN_PRD[prd]
+    ]
 
 
 # Constraint Rules

@@ -1,0 +1,3 @@
+Higher RPS target (400,000 MWh/period) so that the target binds in the
+2periods_new_build_rps_w_tx_losses example and transmission losses counted
+against the target affect the solution.

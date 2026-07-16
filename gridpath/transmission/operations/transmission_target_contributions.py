@@ -38,7 +38,7 @@ from gridpath.auxiliary.db_interface import (
     directories_to_db_values,
 )
 from gridpath.auxiliary.validations import write_validation_to_database, validate_idxs
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission import TX_TIMEPOINT_DF
 
 
@@ -108,7 +108,6 @@ def add_model_components(
     m.TRANSMISSION_TARGET_TX_LINES = Set(within=m.TX_LINES)
 
     m.TRANSMISSION_TARGET_TX_OPR_TMPS = Set(
-        within=m.TX_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="TX_OPR_TMPS",
@@ -330,9 +329,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_TIMEPOINT_DF)[c] = None
-    getattr(d, TX_TIMEPOINT_DF).update(results_df)
+    update_results_df(getattr(d, TX_TIMEPOINT_DF), results_df)
 
 
 # Database

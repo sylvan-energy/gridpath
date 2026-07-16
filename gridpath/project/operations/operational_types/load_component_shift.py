@@ -44,6 +44,10 @@ from gridpath.auxiliary.validations import (
     validate_idxs,
 )
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.common_functions import (
     check_if_first_timepoint,
     check_boundary_type,
@@ -116,7 +120,6 @@ def add_model_components(
 
     m.LOAD_COMPONENT_SHIFT_PRJS_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -127,7 +130,6 @@ def add_model_components(
 
     # Derived sets
     m.LOAD_COMPONENT_SHIFT_PRJS_OPR_PRDS = Set(
-        within=m.PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_PRDS",
@@ -187,27 +189,46 @@ def add_model_components(
         m.LOAD_COMPONENT_SHIFT_PRJS_OPR_TMPS, within=NonNegativeReals
     )
 
+    # Derived Params
+    ###########################################################################
+
+    def bt_hrz_by_prj_tmp_init(mod):
+        """
+        Map each project-timepoint to the (bt, hrz) with specified bounds
+        that contains it, if any.
+        """
+        bt_hrz_by_prj_tmp = {}
+        for prj, bt, hrz in mod.LOAD_COMPONENT_SHIFT_PRJS_BT_HRZS:
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
+                if (prj, tmp) not in mod.LOAD_COMPONENT_SHIFT_PRJS_OPR_TMPS:
+                    continue
+                if (prj, tmp) in bt_hrz_by_prj_tmp:
+                    raise ValueError(f"""More than one value per timepoints specified
+                 for bounds for load_component_shift project {prj},
+                 timepoint {tmp}. Please ensure you don't have
+                 overlapping horizons.""")
+                bt_hrz_by_prj_tmp[prj, tmp] = (bt, hrz)
+
+        return bt_hrz_by_prj_tmp
+
+    m.load_component_shift_bt_hrz_by_prj_tmp = Param(
+        m.LOAD_COMPONENT_SHIFT_PRJS_OPR_TMPS,
+        within=Any,
+        initialize=bt_hrz_by_prj_tmp_init,
+        default=None,
+    )
+
     # Expression
     ###########################################################################
 
     def load_component_shift_min_load_rule(mod, prj, tmp):
-        min_vals = []
+        bt_hrz = mod.load_component_shift_bt_hrz_by_prj_tmp[prj, tmp]
 
-        for _prj, bt, hrz in mod.LOAD_COMPONENT_SHIFT_PRJS_BT_HRZS:
-            if _prj == prj and tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
-                min_vals.append(mod.load_component_shift_min_load_mw[_prj, bt, hrz])
-
-        if len(min_vals) > 1:
-            raise ValueError(f"""More than one value per timepoints specified
-                 for bounds for load_component_shift project {prj}, 
-                 timepoint {tmp}. Please ensure you don't have 
-                 overlapping horizons.""")
-
-        # Assuming single value in lists after errors caught above
-        # Check if the list contains a value; if not, set the min to
-        # the static load (no shifting)
-        if min_vals:
-            tmp_val_min = min_vals[0]
+        # Check if bounds are specified for this timepoint; if not, set the
+        # min to the static load (no shifting)
+        if bt_hrz is not None:
+            bt, hrz = bt_hrz
+            tmp_val_min = mod.load_component_shift_min_load_mw[prj, bt, hrz]
         else:
             tmp_val_min = (
                 mod.component_static_load_mw[
@@ -226,26 +247,16 @@ def add_model_components(
     )
 
     def load_component_shift_max_load_rule(mod, prj, tmp):
-        max_vals = []
+        bt_hrz = mod.load_component_shift_bt_hrz_by_prj_tmp[prj, tmp]
 
-        for _prj, bt, hrz in mod.LOAD_COMPONENT_SHIFT_PRJS_BT_HRZS:
-            if _prj == prj and tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]:
-                if mod.load_component_shift_max_load_mw[_prj, bt, hrz] != Infinity:
-                    max_vals.append(mod.load_component_shift_max_load_mw[_prj, bt, hrz])
-                else:
-                    max_vals.append(mod.Capacity_MW[prj, mod.period[tmp]])
-
-        if len(max_vals) > 1:
-            raise ValueError(f"""More than one value per timepoints specified
-                 for bounds for load_component_shift project {prj}, 
-                 timepoint {tmp}. Please ensure you don't have 
-                 overlapping horizons.""")
-
-        # Assuming single value in lists after errors caught above
-        # Check if the list contains a value; if not, set the to
-        # the static load (no shifting)
-        if max_vals:
-            tmp_val_max = max_vals[0]
+        # Check if bounds are specified for this timepoint; if not, set the
+        # max to the static load (no shifting)
+        if bt_hrz is not None:
+            bt, hrz = bt_hrz
+            if mod.load_component_shift_max_load_mw[prj, bt, hrz] != Infinity:
+                tmp_val_max = mod.load_component_shift_max_load_mw[prj, bt, hrz]
+            else:
+                tmp_val_max = mod.Capacity_MW[prj, mod.period[tmp]]
         else:
             tmp_val_max = (
                 mod.component_static_load_mw[
@@ -360,10 +371,7 @@ def add_model_components(
                 Model will add  constraint to ensure project {} cannot provide 
                 upward reserves
                 """.format(g, g, g))
-            return (
-                sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
-                == 0
-            )
+            return headroom_provision_rule(d, mod, g, tmp) == 0
         else:
             return Constraint.Skip
 
@@ -388,10 +396,7 @@ def add_model_components(
                 projects.tab. Model will add constraint to ensure project {} 
                 cannot provide downward reserves.
                 """.format(g, g, g))
-            return (
-                sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
-                == 0
-            )
+            return footroom_provision_rule(d, mod, g, tmp) == 0
         else:
             return Constraint.Skip
 

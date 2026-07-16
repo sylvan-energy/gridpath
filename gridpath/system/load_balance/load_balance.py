@@ -49,6 +49,7 @@ from gridpath.common_functions import (
     create_results_df,
     duals_wrapper,
     none_dual_type_error_wrapper,
+    update_results_df,
 )
 from gridpath.system.load_balance import LOAD_ZONE_TMP_DF
 
@@ -241,9 +242,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, LOAD_ZONE_TMP_DF)[c] = None
-    getattr(d, LOAD_ZONE_TMP_DF).update(results_df)
+    update_results_df(getattr(d, LOAD_ZONE_TMP_DF), results_df)
 
 
 def export_summary_results(

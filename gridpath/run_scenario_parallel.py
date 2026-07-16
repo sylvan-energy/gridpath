@@ -19,6 +19,7 @@ with gridpath_run_parallel, the import the results to the database in sequence.
 """
 
 from argparse import ArgumentParser
+from gridpath.common_functions import get_version_parser
 import csv
 from multiprocessing import get_context
 import sys
@@ -31,7 +32,7 @@ def parse_arguments(arguments):
 
     :return:
     """
-    parser = ArgumentParser(add_help=True)
+    parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     # Scenario name and location options
     parser.add_argument(

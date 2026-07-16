@@ -181,7 +181,6 @@ def add_model_components(
 
     m.FUEL_PROD_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod, superset="PRJ_OPR_TMPS", index=0, membership_set=mod.FUEL_PROD
         ),

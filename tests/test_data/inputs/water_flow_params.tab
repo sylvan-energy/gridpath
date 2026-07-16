@@ -1,3 +1,3 @@
 water_link	water_link_default_min_flow_vol_per_sec	allow_water_link_min_flow_violation	min_flow_violation_penalty_cost	allow_water_link_max_flow_violation	max_flow_violation_penalty_cost	allow_water_link_hrz_min_flow_violation	hrz_min_flow_violation_penalty_cost_per_hour	allow_water_link_hrz_max_flow_violation	hrz_max_flow_violation_penalty_cost_per_hour
-Water_Link_12	5	1	100	.	.	.	.	.	.
-Water_Link_23	.	.	.	1	100	.	.	.	.
+Water_Link_12	5	1	100	.	.	.	.	1	400
+Water_Link_23	.	.	.	1	100	1	300	.	.

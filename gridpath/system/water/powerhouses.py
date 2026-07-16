@@ -60,13 +60,12 @@ def add_model_components(
     m.POWERHOUSES = Set(within=Any)
     m.POWERHOUSE_GENERATORS = Set(dimen=2)
 
-    def generators_by_powerhouse_set_init(mod, pwrh):
-        pwrh_g_list = list()
+    def generators_by_powerhouse_set_init(mod):
+        generators_by_powerhouse = {pwrh: [] for pwrh in mod.POWERHOUSES}
         for p, g in mod.POWERHOUSE_GENERATORS:
-            if p == pwrh:
-                pwrh_g_list.append(g)
+            generators_by_powerhouse[p].append(g)
 
-        return pwrh_g_list
+        return generators_by_powerhouse
 
     m.GENERATORS_BY_POWERHOUSE = Set(
         m.POWERHOUSES,

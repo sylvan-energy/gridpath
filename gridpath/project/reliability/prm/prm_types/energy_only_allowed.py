@@ -68,7 +68,6 @@ def add_model_components(
 
     m.EOA_PRM_PRJ_OPR_PRDS = Set(
         dimen=2,
-        within=m.PRM_PRJ_OPR_PRDS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRM_PRJ_OPR_PRDS",

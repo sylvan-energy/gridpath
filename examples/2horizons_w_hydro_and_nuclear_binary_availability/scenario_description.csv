@@ -61,6 +61,7 @@ water_system_params_scenario_id,NULL
 water_network_scenario_id,NULL
 project_portfolio_scenario_id,3
 project_operational_chars_scenario_id,10
+stor_stress_hrz_type_scenario_id,NULL
 project_availability_scenario_id,2
 fuel_scenario_id,1
 project_load_zone_scenario_id,1
@@ -72,6 +73,7 @@ project_frequency_response_ba_scenario_id,NULL
 project_spinning_reserves_ba_scenario_id,NULL
 project_inertia_reserves_ba_scenario_id,NULL
 project_energy_target_zone_scenario_id,NULL
+transmission_energy_target_zone_scenario_id,NULL
 project_instantaneous_penetration_zone_scenario_id,NULL
 tx_line_transmission_target_zone_scenario_id,NULL
 project_carbon_cap_zone_scenario_id,NULL
@@ -85,6 +87,7 @@ project_carbon_credits_scenario_id,NULL
 project_fuel_burn_limit_ba_scenario_id,NULL
 fuel_fuel_burn_limit_ba_scenario_id,NULL
 project_policy_zone_scenario_id,NULL
+transmission_policy_zone_scenario_id,NULL
 project_prm_zone_scenario_id,NULL
 prm_capacity_transfer_scenario_id,NULL
 prm_capacity_transfer_params_scenario_id,NULL
@@ -150,6 +153,7 @@ market_volume_total_in_tmp_scenario_id,NULL
 market_volume_total_in_prd_scenario_id,NULL
 water_node_reservoir_scenario_id,NULL
 water_flow_scenario_id,NULL
-water_inflow_scenario_id,NULL
+water_inflow_tmp_scenario_id,NULL
+water_inflow_bt_hrz_scenario_id,NULL
 water_powerhouse_scenario_id,NULL
 tuning_scenario_id,NULL

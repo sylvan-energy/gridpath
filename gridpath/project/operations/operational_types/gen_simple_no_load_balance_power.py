@@ -50,6 +50,10 @@ from gridpath.auxiliary.validations import (
     validate_single_input,
 )
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.project.operations.reserves.reserve_aggregation import (
+    headroom_provision_rule,
+    footroom_provision_rule,
+)
 from gridpath.project.common_functions import (
     check_if_boundary_type_and_first_timepoint,
     check_if_first_timepoint,
@@ -136,7 +140,6 @@ def add_model_components(
 
     m.GEN_SIMPLE_NO_LOAD_BALANCE_POWER_OPR_TMPS = Set(
         dimen=2,
-        within=m.PRJ_OPR_TMPS,
         initialize=lambda mod: subset_init_by_set_membership(
             mod=mod,
             superset="PRJ_OPR_TMPS",
@@ -172,10 +175,7 @@ def add_model_components(
                 add constraint to ensure project {} cannot provide upward 
                 reserves.
                 """.format(g, g, g))
-            return (
-                sum(getattr(mod, c)[g, tmp] for c in getattr(d, headroom_variables)[g])
-                == 0
-            )
+            return headroom_provision_rule(d, mod, g, tmp) == 0
         else:
             return Constraint.Skip
 
@@ -198,10 +198,7 @@ def add_model_components(
                 will add constraint to ensure project {} cannot provide 
                 downward reserves.
                 """.format(g, g, g))
-            return (
-                sum(getattr(mod, c)[g, tmp] for c in getattr(d, footroom_variables)[g])
-                == 0
-            )
+            return footroom_provision_rule(d, mod, g, tmp) == 0
         else:
             return Constraint.Skip
 

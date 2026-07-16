@@ -31,7 +31,7 @@ from pyomo.environ import (
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.dynamic_components import carbon_cap_balance_emission_components
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.carbon_cap import CARBON_CAP_ZONE_PRD_DF
 from gridpath.transmission.operations.carbon_emissions import (
     calculate_carbon_emissions_imports,
@@ -154,9 +154,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, CARBON_CAP_ZONE_PRD_DF)[c] = None
-    getattr(d, CARBON_CAP_ZONE_PRD_DF).update(results_df)
+    update_results_df(getattr(d, CARBON_CAP_ZONE_PRD_DF), results_df)
 
     # Update the total_emissions_degen column
     getattr(d, CARBON_CAP_ZONE_PRD_DF)["total_emissions_degen"] = (

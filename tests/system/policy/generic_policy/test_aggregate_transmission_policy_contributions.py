@@ -1,4 +1,4 @@
-# Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 from importlib import import_module
 import os.path
-import pandas as pd
+import shutil
 import sys
+import tempfile
 import unittest
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
@@ -29,13 +31,24 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.operations.timepoints",
     "temporal.investment.periods",
     "temporal.operations.horizons",
-    "geography.water_network",
-    "system.water.water_system_params",
-    "system.water.water_flows",
-    "system.water.water_node_inflows_outflows",
+    "geography.load_zones",
+    "geography.carbon_cap_zones",
+    "system.policy.carbon_cap.carbon_cap",
+    "system.load_balance.static_load_requirement",
+    "geography.generic_policy",
+    "system.policy.generic_policy.generic_policy_requirements",
+    "transmission",
+    "transmission.capacity",
+    "transmission.capacity.capacity_types",
+    "transmission.capacity.capacity",
+    "transmission.availability.availability",
+    "transmission.operations.operational_types",
+    "transmission.operations.operations",
+    "system.load_balance.aggregate_transmission_power",
+    "transmission.policy.policy_contribution",
 ]
 NAME_OF_MODULE_BEING_TESTED = (
-    "objective.system.water.aggregate_flow_constraint_slack_use_tuning_costs"
+    "system.policy.generic_policy.aggregate_transmission_policy_contributions"
 )
 IMPORTED_PREREQ_MODULES = list()
 for mdl in PREREQUISITE_MODULE_NAMES:
@@ -54,7 +67,7 @@ except ImportError:
     print("ERROR! Couldn't import module " + NAME_OF_MODULE_BEING_TESTED + " to test.")
 
 
-class TestFlowSlackTuningCostsAgg(unittest.TestCase):
+class TestAggregateTxPolicyContributions(unittest.TestCase):
     """ """
 
     def test_add_model_components(self):
@@ -91,7 +104,8 @@ class TestFlowSlackTuningCostsAgg(unittest.TestCase):
 
     def test_data_loaded_correctly(self):
         """
-        Test that the data loaded are as expected
+        Test that the model instance can be created with the aggregation
+        expression
         :return:
         """
         m, data = add_components_and_load_data(
@@ -105,6 +119,34 @@ class TestFlowSlackTuningCostsAgg(unittest.TestCase):
             stage="",
         )
         instance = m.create_instance(data)
+
+    def test_no_transmission_policy_inputs(self):
+        """
+        Transmission policy contributions are optional: if the user has not
+        specified any transmission policy inputs (no
+        transmission_policy_zones.tab file), the model should still build
+        and the transmission contribution to the policy constraint should
+        be an empty sum.
+        :return:
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_data_dir = os.path.join(tmp_dir, "test_data")
+            shutil.copytree(TEST_DATA_DIRECTORY, test_data_dir)
+            os.remove(
+                os.path.join(test_data_dir, "inputs", "transmission_policy_zones.tab")
+            )
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=test_data_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,18 @@
 -- limitations under the License.
 
 --------------------------------------------------------------------------------
+-------- METADATA --------
+--------------------------------------------------------------------------------
+
+-- Database metadata: the GridPath version used to create the database
+-- (single-row table)
+DROP TABLE IF EXISTS db_metadata;
+CREATE TABLE db_metadata
+(
+    gridpath_version VARCHAR(64)
+);
+
+--------------------------------------------------------------------------------
 -------- RAW DATA --------
 --------------------------------------------------------------------------------
 -- TODO: add timestamps?

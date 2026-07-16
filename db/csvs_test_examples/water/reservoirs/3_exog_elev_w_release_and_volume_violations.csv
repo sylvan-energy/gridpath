@@ -1,0 +1,4 @@
+﻿water_node,max_powerhouse_release_vol_unit_per_sec,max_spill_vol_unit_per_sec,max_total_outflow_vol_unit_per_sec,target_volume_scenario_id,target_release_scenario_id,allow_target_release_violation,target_release_violation_cost,minimum_volume_volumeunit,maximum_volume_volumeunit,allow_min_volume_violation,min_volume_violation_cost,allow_max_volume_violation,max_volume_violation_cost,volume_hrz_bounds_scenario_id,evaporation_coefficient,elevation_type,constant_elevation,exogenous_elevation_id,volume_to_elevation_curve_id
+Water_Node_1,0.1,0.1,0.15,1,2,1,100,22500,25000,,,,,,0,exogenous,,1,
+Water_Node_2,0.1,0.1,0.15,1,,,,1250,1750,,,,,,0,exogenous,,1,
+Water_Node_3,0.1,0.1,0.15,1,,,,70,75,1,50,,,,0,constant,265,,

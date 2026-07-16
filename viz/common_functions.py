@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 
 from gridpath.common_functions import create_directory_if_not_exists
+from version import __version__
 
 
 def show_hide_legend(plot):
@@ -129,6 +130,9 @@ def get_parent_parser():
         default=False,
         action="store_true",
         help="Return plot as a json file.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"GridPath {__version__}"
     )
 
     return parser

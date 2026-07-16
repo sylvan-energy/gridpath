@@ -19,7 +19,7 @@ Add the carbon tax cost components.
 from pyomo.environ import value, NonNegativeReals, Var, Constraint
 
 from gridpath.auxiliary.dynamic_components import carbon_tax_cost_components
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.carbon_tax import CARBON_TAX_ZONE_PRD_DF
 
 
@@ -102,6 +102,4 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, CARBON_TAX_ZONE_PRD_DF)[c] = None
-    getattr(d, CARBON_TAX_ZONE_PRD_DF).update(results_df)
+    update_results_df(getattr(d, CARBON_TAX_ZONE_PRD_DF), results_df)

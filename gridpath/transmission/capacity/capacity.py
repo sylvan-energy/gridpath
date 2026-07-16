@@ -32,7 +32,7 @@ from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
     join_sets,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.transmission import TX_PERIOD_DF
 from gridpath.transmission.capacity.common_functions import (
     load_tx_capacity_type_modules,
@@ -160,16 +160,12 @@ def add_model_components(
 
     m.TX_LINES_OPR_IN_PRD = Set(
         m.PERIODS,
-        initialize=lambda mod, period: sorted(
-            list(set(tx for (tx, p) in mod.TX_OPR_PRDS if p == period)),
-        ),
+        initialize=tx_lines_opr_in_prd,
     )
 
     m.OPR_PRDS_BY_TX_LINE = Set(
         m.TX_LINES,
-        initialize=lambda mod, tx: sorted(
-            list(set(p for (l, p) in mod.TX_OPR_PRDS if l == tx)),
-        ),
+        initialize=opr_prds_by_tx_line,
     )
 
     m.TX_OPR_TMPS = Set(
@@ -184,9 +180,7 @@ def add_model_components(
 
     m.TX_LINES_OPR_IN_TMP = Set(
         m.TMPS,
-        initialize=lambda mod, tmp: sorted(
-            list(set(tx for (tx, t) in mod.TX_OPR_TMPS if t == tmp)),
-        ),
+        initialize=tx_lines_opr_in_tmp,
     )
 
     # Expressions
@@ -250,6 +244,43 @@ def add_model_components(
     )
 
 
+# Set Rules
+###############################################################################
+
+
+def tx_lines_opr_in_prd(mod):
+    """
+    Figure out which transmission lines are operational in each period.
+    """
+    prd_to_tx = {prd: [] for prd in mod.PERIODS}
+    for tx, prd in mod.TX_OPR_PRDS:
+        prd_to_tx[prd].append(tx)
+
+    return {prd: sorted(txs) for prd, txs in prd_to_tx.items()}
+
+
+def opr_prds_by_tx_line(mod):
+    """
+    Figure out the operational periods for each transmission line.
+    """
+    tx_to_prds = {tx: [] for tx in mod.TX_LINES}
+    for tx, prd in mod.TX_OPR_PRDS:
+        tx_to_prds[tx].append(prd)
+
+    return {tx: sorted(prds) for tx, prds in tx_to_prds.items()}
+
+
+def tx_lines_opr_in_tmp(mod):
+    """
+    Figure out which transmission lines are operational in each timepoint.
+    """
+    tmp_to_tx = {tmp: [] for tmp in mod.TMPS}
+    for tx, tmp in mod.TX_OPR_TMPS:
+        tmp_to_tx[tmp].append(tx)
+
+    return {tmp: sorted(txs) for tmp, txs in tmp_to_tx.items()}
+
+
 # Input-Output
 ###############################################################################
 
@@ -302,9 +333,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, TX_PERIOD_DF)[c] = None
-    getattr(d, TX_PERIOD_DF).update(results_df)
+    update_results_df(getattr(d, TX_PERIOD_DF), results_df)
 
     # Module-specific capacity results
     required_capacity_modules = get_required_subtype_modules(
@@ -335,10 +364,7 @@ def export_results(
                 m,
                 d,
             )
-            for column in results_columns:
-                if column not in getattr(d, TX_PERIOD_DF):
-                    getattr(d, TX_PERIOD_DF)[column] = None
-            getattr(d, TX_PERIOD_DF).update(optype_df)
+            update_results_df(getattr(d, TX_PERIOD_DF), optype_df)
 
 
 def save_duals(

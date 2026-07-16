@@ -28,7 +28,11 @@ from gridpath.auxiliary.validations import (
     validate_column_monotonicity,
 )
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
-from gridpath.common_functions import create_results_df, duals_wrapper
+from gridpath.common_functions import (
+    create_results_df,
+    duals_wrapper,
+    update_results_df,
+)
 from gridpath.project import PROJECT_PERIOD_DF
 from gridpath.project.capacity.common_functions import (
     load_project_capacity_type_modules,
@@ -883,9 +887,7 @@ def export_results(
         data=data,
     )
 
-    for c in results_columns:
-        getattr(d, PROJECT_PERIOD_DF)[c] = None
-    getattr(d, PROJECT_PERIOD_DF).update(results_df)
+    update_results_df(getattr(d, PROJECT_PERIOD_DF), results_df)
 
 
 # Validation
