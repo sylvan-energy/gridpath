@@ -166,6 +166,11 @@ class TestExamples(unittest.TestCase):
                 # Reset the objective to the new dictionary object
                 actual_objective = actual_objective_copy
 
+        # Convert any numpy floats to plain Python floats, so that the
+        # values written to the CSV can be read back with ast.literal_eval
+        # (numpy floats are written as, e.g., 'np.float64(42.0)')
+        actual_objective = objective_values_to_float(actual_objective)
+
         # Uncomment this to save new objective function values
         df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
         df.set_index("test_scenario", inplace=True)
@@ -1929,21 +1934,21 @@ class TestExamples(unittest.TestCase):
                 os.remove(temp_file)
 
 
-def objective_function_overwrite(scenario_name, starting_objective):
+def objective_values_to_float(objective):
+    """
+    Recursively convert the values of a (possibly nested) objective-value
+    dictionary to plain Python floats.
+    """
+    if isinstance(objective, dict):
+        return {k: objective_values_to_float(v) for k, v in objective.items()}
+    return float(objective)
 
+
+def objective_function_overwrite(scenario_name, starting_objective):
+    # No overwrites are currently needed; with Cbc as the default solver,
+    # this was used for a Python-version-dependent objective function value
+    # for one of the examples. Keeping the hook in case it is needed again.
     objective = starting_objective
-    # On Python <3.12, we have one example with a slightly different
-    # objective function value; set it here
-    # TODO: remove this when we stop supporting Python <3.12
-    if (
-        PYTHON_VERSION < "3.12"
-        and scenario_name == "test_new_solar_carbon_credits_w_sell"
-    ):
-        print(
-            f"GridPath: overriding objective function for "
-            f"test_new_solar_carbon_credits_w_sell on Python v{PYTHON_VERSION}."
-        )
-        objective = ast.literal_eval("{('', '', '', 1): {1: 978964234435709.4}}")
 
     return objective
 

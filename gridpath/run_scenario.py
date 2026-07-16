@@ -38,6 +38,7 @@ from pyomo.environ import (
     SolverFactory,
     SolverStatus,
     TerminationCondition,
+    Var,
 )
 
 # from pyomo.util.infeasible import log_infeasible_constraints
@@ -514,7 +515,14 @@ def run_optimization_for_subproblem_stage(
         # this is actually used)
         if results.solver.termination_condition != "infeasible":
             if parsed_arguments.testing:
-                return solved_instance.NPV()
+                if len(results.solution) > 0:
+                    return solved_instance.NPV()
+                else:
+                    warnings.warn(
+                        f"WARNING: no solution was found (solver "
+                        f"termination condition: "
+                        f"{results.solver.termination_condition})!"
+                    )
         else:
             warnings.warn("WARNING: the problem was infeasible!")
 
@@ -1343,7 +1351,7 @@ def solve(instance, parsed_arguments):
 
     else:
         if parsed_arguments.solver is None:
-            solver_name = "cbc"
+            solver_name = "highs"
 
     # Get solver
     # If a solver executable is specified, pass it to Pyomo
@@ -1402,12 +1410,55 @@ def solve(instance, parsed_arguments):
         for opt in solver_options.keys():
             optimizer.options[opt] = solver_options[opt]
 
-        results = optimizer.solve(
-            instance,
-            tee=not parsed_arguments.mute_solver_output,
-            keepfiles=parsed_arguments.keepfiles,
-            symbolic_solver_labels=parsed_arguments.symbolic,
-        )
+        # MIPs don't have duals: remove the dual suffix (if any) if the
+        # problem has integer variables; file-based solver interfaces (e.g.
+        # Cbc) simply don't return duals for MIPs, but direct interfaces
+        # (e.g. HiGHS via highspy) raise an error if duals are requested for
+        # a problem with integer variables (even if they are all fixed)
+        if hasattr(instance, "dual") and any(
+            not v.is_continuous()
+            for v in instance.component_data_objects(Var, active=True)
+        ):
+            instance.del_component(instance.dual)
+
+        solve_kwargs = {
+            "tee": not parsed_arguments.mute_solver_output,
+            "keepfiles": parsed_arguments.keepfiles,
+            "symbolic_solver_labels": parsed_arguments.symbolic,
+        }
+
+        # Solve without loading the solution into the instance right away:
+        # some solver interfaces (e.g. HiGHS) raise an exception when asked
+        # to load a solution from a solve that didn't produce one (e.g. an
+        # infeasible problem), whereas we want to inspect the termination
+        # condition and continue gracefully
+        results = optimizer.solve(instance, load_solutions=False, **solve_kwargs)
+
+        # HiGHS's default LP algorithm (dual simplex after presolve) can
+        # fail without a conclusive status on numerically challenging
+        # problems, e.g. those with very large objective coefficients such
+        # as GridPath's constraint-violation penalties; retry once with
+        # presolve off, which takes a different (slower but more robust)
+        # solution path
+        if (
+            solver_name in ("highs", "appsi_highs")
+            and len(results.solution) == 0
+            and str(results.solver.termination_condition) in ("unknown", "error")
+        ):
+            warnings.warn(
+                f"HiGHS solve ended without a conclusive result (termination "
+                f"condition "
+                f"'{results.solver.termination_condition}'); retrying with "
+                f"presolve off."
+            )
+            optimizer.options["presolve"] = "off"
+            results = optimizer.solve(instance, load_solutions=False, **solve_kwargs)
+
+        # Load the solution into the model instance if one was found
+        if len(results.solution) > 0:
+            instance.solutions.load_from(
+                results, default_variable_value=optimizer.default_variable_value()
+            )
 
     # Can optionally log infeasibilities but this has resulted in false
     # positives due to rounding errors larger than the default tolerance

@@ -20,9 +20,8 @@ extras_coverage = [
 ]
 
 extras_gurobi = ["gurobipy"]  # Gurobi Python interface
-extras_highs = ["highspy"]  # HiGHS Python interface
 
-extras_all = extras_doc + extras_black + extras_coverage + extras_gurobi + extras_highs
+extras_all = extras_doc + extras_black + extras_coverage + extras_gurobi
 
 setup(
     name="GridPath",
@@ -53,6 +52,7 @@ setup(
         "networkx==3.4.2; python_version < '3.11'",  # network package for DC OPF
         "networkx==3.5.0; python_version >= '3.11'",  # network package for DC OPF
         "PyUtilib==6.0.0",  # used for solver temp file management
+        "highspy==1.15.1",  # HiGHS Python interface (default solver)
         "dill==0.3.8",  # pickling
         "duckdb==1.4.0",  # data-handling
         "sphinx-rtd-theme",  # documentation theme
@@ -62,7 +62,6 @@ setup(
         "all": extras_all,
         "coverage": extras_coverage,
         "gurobi": extras_gurobi,
-        "highs": extras_highs,
     },
     include_package_data=True,
     entry_points={

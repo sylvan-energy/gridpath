@@ -1,3 +1,3 @@
 project	linked_timepoint	linked_provide_power	linked_curtailment	linked_upward_reserves	linked_downward_reserves
-Hydro	-1	3.000002	0.0	2.0	2.0
-Hydro	0	2.999998	0.0	3.0000020000000003	1.999996
+Hydro	-1	3.0000020000000003	0.0	2.0	2.0
+Hydro	0	2.9999979999999997	0.0	3.0000020000000003	1.9999959999999997
