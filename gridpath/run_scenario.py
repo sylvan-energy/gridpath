@@ -38,6 +38,7 @@ from pyomo.environ import (
     SolverFactory,
     SolverStatus,
     TerminationCondition,
+    TransformationFactory,
 )
 
 # from pyomo.util.infeasible import log_infeasible_constraints
@@ -67,6 +68,11 @@ from gridpath.common_functions import (
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.auxiliary.scaling import (
+    assign_scaling_factors,
+    propagate_scaled_solution,
+    invert_scaled_solution_in_place,
+)
 
 
 def start_step(step, quiet):
@@ -246,14 +252,73 @@ def create_problem(
 
 def solve_problem(parsed_arguments, instance, timing_summary_file_path=None):
     # Solve
+    power_scale_factor = getattr(parsed_arguments, "power_scale_factor", 1.0)
+    dollar_scale_factor = getattr(parsed_arguments, "dollar_scale_factor", 1.0)
+
+    # No scaling requested: solve the instance directly (the default path -- no
+    # suffix, no clone, no transformation).
+    if power_scale_factor == 1.0 and dollar_scale_factor == 1.0:
+        step_start_time = start_step(step="Solving", quiet=parsed_arguments.quiet)
+        results = solve(instance, parsed_arguments)
+        report_step_timing(
+            step="Solving",
+            step_start_time=step_start_time,
+            quiet=parsed_arguments.quiet,
+            timing_summary_file_path=timing_summary_file_path,
+        )
+        return instance, results
+
+    # Scaling requested: assign scaling factors on the instance, then either
+    # (out_of_place) solve a scaled clone and map the solution back onto the
+    # pristine original, or (in_place) scale the instance itself and invert the
+    # solution afterward. Both leave the instance handed downstream in native
+    # units, so results export / objective / duals code is unchanged.
+    assign_scaling_factors(
+        instance,
+        power_scale_factor=power_scale_factor,
+        dollar_scale_factor=dollar_scale_factor,
+    )
+    scaler = TransformationFactory("core.scale_model")
+    scale_mode = getattr(parsed_arguments, "scale_mode", "out_of_place")
+
+    if scale_mode == "in_place":
+        # Scale the model itself (no clone -> ~half the peak memory and faster
+        # setup for large models), solve it, then restore native units on the
+        # same instance.
+        scaler.apply_to(instance, rename=False)
+        step_start_time = start_step(step="Solving", quiet=parsed_arguments.quiet)
+        results = solve(instance, parsed_arguments)
+        report_step_timing(
+            step="Solving",
+            step_start_time=step_start_time,
+            quiet=parsed_arguments.quiet,
+            timing_summary_file_path=timing_summary_file_path,
+        )
+        invert_scaled_solution_in_place(instance)
+        return instance, results
+
+    # out_of_place (default): solve a scaled clone, then map the solution
+    # (variable values and duals) back onto the original native-unit instance.
+    scaled_instance = scaler.create_using(instance)
     step_start_time = start_step(step="Solving", quiet=parsed_arguments.quiet)
-    results = solve(instance, parsed_arguments)
+    results = solve(scaled_instance, parsed_arguments)
     report_step_timing(
         step="Solving",
         step_start_time=step_start_time,
         quiet=parsed_arguments.quiet,
         timing_summary_file_path=timing_summary_file_path,
     )
+    # Use our own back-mapping rather than scaler.propagate_solution because the
+    # latter raises if the solver left any constraint without a dual (which
+    # happens, e.g. non-binding market limits under CBC); ours skips those, as
+    # GridPath's export path already treats a missing dual as None.
+    propagate_scaled_solution(scaled_instance, instance)
+
+    # Release the scaled clone promptly (it doubles peak memory for large
+    # models); matches the garbage-collection discipline elsewhere in this
+    # module.
+    del scaled_instance
+    gc.collect()
 
     return instance, results
 
@@ -1715,6 +1780,31 @@ def main(args=None):
         args = sys.argv[1:]
     # Parse arguments
     parsed_args = parse_arguments(args)
+
+    # Numerical scaling is applied at solve time (see solve_problem), so it is
+    # incompatible with the paths that skip solving and instead load a solution
+    # from a file (whose values are in unknown units) or only write the problem
+    # file (which would be written unscaled). Fail fast rather than silently
+    # mis-handle these.
+    scaling_requested = (
+        parsed_args.power_scale_factor != 1.0 or parsed_args.dollar_scale_factor != 1.0
+    )
+    if scaling_requested:
+        incompatible = [
+            flag
+            for flag in (
+                "load_cplex_solution",
+                "load_gurobi_solution",
+                "load_highs_solution",
+                "create_lp_problem_file_only",
+            )
+            if getattr(parsed_args, flag, False)
+        ]
+        if incompatible:
+            raise ValueError(
+                "--power_scale_factor / --dollar_scale_factor cannot be "
+                "combined with {}.".format(", ".join("--" + f for f in incompatible))
+            )
 
     scenario_directory = determine_scenario_directory(
         scenario_location=parsed_args.scenario_location,

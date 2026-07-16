@@ -347,6 +347,35 @@ def get_run_scenario_parser():
         help="Skip quick summary text file",
     )
 
+    # Numerical scaling (for solver conditioning)
+    parser.add_argument(
+        "--power_scale_factor",
+        default=1.0,
+        type=float,
+        help="Divide power/energy quantities (MW, MWh) by this factor when "
+        "solving, then map the solution back to native units. E.g. 1000 solves "
+        "in GW/GWh. Default 1.0 (no scaling). See gridpath/auxiliary/scaling.py.",
+    )
+    parser.add_argument(
+        "--dollar_scale_factor",
+        default=1.0,
+        type=float,
+        help="Divide dollar quantities by this factor when solving, then map "
+        "the solution back to native units. E.g. 1000000 solves in millions of "
+        "dollars. Default 1.0 (no scaling). See gridpath/auxiliary/scaling.py.",
+    )
+    parser.add_argument(
+        "--scale_mode",
+        default="out_of_place",
+        choices=["out_of_place", "in_place"],
+        help="How to apply numerical scaling (only relevant if a scale factor "
+        "is set). 'out_of_place' (default) solves a scaled clone and maps the "
+        "solution back, keeping the original model pristine. 'in_place' scales "
+        "the model itself and inverts the solution afterward, avoiding the clone "
+        "(~half the peak memory and faster setup) at the cost of mutating the "
+        "model; use it for very large problems where the clone is expensive.",
+    )
+
     return parser
 
 
