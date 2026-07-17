@@ -24,7 +24,7 @@ GridPath's documentation is hosted on [Read the Docs](https://gridpath.readthedo
 # Installation
 
 ## Python
-GridPath is tested on Python 3.11, 3.12, and 3.13. Get one of those Python 
+GridPath is tested on Python 3.11, 3.12, 3.13, and 3.14. Get one of those Python 
 versions [here](https://www.python.org/downloads/ "Python download").
 
 ## GridPath Python environment

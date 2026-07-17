@@ -1,7 +1,7 @@
 # This the main GridPath CI workflow
 # It installs Python dependencies (including the HiGHS solver via highspy), runs
 # the GridPath test suite with coverage, and sends coverage results to coveralls
-# We run this on Linux, MacOS, and Windows with Python 3.11, 3.12, and 3.13
+# We run this on Linux, MacOS, and Windows with Python 3.11, 3.12, 3.13, and 3.14
 
 name: test-suite
 
@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        python-version: [ "3.11", "3.12", "3.13" ]
+        python-version: [ "3.11", "3.12", "3.13", "3.14" ]
 
     steps:
     - uses: actions/checkout@v4
