@@ -48,6 +48,14 @@ WINDOWS = True if platform.system() == "Windows" else False
 PYTHON_VERSION = platform.python_version()
 
 
+# Relative tolerance for comparing objective function values: some example
+# objective function values are very large (1e14+ when constraint-violation
+# penalties are incurred), where floating-point differences across platforms
+# and Python versions exceed any fixed absolute tolerance (one ULP at 1e15
+# is ~0.125), so we also allow a relative difference
+OBJECTIVE_REL_TOL = 1e-9
+
+
 class TestExamples(unittest.TestCase):
     """ """
 
@@ -67,7 +75,17 @@ class TestExamples(unittest.TestCase):
             if isinstance(value, dict):
                 self.assertDictAlmostEqual(d1[key], d2[key], places=places, msg=msg)
             else:
-                self.assertAlmostEqual(d1[key], d2[key], places=places, msg=msg)
+                # A None value means no objective function value was
+                # obtained, e.g. because the solve failed
+                self.assertIsNotNone(
+                    d2[key],
+                    msg=f"No objective function value for {key} (the solve "
+                    f"may have failed; expected {d1[key]})",
+                )
+                # Use the absolute tolerance implied by *places* or the
+                # relative tolerance, whichever is looser
+                delta = max(0.5 * 10**-places, OBJECTIVE_REL_TOL * abs(d1[key]))
+                self.assertAlmostEqual(d1[key], d2[key], delta=delta, msg=msg)
 
     def check_validation(self, test):
         """
@@ -166,6 +184,11 @@ class TestExamples(unittest.TestCase):
                 # Reset the objective to the new dictionary object
                 actual_objective = actual_objective_copy
 
+        # Convert any numpy floats to plain Python floats, so that the
+        # values written to the CSV can be read back with ast.literal_eval
+        # (numpy floats are written as, e.g., 'np.float64(42.0)')
+        actual_objective = objective_values_to_float(actual_objective)
+
         # Uncomment this to save new objective function values
         df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
         df.set_index("test_scenario", inplace=True)
@@ -175,15 +198,7 @@ class TestExamples(unittest.TestCase):
         df.at[scenario_name, "actual_objective"] = actual_objective
         df.to_csv(TEST_SCENARIOS_CSV, index=True)
 
-        if scenario_name == "test_new_solar_carbon_cap_dac":
-            # This test is particularly sensitive to platform and
-            # Python version, so we relax the precision of the test a bit
-            # more
-            places = -1
-        else:
-            places = 1
-
-        self.assertDictAlmostEqual(expected_objective, actual_objective, places=places)
+        self.assertDictAlmostEqual(expected_objective, actual_objective, places=1)
 
     @classmethod
     def setUpClass(cls):
@@ -1082,10 +1097,6 @@ class TestExamples(unittest.TestCase):
         """
         Check validation and objective function value of
         "test_new_solar_carbon_cap_dac" example.
-
-        Note that the same version of Cbc (v2.10.12) produces a slightly
-        different objective function for this problem on Windows/Linux than on
-        Mac as of Python v3.12.
         :return:
         """
         scenario_name = "test_new_solar_carbon_cap_dac"
@@ -1929,21 +1940,23 @@ class TestExamples(unittest.TestCase):
                 os.remove(temp_file)
 
 
-def objective_function_overwrite(scenario_name, starting_objective):
+def objective_values_to_float(objective):
+    """
+    Recursively convert the values of a (possibly nested) objective-value
+    dictionary to plain Python floats.
+    """
+    if isinstance(objective, dict):
+        return {k: objective_values_to_float(v) for k, v in objective.items()}
+    # A failed solve produces a None objective value; keep it as None so
+    # that the objective-value comparison can report it
+    return None if objective is None else float(objective)
 
+
+def objective_function_overwrite(scenario_name, starting_objective):
+    # No overwrites are currently needed; with Cbc as the default solver,
+    # this was used for a Python-version-dependent objective function value
+    # for one of the examples. Keeping the hook in case it is needed again.
     objective = starting_objective
-    # On Python <3.12, we have one example with a slightly different
-    # objective function value; set it here
-    # TODO: remove this when we stop supporting Python <3.12
-    if (
-        PYTHON_VERSION < "3.12"
-        and scenario_name == "test_new_solar_carbon_credits_w_sell"
-    ):
-        print(
-            f"GridPath: overriding objective function for "
-            f"test_new_solar_carbon_credits_w_sell on Python v{PYTHON_VERSION}."
-        )
-        objective = ast.literal_eval("{('', '', '', 1): {1: 978964234435709.4}}")
 
     return objective
 

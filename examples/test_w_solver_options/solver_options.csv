@@ -1,2 +1,2 @@
-solver_name,cbc
+solver_name,highs
 threads,4.0
