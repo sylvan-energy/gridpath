@@ -43,6 +43,7 @@ from pyomo.environ import (
 
 # from pyomo.util.infeasible import log_infeasible_constraints
 from pyomo.common.timing import report_timing
+from pyomo.contrib.solver.common.base import LegacySolverWrapper
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.core import ComponentUID, SymbolMap
 from pyomo.opt import ReaderFactory, ResultsFormat, ProblemFormat
@@ -1426,6 +1427,21 @@ def solve(instance, parsed_arguments):
             "keepfiles": parsed_arguments.keepfiles,
             "symbolic_solver_labels": parsed_arguments.symbolic,
         }
+
+        # If we are logging, pass the log file and the terminal as separate
+        # tee streams to solvers on Pyomo's new solver interface (e.g.
+        # HiGHS): those interfaces capture solver output at the
+        # file-descriptor level and, to avoid an output loop, replace any
+        # tee stream that reports the captured file descriptor with a
+        # direct terminal handle -- the Logging object assigned to
+        # sys.stdout reports the terminal's file descriptor, so its write()
+        # method gets bypassed and solver output never reaches the log file
+        if (
+            solve_kwargs["tee"]
+            and isinstance(optimizer, LegacySolverWrapper)
+            and isinstance(sys.stdout, Logging)
+        ):
+            solve_kwargs["tee"] = [sys.stdout.log_file, sys.stdout.terminal]
 
         # Solve without loading the solution into the instance right away:
         # some solver interfaces (e.g. HiGHS) raise an exception when asked
