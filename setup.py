@@ -46,7 +46,7 @@ setup(
     py_modules=["version"],  # so the DB metadata can record the version
     install_requires=[
         "Pyomo==6.9.4",  # Optimization modeling language
-        "pandas==2.3.2",  # Data-processing
+        "pandas==2.3.3",  # Data-processing
         "bokeh==3.8.0",  # Visualization library
         "pscript==0.8.0",  # Python to JavaScript compiler (for viz)
         "networkx==3.4.2; python_version < '3.11'",  # network package for DC OPF
@@ -54,7 +54,7 @@ setup(
         "PyUtilib==6.0.0",  # used for solver temp file management
         "highspy==1.15.1",  # HiGHS Python interface (default solver)
         "dill==0.3.8",  # pickling
-        "duckdb==1.4.0",  # data-handling
+        "duckdb==1.4.2",  # data-handling
         "sphinx-rtd-theme",  # documentation theme
     ],
     extras_require={
