@@ -59,7 +59,8 @@ class TestUpdateResultsDf(unittest.TestCase):
         self.assertEqual(self.target["dual"].iloc[0], 100.0)
         self.assertTrue(np.isnan(self.target["dual"].iloc[1]))
 
-    def test_string_columns_stay_object_without_warnings(self):
+    def test_string_columns_keep_source_dtype_without_warnings(self):
+        # str dtype under pandas 3, object under pandas 2
         results_df = pd.DataFrame({"ba": ["Zone1", "Zone2"]}, index=self.index[:2])
         with warnings.catch_warnings():
             # a float-initialized target column would raise a pandas
@@ -68,7 +69,7 @@ class TestUpdateResultsDf(unittest.TestCase):
             warnings.simplefilter("error")
             update_results_df(self.target, results_df)
 
-        self.assertEqual(str(self.target["ba"].dtype), "object")
+        self.assertEqual(self.target["ba"].dtype, results_df["ba"].dtype)
         self.assertEqual(self.target["ba"].tolist()[:2], ["Zone1", "Zone2"])
 
     def test_existing_column_values_are_merged_not_wiped(self):
