@@ -6,10 +6,19 @@ with open("./version.py") as fp:
     exec(fp.read(), version)
 
 # Set up extras
+# Note: df2img (used only by doc/opchar_img_gen.py, a standalone script that
+# regenerates the checked-in opchar diagram images) is deliberately NOT
+# listed here: its pandas<3.0 constraint can never be satisfied alongside
+# GridPath's own pandas==3.0.3 pin in install_requires (extras are additive,
+# not a replacement). Read the Docs builds straight from doc/source/conf.py
+# and never touches df2img/opchar_img_gen.py, since the images are
+# pre-generated and committed to doc/graphics/. To regenerate them after
+# editing opchar_param_requirements.csv, install df2img in a separate
+# throwaway environment (e.g. its own venv with an older pandas) and run
+# opchar_img_gen.py there directly.
 extras_doc = [
     "Sphinx==7.2.6",
     "sphinx-argparse==0.4.0",
-    "df2img",
 ]
 
 extras_black = ["black"]
@@ -20,9 +29,8 @@ extras_coverage = [
 ]
 
 extras_gurobi = ["gurobipy"]  # Gurobi Python interface
-extras_highs = ["highspy"]  # HiGHS Python interface
 
-extras_all = extras_doc + extras_black + extras_coverage + extras_gurobi + extras_highs
+extras_all = extras_doc + extras_black + extras_coverage + extras_gurobi
 
 setup(
     name="GridPath",
@@ -33,28 +41,28 @@ setup(
     long_description_content_type="text/markdown",
     url="https://www.gridpath.io",
     project_urls={
-        "Discussions": "https://github.com/blue-marble/gridpath/discussions",
+        "Discussions": "https://github.com/sylvan-energy/gridpath/discussions",
         "Documentation": "https://gridpath.readthedocs.io/en/latest/",
-        "Issues": "https://github.com/blue-marble/gridpath/issues",
-        "Source Code": "https://github.com/blue-marble/gridpath",
+        "Issues": "https://github.com/sylvan-energy/gridpath/issues",
+        "Source Code": "https://github.com/sylvan-energy/gridpath",
     },
-    maintainer="Blue Marble Analytics LLC",
-    maintainer_email="info@gridpath.io",
+    maintainer="Sylvan Energy Analytics LLC",
+    maintainer_email="info@sylvan.energy",
     license="Apache v2",
     platforms=["MacOS", "Windows", "Linux"],
     keywords=["energy", "electricity", "power", "renewables", "planning", "operations"],
     packages=find_packages(),
     py_modules=["version"],  # so the DB metadata can record the version
     install_requires=[
-        "Pyomo==6.9.4",  # Optimization modeling language
-        "pandas==2.3.2",  # Data-processing
-        "bokeh==3.8.0",  # Visualization library
-        "pscript==0.8.0",  # Python to JavaScript compiler (for viz)
-        "networkx==3.4.2; python_version < '3.11'",  # network package for DC OPF
-        "networkx==3.5.0; python_version >= '3.11'",  # network package for DC OPF
+        "Pyomo==6.10.1",  # Optimization modeling language
+        "pandas==3.0.3",  # Data-processing
+        "bokeh==3.9.1",  # Visualization library
+        "pscript==0.8.1",  # Python to JavaScript compiler (for viz)
+        "networkx==3.6.1",  # network package for DC OPF
         "PyUtilib==6.0.0",  # used for solver temp file management
-        "dill==0.3.8",  # pickling
-        "duckdb==1.4.0",  # data-handling
+        "highspy==1.15.1",  # HiGHS Python interface (default solver)
+        "dill==0.4.1",  # pickling
+        "duckdb==1.5.4",  # data-handling
         "sphinx-rtd-theme",  # documentation theme
     ],
     extras_require={
@@ -62,7 +70,6 @@ setup(
         "all": extras_all,
         "coverage": extras_coverage,
         "gurobi": extras_gurobi,
-        "highs": extras_highs,
     },
     include_package_data=True,
     entry_points={

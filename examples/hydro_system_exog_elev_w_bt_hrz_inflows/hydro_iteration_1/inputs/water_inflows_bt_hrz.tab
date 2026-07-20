@@ -1,0 +1,4 @@
+water_node	balancing_type	horizon	exogenous_water_inflow_rate_avg_vol_per_sec
+Water_Node_1	half_day	1	0.001
+Water_Node_1	half_day	2	0.001
+Water_Node_2	day	1	5e-05

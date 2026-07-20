@@ -260,7 +260,7 @@ def get_run_scenario_parser():
     parser.add_argument(
         "--solver",
         help="Name of the solver to use. "
-        "GridPath will use Cbc if solver is "
+        "GridPath will use HiGHS if solver is "
         "not specified here and a "
         "'solver_options.csv' file does not "
         "exist in the scenario directory.",

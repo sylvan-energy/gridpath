@@ -38,10 +38,12 @@ from pyomo.environ import (
     SolverFactory,
     SolverStatus,
     TerminationCondition,
+    Var,
 )
 
 # from pyomo.util.infeasible import log_infeasible_constraints
 from pyomo.common.timing import report_timing
+from pyomo.contrib.solver.common.base import LegacySolverWrapper
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.core import ComponentUID, SymbolMap
 from pyomo.opt import ReaderFactory, ResultsFormat, ProblemFormat
@@ -514,7 +516,14 @@ def run_optimization_for_subproblem_stage(
         # this is actually used)
         if results.solver.termination_condition != "infeasible":
             if parsed_arguments.testing:
-                return solved_instance.NPV()
+                if len(results.solution) > 0:
+                    return solved_instance.NPV()
+                else:
+                    warnings.warn(
+                        f"WARNING: no solution was found (solver "
+                        f"termination condition: "
+                        f"{results.solver.termination_condition})!"
+                    )
         else:
             warnings.warn("WARNING: the problem was infeasible!")
 
@@ -910,6 +919,12 @@ def run_scenario(
             if n_tasks == 0:
                 if not parsed_arguments.quiet:
                     print("All subproblems already complete. Nothing to solve.")
+                # objective_values is backed by the manager; copy it into a
+                # plain dict before shutting the manager down so the
+                # returned data doesn't reference a proxy to a dead server
+                # process
+                objective_values = {k: dict(v) for k, v in objective_values.items()}
+                manager.shutdown()
                 return objective_values
 
             # Don't create more processes than tasks
@@ -921,6 +936,13 @@ def run_scenario(
 
             pool.map(run_optimization_for_subproblem_pool, pool_data)
             pool.close()
+            pool.join()
+
+            # objective_values is backed by the manager; copy it into a plain
+            # dict before shutting the manager down so the returned data
+            # doesn't reference a proxy to a dead server process
+            objective_values = {k: dict(v) for k, v in objective_values.items()}
+            manager.shutdown()
 
             return objective_values
 
@@ -1343,7 +1365,7 @@ def solve(instance, parsed_arguments):
 
     else:
         if parsed_arguments.solver is None:
-            solver_name = "cbc"
+            solver_name = "highs"
 
     # Get solver
     # If a solver executable is specified, pass it to Pyomo
@@ -1402,12 +1424,57 @@ def solve(instance, parsed_arguments):
         for opt in solver_options.keys():
             optimizer.options[opt] = solver_options[opt]
 
-        results = optimizer.solve(
-            instance,
-            tee=not parsed_arguments.mute_solver_output,
-            keepfiles=parsed_arguments.keepfiles,
-            symbolic_solver_labels=parsed_arguments.symbolic,
-        )
+        # MIPs don't have duals: remove the dual suffix (if any) if the
+        # problem has integer variables; file-based solver interfaces (e.g.
+        # Cbc) simply don't return duals for MIPs, but direct interfaces
+        # (e.g. HiGHS via highspy) raise an error if duals are requested for
+        # a problem with integer variables (even if they are all fixed)
+        if hasattr(instance, "dual") and any(
+            not v.is_continuous()
+            for v in instance.component_data_objects(Var, active=True)
+        ):
+            instance.del_component(instance.dual)
+
+        solve_kwargs = {
+            "tee": not parsed_arguments.mute_solver_output,
+            "keepfiles": parsed_arguments.keepfiles,
+            "symbolic_solver_labels": parsed_arguments.symbolic,
+        }
+
+        # If we are logging, pass the log file and the terminal as separate
+        # tee streams to solvers on Pyomo's new solver interface (e.g.
+        # HiGHS): those interfaces capture solver output at the
+        # file-descriptor level and, to avoid an output loop, replace any
+        # tee stream that reports the captured file descriptor with a
+        # direct terminal handle -- the Logging object assigned to
+        # sys.stdout reports the terminal's file descriptor, so its write()
+        # method gets bypassed and solver output never reaches the log file
+        if (
+            solve_kwargs["tee"]
+            and isinstance(optimizer, LegacySolverWrapper)
+            and isinstance(sys.stdout, Logging)
+        ):
+            solve_kwargs["tee"] = [sys.stdout.log_file, sys.stdout.terminal]
+
+        # Solve without loading the solution into the instance right away:
+        # some solver interfaces (e.g. HiGHS) raise an exception when asked
+        # to load a solution from a solve that didn't produce one (e.g. an
+        # infeasible problem), whereas we want to inspect the termination
+        # condition and continue gracefully
+        # Note: HiGHS's default LP algorithm (dual simplex after presolve)
+        # can fail without a conclusive status (termination condition
+        # 'unknown' or 'error') on numerically challenging problems, e.g.
+        # those with very large objective coefficients such as GridPath's
+        # constraint-violation penalties; setting 'presolve, off' in the
+        # scenario's solver options makes HiGHS take a different (slower
+        # but more robust) solution path
+        results = optimizer.solve(instance, load_solutions=False, **solve_kwargs)
+
+        # Load the solution into the model instance if one was found
+        if len(results.solution) > 0:
+            instance.solutions.load_from(
+                results, default_variable_value=optimizer.default_variable_value()
+            )
 
     # Can optionally log infeasibilities but this has resulted in false
     # positives due to rounding errors larger than the default tolerance

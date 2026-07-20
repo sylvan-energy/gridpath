@@ -21,12 +21,14 @@ The user may specify the name and location of the GridPath database path using t
 >>> gridpath_create_database --database PATH/DO/DB
 
 The default schema for the GridPath SQLite database is in db/db_schema.sql.
+A custom schema may be specified with the *--db_schema* flag; relative paths
+are resolved against the current working directory.
 
 .. _database-structure-section-ref:
 
-To create a database for GridPath raw data, point to the schema in
-../data_toolkit/raw_data_db_schema.sql instead and also specify the
---omit_data flag.
+To create a database for GridPath raw data, point *--db_schema* to the
+raw_data_db_schema.sql file in the data_toolkit package directory instead
+and also specify the --omit_data flag.
 
 """
 
@@ -59,10 +61,11 @@ def parse_arguments(arguments):
     )
     parser.add_argument(
         "--db_schema",
-        default="./db_schema.sql",
-        help="Name of the SQL file containing the database "
-        "schema. Assumed to be in same directory as"
-        "create_database.py",
+        default=os.path.join(os.path.dirname(__file__), "db_schema.sql"),
+        help="Path to the SQL file containing the database "
+        "schema. Relative paths are resolved against the "
+        "current working directory. Defaults to the "
+        "db_schema.sql file that ships with GridPath.",
     )
     parser.add_argument(
         "--in_memory",
@@ -100,9 +103,7 @@ def create_database_schema(conn, parsed_arguments):
     :param parsed_arguments:
 
     """
-    schema_path = os.path.join(os.path.dirname(__file__), parsed_arguments.db_schema)
-
-    with open(schema_path, "r") as db_schema_script:
+    with open(parsed_arguments.db_schema, "r") as db_schema_script:
         schema = db_schema_script.read()
         conn.executescript(schema)
 

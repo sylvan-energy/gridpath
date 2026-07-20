@@ -884,7 +884,7 @@ class TestOperationsInit(unittest.TestCase):
         ramp_tuning_cost_df.loc[
             ramp_tuning_cost_df["ramp_tuning_cost_per_mw"] == ".",
             "ramp_tuning_cost_per_mw",
-        ] = 0
+        ] = "0"
 
         expected_ramp_tuning_cost_by_prj = OrderedDict(
             sorted(

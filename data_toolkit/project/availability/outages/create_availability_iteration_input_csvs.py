@@ -790,6 +790,7 @@ def main(args=None):
 
     pool.map(simulate_all_project_iterations, pool_data)
     pool.close()
+    pool.join()
 
     # Sort the resulting CSV file if requested
     # TODO: could parallelize this

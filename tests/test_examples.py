@@ -48,6 +48,14 @@ WINDOWS = True if platform.system() == "Windows" else False
 PYTHON_VERSION = platform.python_version()
 
 
+# Relative tolerance for comparing objective function values: some example
+# objective function values are very large (1e14+ when constraint-violation
+# penalties are incurred), where floating-point differences across platforms
+# and Python versions exceed any fixed absolute tolerance (one ULP at 1e15
+# is ~0.125), so we also allow a relative difference
+OBJECTIVE_REL_TOL = 1e-9
+
+
 class TestExamples(unittest.TestCase):
     """ """
 
@@ -67,7 +75,17 @@ class TestExamples(unittest.TestCase):
             if isinstance(value, dict):
                 self.assertDictAlmostEqual(d1[key], d2[key], places=places, msg=msg)
             else:
-                self.assertAlmostEqual(d1[key], d2[key], places=places, msg=msg)
+                # A None value means no objective function value was
+                # obtained, e.g. because the solve failed
+                self.assertIsNotNone(
+                    d2[key],
+                    msg=f"No objective function value for {key} (the solve "
+                    f"may have failed; expected {d1[key]})",
+                )
+                # Use the absolute tolerance implied by *places* or the
+                # relative tolerance, whichever is looser
+                delta = max(0.5 * 10**-places, OBJECTIVE_REL_TOL * abs(d1[key]))
+                self.assertAlmostEqual(d1[key], d2[key], delta=delta, msg=msg)
 
     def check_validation(self, test):
         """
@@ -166,6 +184,11 @@ class TestExamples(unittest.TestCase):
                 # Reset the objective to the new dictionary object
                 actual_objective = actual_objective_copy
 
+        # Convert any numpy floats to plain Python floats, so that the
+        # values written to the CSV can be read back with ast.literal_eval
+        # (numpy floats are written as, e.g., 'np.float64(42.0)')
+        actual_objective = objective_values_to_float(actual_objective)
+
         # Uncomment this to save new objective function values
         df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
         df.set_index("test_scenario", inplace=True)
@@ -175,15 +198,7 @@ class TestExamples(unittest.TestCase):
         df.at[scenario_name, "actual_objective"] = actual_objective
         df.to_csv(TEST_SCENARIOS_CSV, index=True)
 
-        if scenario_name == "test_new_solar_carbon_cap_dac":
-            # This test is particularly sensitive to platform and
-            # Python version, so we relax the precision of the test a bit
-            # more
-            places = -1
-        else:
-            places = 1
-
-        self.assertDictAlmostEqual(expected_objective, actual_objective, places=places)
+        self.assertDictAlmostEqual(expected_objective, actual_objective, places=1)
 
     @classmethod
     def setUpClass(cls):
@@ -382,6 +397,18 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "2horizons_w_hydro_w_balancing_types"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2horizons_w_stor_stress_hrz(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_stor_stress_hrz" example. A stor_stress_hrz storage
+        project builds up its state of charge over the first
+        (average-condition) horizon and enters the second (stress) horizon,
+        which has higher load, with the accumulated energy.
+        :return:
+        """
+        scenario_name = "2horizons_w_stor_stress_hrz"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_2periods(self):
@@ -1070,10 +1097,6 @@ class TestExamples(unittest.TestCase):
         """
         Check validation and objective function value of
         "test_new_solar_carbon_cap_dac" example.
-
-        Note that the same version of Cbc (v2.10.12) produces a slightly
-        different objective function for this problem on Windows/Linux than on
-        Mac as of Python v3.12.
         :return:
         """
         scenario_name = "test_new_solar_carbon_cap_dac"
@@ -1696,6 +1719,53 @@ class TestExamples(unittest.TestCase):
         scenario_name = "hydro_system_exog_elev_w_gen_ramp_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_hydro_system_exog_elev_w_binding_tmp_flow_max(self):
+        """
+        Check that per-timepoint max water flow bounds are enforced: peak-hour
+        flow caps on the water links limit hydro power output below the load
+        level, resulting in unserved energy.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_flow_and_volume_violations(self):
+        """
+        Check water system violation penalties: a horizon min flow
+        requirement, a reservoir target release, and a reservoir minimum
+        volume are all set above achievable levels with violations allowed,
+        so their respective penalty costs must show up in the objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_flow_and_volume_violations"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_bt_hrz_inflows(self):
+        """
+        Check horizon-level average exogenous water inflows: same as
+        hydro_system_exog_elev, but with part of each node's inflow moved
+        from the timepoint-level inputs to horizon-level average inputs
+        (spread across the horizon's timepoints, additive with the
+        timepoint-level inflows). The totals are unchanged, so this
+        scenario must reproduce the hydro_system_exog_elev objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_bt_hrz_inflows"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_hrz_only_inflows(self):
+        """
+        Check that the timepoint-level inflow inputs can be skipped
+        entirely: same as hydro_system_exog_elev, but with all inflows
+        specified as horizon-level averages (no water_inflows.tab is
+        written for this scenario). The base inflows are constant within
+        the day, so the totals are unchanged and this scenario must
+        reproduce the hydro_system_exog_elev objective.
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_hrz_only_inflows"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_dsm_examples(self):
         scenario_name = "dsm_examples"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
@@ -1870,21 +1940,23 @@ class TestExamples(unittest.TestCase):
                 os.remove(temp_file)
 
 
-def objective_function_overwrite(scenario_name, starting_objective):
+def objective_values_to_float(objective):
+    """
+    Recursively convert the values of a (possibly nested) objective-value
+    dictionary to plain Python floats.
+    """
+    if isinstance(objective, dict):
+        return {k: objective_values_to_float(v) for k, v in objective.items()}
+    # A failed solve produces a None objective value; keep it as None so
+    # that the objective-value comparison can report it
+    return None if objective is None else float(objective)
 
+
+def objective_function_overwrite(scenario_name, starting_objective):
+    # No overwrites are currently needed; with Cbc as the default solver,
+    # this was used for a Python-version-dependent objective function value
+    # for one of the examples. Keeping the hook in case it is needed again.
     objective = starting_objective
-    # On Python <3.12, we have one example with a slightly different
-    # objective function value; set it here
-    # TODO: remove this when we stop supporting Python <3.12
-    if (
-        PYTHON_VERSION < "3.12"
-        and scenario_name == "test_new_solar_carbon_credits_w_sell"
-    ):
-        print(
-            f"GridPath: overriding objective function for "
-            f"test_new_solar_carbon_credits_w_sell on Python v{PYTHON_VERSION}."
-        )
-        objective = ast.literal_eval("{('', '', '', 1): {1: 978964234435709.4}}")
 
     return objective
 

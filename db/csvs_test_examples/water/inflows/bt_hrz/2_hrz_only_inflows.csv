@@ -1,0 +1,6 @@
+﻿water_node,hydro_iteration,balancing_type,horizon,exogenous_water_inflow_rate_avg_vol_per_sec
+Water_Node_1,1,day,1,0.003
+Water_Node_2,1,day,1,0.0001
+Water_Node_3,1,day,1,0.0001
+Water_Node_4,1,day,1,5e-05
+Water_Node_5,1,day,1,5e-05

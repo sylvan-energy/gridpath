@@ -24,7 +24,7 @@ Python
 
 Running GridPath requires a Python 3 installation. GridPath is `tested nightly
 <https://github.com/blue-marble/gridpath/actions/workflows/test_gridpath.yml>`__ in
-Python 3.11, 3.12, and 3.13. You can get Python `here <https://www.python.org/downloads/>`__.
+Python 3.11, 3.12, 3.13, and 3.14. You can get Python `here <https://www.python.org/downloads/>`__.
 
 .. _python-virtual-env-section-ref:
 
@@ -121,15 +121,19 @@ See the User Interface section for more info.
 Solver
 ======
 You will need a solver to get optimization results. GridPath assumes you
-will be using `Cbc (Coin-or branch and cut) <https://projects.coin-or
-.org/Cbc>`_ by default, but you can specify a different solver as long as it
-is `supported by Pyomo <https://pyomo.readthedocs
+will be using `HiGHS <https://highs.dev>`_ by default, but you can specify
+a different solver as long as it is `supported by Pyomo
+<https://pyomo.readthedocs
 .io/en/latest/solving_pyomo_models.html#supported-solvers>`_,
-e.g. GLPK, CPLEX, Gurobi, etc.
+e.g. Cbc, GLPK, CPLEX, Gurobi, etc.
 
-You can find the latest instructions for installing Cbc `here
-<https://github.com/coin-or/Cbc#download>`__. GridPath allows you to specify
-the location of the solver executable; to get it to be recognized,
+HiGHS is installed automatically along with GridPath's other Python
+dependencies (via the `highspy <https://pypi.org/project/highspy/>`_
+package), so no additional setup is needed to use the default solver.
+
+If you would like to use a different solver, e.g. `Cbc (Coin-or branch and
+cut) <https://github.com/coin-or/Cbc#download>`__, GridPath allows you to
+specify the location of the solver executable; to get it to be recognized,
 automatically, you can also add it to your PATH system variables (see
 instructions for Windows `here <https://www.java.com/en/download/help/path
 .xml>`__).

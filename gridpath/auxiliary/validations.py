@@ -519,7 +519,9 @@ def validate_missing_inputs(df, col, idx_col="project", msg=""):
     for c in cols:
         invalids = df[c].isnull()
         if invalids.any():
-            bad_idxs = df[idx_col][invalids].values
+            # to_numpy() for consistent message formatting: with pandas 3's
+            # str dtype, .values returns a verbose-repr StringArray
+            bad_idxs = df[idx_col][invalids].to_numpy()
             results.append(
                 "Missing {} inputs for {}(s): {}. {}".format(c, idx_col, bad_idxs, msg)
             )
@@ -616,7 +618,9 @@ def validate_column_monotonicity(df, cols, idx_col="project", msg=""):
     df = df.dropna(subset=cols)
     invalids = ~df[cols].apply(lambda x: x.is_monotonic_increasing, axis=1)
     if invalids.any():
-        bad_idxs = df[idx_col][invalids].values
+        # to_numpy() for consistent message formatting: with pandas 3's
+        # str dtype, .values returns a verbose-repr StringArray
+        bad_idxs = df[idx_col][invalids].to_numpy()
         results.append(
             "{}(s) {}: Values cannot decrease between {}. {}".format(
                 idx_col, bad_idxs, cols, msg

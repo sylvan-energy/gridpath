@@ -44,7 +44,7 @@ Building the Raw Data Database
 The first step in using the GridPath Data Toolkit is to create a raw data
 database. You may do so with the following command:
 
->>> gridpath_run_data_toolkit --single_step create_database --database PATH/TO/RAW/DB --db_schema ./raw_data_db_schema.sql --omit_data
+>>> gridpath_run_data_toolkit --single_step create_database --database PATH/TO/RAW/DB --db_schema PATH/TO/GRIDPATH/data_toolkit/raw_data_db_schema.sql --omit_data
 
 
 ****************

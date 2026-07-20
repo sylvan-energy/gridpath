@@ -269,15 +269,17 @@ def _active_cap_derate_params(mod):
     active = getattr(mod, "_avl_exog_active_cap_derate_params", None)
     # If we don't have the active params, figure it out
     if active is None:
+        # Note: sparse_keys() returns a lazy iterator as of Pyomo 6.10, so
+        # test for loaded values with any() rather than len()
         active = (
             # Are the per timepoint params active
             [
                 getattr(mod, p)
                 for p in _TMP_INDEXED_CAP_DERATE_PARAMS
-                if len(getattr(mod, p).sparse_keys()) > 0
+                if any(True for _ in getattr(mod, p).sparse_keys())
             ],
             # Is the monthly param active
-            len(mod.avl_exog_mnth_derate.sparse_keys()) > 0,
+            any(True for _ in mod.avl_exog_mnth_derate.sparse_keys()),
         )
         mod._avl_exog_active_cap_derate_params = active
     return active

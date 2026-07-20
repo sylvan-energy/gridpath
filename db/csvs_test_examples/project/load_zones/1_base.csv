@@ -50,3 +50,4 @@ synch_condenser,Zone1
 Month_Block,Zone1
 Hybrid_Wind,Zone1
 Hybrid_Battery,Zone1
+Battery_Stress_Hrz,Zone1

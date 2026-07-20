@@ -61,6 +61,7 @@ water_system_params_scenario_id,NULL
 water_network_scenario_id,NULL
 project_portfolio_scenario_id,31
 project_operational_chars_scenario_id,38
+stor_stress_hrz_type_scenario_id,NULL
 project_availability_scenario_id,3
 fuel_scenario_id,3
 project_load_zone_scenario_id,2
@@ -152,6 +153,7 @@ market_volume_total_in_tmp_scenario_id,NULL
 market_volume_total_in_prd_scenario_id,NULL
 water_node_reservoir_scenario_id,NULL
 water_flow_scenario_id,NULL
-water_inflow_scenario_id,NULL
+water_inflow_tmp_scenario_id,NULL
+water_inflow_bt_hrz_scenario_id,NULL
 water_powerhouse_scenario_id,NULL
 tuning_scenario_id,NULL

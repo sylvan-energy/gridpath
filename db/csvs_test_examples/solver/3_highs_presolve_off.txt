@@ -1,0 +1,1 @@
+highs, presolve off (HiGHS default dual simplex fails on this problem)

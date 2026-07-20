@@ -1,7 +1,7 @@
 # This the main GridPath CI workflow
-# It installs Cbc and Python dependencies, runs the GridPath test suite with coverage,
-# and sends coverage results to coveralls
-# We run this on Linux, MacOS, and Windows with Python 3.11, 3.12, and 3.13
+# It installs Python dependencies (including the HiGHS solver via highspy), runs
+# the GridPath test suite with coverage, and sends coverage results to coveralls
+# We run this on Linux, MacOS, and Windows with Python 3.11, 3.12, 3.13, and 3.14
 
 name: test-suite
 
@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        python-version: [ "3.11", "3.12", "3.13" ]
+        python-version: [ "3.11", "3.12", "3.13", "3.14" ]
 
     steps:
     - uses: actions/checkout@v4
@@ -32,28 +32,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install Cbc and check version (Linux)
-      if: startsWith(runner.os, 'Linux')
-      run: |
-        sudo apt-get install coinor-cbc
-        sudo apt-get install -y apt-show-versions
-        apt-show-versions coinor-cbc
-    - name: Install Cbc (MacOS)
-      if: startsWith(runner.os, 'macOS')
-      run: |
-        brew trust coin-or-tools/coinor
-        brew tap coin-or-tools/coinor
-        brew install coin-or-tools/coinor/cbc
-        echo "/opt/homebrew/opt/cbc/bin" >> $GITHUB_PATH
-    - name: Install Cbc (Windows)
-      if: startsWith(runner.os, 'Windows')
-      run: |
-        bash ./.github/workflows/get_cbc_on_windows.sh
-      shell: powershell
-    - name: Verify PATH update
-      if: startsWith(runner.os, 'Windows')
-      run: Get-Command cbc.exe
-      shell: powershell
     - name: Install Python dependencies
       run: |
         python -m pip install .[coverage] --upgrade pip

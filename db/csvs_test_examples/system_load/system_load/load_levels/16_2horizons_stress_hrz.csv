@@ -1,0 +1,5 @@
+load_zone,weather_iteration,stage_id,timepoint,load_component,load_mw
+Zone1,0,1,20200101,all,10
+Zone1,0,1,20200102,all,20
+Zone1,0,1,20200201,all,20
+Zone1,0,1,20200202,all,22
