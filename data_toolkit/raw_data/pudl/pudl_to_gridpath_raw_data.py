@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,9 +25,9 @@ including:
 First, the data must be converted to the GridPath raw data CSV format. For the
 purpose, use the ``gridpath_pudl_to_gridpath_raw`` command.
 
-This will query the PUDL database and process the Parquet files
-downloaded in the previous step in order to create the following
-files in the user-specified raw data directory.
+This will query and process the per-table Parquet files downloaded in the
+previous step in order to create the following files in the user-specified
+raw data directory.
 
 * pudl_eia860_generators.csv
 * pudl_eia930_hourly_interchange.csv
@@ -34,23 +35,24 @@ files in the user-specified raw data directory.
 * pudl_ra_toolkit_var_profiles.csv
 
 For options, including the download and raw data directories as well query
-filters see the --help menu. By default, we currently use 2024-01-01 as the
+filters see the --help menu. By default, we currently use 2026-01-01 as the
 EIA860 reporting data and "western_electricity_coordinating_council" as the
 EIA AEO electricity market to get data for.
 """
 
 from argparse import ArgumentParser
 from gridpath.common_functions import get_version_parser
+import duckdb
 import os.path
 import pandas as pd
 import sys
 
-from db.common_functions import connect_to_database
 from db.utilities.common_functions import confirm
+from data_toolkit.raw_data.pudl.download_data_from_pudl import PUDL_VERSION_DEFAULT
 
 DOWNLOAD_DIRECTORY_DEFAULT = "./pudl_download"
 RAW_DATA_DIRECTORY_DEFAULT = "./raw_data"
-EIA860_DEFAULT_REPORT_DATE = "2024-01-01"
+EIA860_DEFAULT_REPORT_DATE = "2026-01-01"
 EIAAEO_DEFAULT_ELECTRICITY_MARKET = "western_electricity_coordinating_council"
 
 
@@ -98,13 +100,26 @@ def parse_arguments(args):
         help=f"Defaults to {EIAAEO_DEFAULT_ELECTRICITY_MARKET}",
     )
 
+    parser.add_argument(
+        "-v_pudl",
+        "--pudl_version",
+        default=PUDL_VERSION_DEFAULT,
+        help=f"The PUDL data release the downloaded files came from; stamped "
+        f"into the version_num column of pudl_eia860_generators.csv. "
+        f"Defaults to {PUDL_VERSION_DEFAULT}.",
+    )
+
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
     return parsed_arguments
 
 
-def get_eia_generator_data_from_pudl_sqlite(
-    raw_data_directory, pudl_download_directory, report_date, exclude_retired
+def get_eia_generator_data_from_pudl_parquet(
+    raw_data_directory,
+    pudl_download_directory,
+    report_date,
+    exclude_retired,
+    pudl_version,
 ):
     """
     Generator list from EIA860.
@@ -112,22 +127,27 @@ def get_eia_generator_data_from_pudl_sqlite(
     filepath = os.path.join(raw_data_directory, "pudl_eia860_generators.csv")
 
     if determine_proceed(filepath):
-        print(f"Getting generator list from pudl.sqlite to {filepath}...")
-        # Connect to pudl.sqlite
-        pudl_conn = connect_to_database(
-            db_path=os.path.join(pudl_download_directory, "pudl.sqlite")
+        print(f"Getting generator list from PUDL parquet files to {filepath}...")
+        generators_parquet_path = os.path.join(
+            pudl_download_directory, "core_eia860__scd_generators.parquet"
+        )
+        plants_parquet_path = os.path.join(
+            pudl_download_directory, "core_eia860__scd_plants.parquet"
         )
 
         # Build the generator query
         exclude_retired_str = (
-            "AND core_eia860__scd_generators.operational_status != 'retired'"
-            if exclude_retired
-            else ""
+            "AND operational_status != 'retired'" if exclude_retired else ""
         )
 
+        # Date columns are cast to VARCHAR so the CSV holds plain
+        # 'YYYY-MM-DD' strings, as when these came from pudl.sqlite TEXT
+        # columns; version_num is the PUDL release version (pudl.sqlite's
+        # alembic_version table, the previous source, has no parquet
+        # equivalent)
         query = f"""
             SELECT
-                version_num,
+                '{pudl_version}' AS version_num,
                 plant_id_eia,
                 generator_id,
                 operational_status_code,
@@ -139,55 +159,53 @@ def get_eia_generator_data_from_pudl_sqlite(
                 energy_storage_capacity_mwh,
                 prime_mover_code,
                 energy_source_code_1,
-                current_planned_generator_operating_date,
-                generator_retirement_date
-            FROM core_eia860__scd_generators
-            JOIN core_eia860__scd_plants
-            USING (plant_id_eia, report_date),
-            alembic_version
+                CAST(current_planned_generator_operating_date AS VARCHAR)
+                    AS current_planned_generator_operating_date,
+                CAST(generator_retirement_date AS VARCHAR)
+                    AS generator_retirement_date
+            FROM read_parquet('{generators_parquet_path}') AS generators
+            JOIN read_parquet('{plants_parquet_path}') AS plants
+            USING (plant_id_eia, report_date)
             WHERE report_date = '{report_date}'
             {exclude_retired_str}
         """
 
-        # Query pudl.sqlite and save to CSV
-        eia_gens = pd.read_sql(query, pudl_conn)
+        # Query the parquet files and save to CSV
+        eia_gens = duckdb.sql(query).df()
         eia_gens.to_csv(
             filepath,
             index=False,
         )
 
-        pudl_conn.close()
 
-
-def get_eiaaeo_fuel_data_from_pudl_datasette(
+def get_eiaaeo_fuel_data_from_pudl_parquet(
     raw_data_directory, pudl_download_directory, eiaaeo_electricity_market_region
 ):
     """ """
     filepath = os.path.join(raw_data_directory, "pudl_eiaaeo_fuel_prices.csv")
 
     if determine_proceed(filepath):
-        print(f"Getting fuel prices from pudl.sqlite to {filepath}...")
-        # Connect to pudl.sqlite
-        pudl_conn = connect_to_database(
-            db_path=os.path.join(pudl_download_directory, "pudl.sqlite")
+        print(f"Getting fuel prices from PUDL parquet files to {filepath}...")
+        fuel_prices_parquet_path = os.path.join(
+            pudl_download_directory,
+            "core_eiaaeo__yearly_projected_fuel_cost_in_electric_sector_by_type"
+            ".parquet",
         )
 
         query = f"""
-                SELECT * FROM core_eiaaeo__yearly_projected_fuel_cost_in_electric_sector_by_type
+                SELECT * FROM read_parquet('{fuel_prices_parquet_path}')
                 WHERE electricity_market_module_region_eiaaeo LIKE '%{eiaaeo_electricity_market_region}%'
-                ORDER BY report_year, electricity_market_module_region_eiaaeo, 
+                ORDER BY report_year, electricity_market_module_region_eiaaeo,
                 model_case_eiaaeo, fuel_type_eiaaeo, projection_year
             """
 
-        # Query pudl.sqlite and save to CSV
-        fuel_prices_df = pd.read_sql(query, pudl_conn)
+        # Query the parquet file and save to CSV
+        fuel_prices_df = duckdb.sql(query).df()
 
         fuel_prices_df.to_csv(
             filepath,
             index=False,
         )
-
-    pudl_conn.close()
 
 
 # TODO: confirm hour-ending vs hour-starting with Catalyst
@@ -197,13 +215,11 @@ def convert_ra_toolkit_profiles_to_csv(raw_data_directory, pudl_download_directo
     filepath = os.path.join(raw_data_directory, "pudl_ra_toolkit_var_profiles.csv")
     if determine_proceed(filepath):
         print(f"Converting RA Toolkit profiles to CSV {filepath}...")
-        df = pd.read_parquet(
-            os.path.join(
-                pudl_download_directory,
-                "out_gridpathratoolkit__hourly_available_capacity_factor.parquet",
-            ),
-            engine="fastparquet",
+        parquet_path = os.path.join(
+            pudl_download_directory,
+            "out_gridpathratoolkit__hourly_available_capacity_factor.parquet",
         )
+        df = duckdb.sql(f"SELECT * FROM read_parquet('{parquet_path}')").df()
 
         df["datetime_pst_he"] = df["datetime_utc"] - pd.Timedelta(hours=8)
         df["year_he"] = pd.DatetimeIndex(df["datetime_pst_he"]).year
@@ -260,12 +276,10 @@ def convert_eia930_hourly_interchange_to_csv(
 
     if determine_proceed(filepath):
         print(f"Converting hourly interchange data to CSV {filepath}...")
-        df = pd.read_parquet(
-            os.path.join(
-                pudl_download_directory, "core_eia930__hourly_interchange.parquet"
-            ),
-            engine="fastparquet",
+        parquet_path = os.path.join(
+            pudl_download_directory, "core_eia930__hourly_interchange.parquet"
         )
+        df = duckdb.sql(f"SELECT * FROM read_parquet('{parquet_path}')").df()
 
         df["datetime_pst_he"] = df["datetime_utc"] - pd.Timedelta(hours=8)
         df["year_he"] = pd.DatetimeIndex(df["datetime_pst_he"]).year
@@ -330,17 +344,18 @@ def main(args=None):
 
     os.makedirs(parsed_args.raw_data_directory, exist_ok=True)
 
-    ### Get only the data we need from pudl.sqlite ### #
+    ### Get only the data we need from the PUDL parquet files ### #
     # Generator list
-    get_eia_generator_data_from_pudl_sqlite(
+    get_eia_generator_data_from_pudl_parquet(
         raw_data_directory=parsed_args.raw_data_directory,
         pudl_download_directory=parsed_args.pudl_download_directory,
         report_date=parsed_args.eia860_report_date,
         exclude_retired=not parsed_args.eia860_include_retired,
+        pudl_version=parsed_args.pudl_version,
     )
 
     # Fuel costs
-    get_eiaaeo_fuel_data_from_pudl_datasette(
+    get_eiaaeo_fuel_data_from_pudl_parquet(
         raw_data_directory=parsed_args.raw_data_directory,
         pudl_download_directory=parsed_args.pudl_download_directory,
         eiaaeo_electricity_market_region=parsed_args.eiaaeo_electricity_market_region,
