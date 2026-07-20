@@ -79,6 +79,7 @@ def get_sync_project_pool_and_make_profile_csvs(
 
     pool.map(create_project_profile_csv_pool, pool_data)
     pool.close()
+    pool.join()
 
     conn.close()
 

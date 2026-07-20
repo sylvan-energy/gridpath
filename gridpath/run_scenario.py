@@ -919,6 +919,12 @@ def run_scenario(
             if n_tasks == 0:
                 if not parsed_arguments.quiet:
                     print("All subproblems already complete. Nothing to solve.")
+                # objective_values is backed by the manager; copy it into a
+                # plain dict before shutting the manager down so the
+                # returned data doesn't reference a proxy to a dead server
+                # process
+                objective_values = {k: dict(v) for k, v in objective_values.items()}
+                manager.shutdown()
                 return objective_values
 
             # Don't create more processes than tasks
@@ -930,6 +936,13 @@ def run_scenario(
 
             pool.map(run_optimization_for_subproblem_pool, pool_data)
             pool.close()
+            pool.join()
+
+            # objective_values is backed by the manager; copy it into a plain
+            # dict before shutting the manager down so the returned data
+            # doesn't reference a proxy to a dead server process
+            objective_values = {k: dict(v) for k, v in objective_values.items()}
+            manager.shutdown()
 
             return objective_values
 

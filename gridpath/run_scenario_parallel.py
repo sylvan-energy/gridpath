@@ -89,6 +89,7 @@ def main(args=None):
     pool_data = tuple(args_for_run_scenario)
     pool.map(run_scenario_pool, pool_data)
     pool.close()
+    pool.join()
 
 
 def run_scenario_pool(pool_datum):
