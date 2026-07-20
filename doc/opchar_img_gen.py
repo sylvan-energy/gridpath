@@ -17,6 +17,14 @@ This script generates the images (SVG and PNG) of the table of operational
 characteristics with the corresponding project operational types for
 inclusion into the documentation.
 
+Run this only after editing
+../gridpath/project/operations/operational_types/opchar_param_requirements.csv
+and commit the regenerated files in graphics/. It is NOT part of the
+GridPath install extras or the Read the Docs build (which uses the
+already-committed images) because its df2img dependency requires
+pandas<3.0, which conflicts with GridPath's own pandas pin. Install df2img
+in a separate, throwaway environment (with an older pandas) to run this
+script rather than the main GridPath dev environment.
 """
 
 import pandas as pd, numpy as np

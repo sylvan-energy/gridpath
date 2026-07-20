@@ -6,10 +6,19 @@ with open("./version.py") as fp:
     exec(fp.read(), version)
 
 # Set up extras
+# Note: df2img (used only by doc/opchar_img_gen.py, a standalone script that
+# regenerates the checked-in opchar diagram images) is deliberately NOT
+# listed here: its pandas<3.0 constraint can never be satisfied alongside
+# GridPath's own pandas==3.0.3 pin in install_requires (extras are additive,
+# not a replacement). Read the Docs builds straight from doc/source/conf.py
+# and never touches df2img/opchar_img_gen.py, since the images are
+# pre-generated and committed to doc/graphics/. To regenerate them after
+# editing opchar_param_requirements.csv, install df2img in a separate
+# throwaway environment (e.g. its own venv with an older pandas) and run
+# opchar_img_gen.py there directly.
 extras_doc = [
     "Sphinx==7.2.6",
     "sphinx-argparse==0.4.0",
-    "df2img",
 ]
 
 extras_black = ["black"]
