@@ -1,6 +1,0 @@
-Optimization step timing summary:
-... Building model: started on 2026-07-16 14:48:44.581858, finished on 2026-07-16 14:48:44.631602, duration 0:00:00.049744
-... Loading data: started on 2026-07-16 14:48:44.632082, finished on 2026-07-16 14:48:44.689322, duration 0:00:00.057240
-... Creating problem instance: started on 2026-07-16 14:48:44.689449, finished on 2026-07-16 14:48:44.705921, duration 0:00:00.016472
-... Solving: started on 2026-07-16 14:48:44.706268, finished on 2026-07-16 14:48:44.729206, duration 0:00:00.022938
-... Saving results: started on 2026-07-16 14:48:44.729481, finished on 2026-07-16 14:48:44.844459, duration 0:00:00.114978
