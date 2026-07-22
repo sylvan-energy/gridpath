@@ -1,0 +1,4 @@
+gridpath_generic_fuel,co2_intensity_emissionsunit_per_fuelunit,units,source
+Gas,0.05291,metric_tons_per_mmbtu,https://www.eia.gov/environment/emissions/co2_vol_mass.php
+Coal,0.09552,metric_tons_per_mmbtu,https://www.eia.gov/environment/emissions/co2_vol_mass.php
+Oil,0.07315,metric_tons_per_mmbtu,https://www.eia.gov/environment/emissions/co2_vol_mass.php
