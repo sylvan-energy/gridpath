@@ -194,7 +194,10 @@ def main(args=None):
             ],
             env=None,
         )
-        build_cmd += ["-m", "coverage", "run", "--append"]
+        # Omit this orchestration script itself from the measurement: only
+        # its --build_template_db branch runs under coverage, so including
+        # it would report the rest of the file as missed lines
+        build_cmd += ["-m", "coverage", "run", "--append", "--omit=scripts/*"]
     build_cmd += [os.path.abspath(__file__), "--build_template_db"]
     run_sequentially(
         [("Building the testing-database template", build_cmd)],
