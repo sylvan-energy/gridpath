@@ -20,6 +20,19 @@ import sys
 import time
 import traceback
 
+# Python 3.12 deprecated sqlite3's implicit datetime/date adapters and the
+# TIMESTAMP/DATE converters used with detect_types=PARSE_DECLTYPES;
+# register equivalents that preserve the storage format the implicit ones
+# used ("YYYY-MM-DD HH:MM:SS[.ffffff]", with a space separator)
+sqlite3.register_adapter(datetime.date, lambda val: val.isoformat())
+sqlite3.register_adapter(datetime.datetime, lambda val: val.isoformat(" "))
+sqlite3.register_converter(
+    "date", lambda val: datetime.date.fromisoformat(val.decode())
+)
+sqlite3.register_converter(
+    "timestamp", lambda val: datetime.datetime.fromisoformat(val.decode())
+)
+
 
 def connect_to_database(db_path="../db/io.db", timeout=5, detect_types=0):
     """
