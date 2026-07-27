@@ -42,8 +42,9 @@ Usage:
 
 Requires the "parallel_tests" extra (pip install -e .[parallel_tests]);
 --coverage additionally requires the "coverage" extra and leaves a
-combined .coverage file at the repo root (pytest-cov measures the xdist
-worker processes, which a plain "coverage run -m pytest" would miss).
+combined .coverage file at the repo root covering the lanes and the
+template-database build (pytest-cov measures the xdist worker processes,
+which a plain "coverage run -m pytest" would miss).
 """
 
 import argparse
@@ -128,7 +129,20 @@ def main(args=None):
         help="measure test coverage via pytest-cov (combined .coverage "
         "file at the repo root)",
     )
+    parser.add_argument(
+        "--build_template_db",
+        action="store_true",
+        help="only build the testing-database template and exit (used by "
+        "this script itself, so that the build can be run under coverage)",
+    )
     parsed_args = parser.parse_args(args)
+
+    if parsed_args.build_template_db:
+        sys.path.insert(0, REPO_ROOT)
+        from tests.test_examples import create_test_database
+
+        create_test_database(DB_TEMPLATE_PATH)
+        return
 
     xdist_cmd = [sys.executable, "-m", "pytest", "tests", "-n", "auto"]
     xdist_cmd += ["--dist", "worksteal", "-q"]
@@ -148,9 +162,12 @@ def main(args=None):
     viz_cmd += [VIZ_TEST_PATH]
 
     if parsed_args.coverage:
-        # --cov-report= suppresses the terminal report; the .coverage data
-        # file is what downstream tools (coveralls) consume
-        xdist_cmd += ["--cov", "--cov-report="]
+        # All lanes append: the .coverage data file already holds the
+        # template-database build's coverage by the time they run (any
+        # stale data file is erased before the build). --cov-report=
+        # suppresses the terminal report; the .coverage data file is what
+        # downstream tools (coveralls) consume
+        xdist_cmd += ["--cov", "--cov-append", "--cov-report="]
         toolkit_cmd += ["--cov", "--cov-append", "--cov-report="]
         viz_cmd += ["--cov", "--cov-append", "--cov-report="]
 
@@ -161,19 +178,26 @@ def main(args=None):
     ]
 
     # Build the examples testing database once; the test classes copy it
-    # instead of each xdist worker rebuilding it from the CSVs
+    # instead of each xdist worker rebuilding it from the CSVs. Under
+    # --coverage, erase any stale data file and run the build under
+    # coverage — the build used to happen inside the measured test
+    # processes, and losing it understates the coverage of the
+    # database-porting code
+    build_cmd = [sys.executable]
+    if parsed_args.coverage:
+        run_sequentially(
+            [
+                (
+                    "Clearing stale coverage data",
+                    [sys.executable, "-m", "coverage", "erase"],
+                )
+            ],
+            env=None,
+        )
+        build_cmd += ["-m", "coverage", "run", "--append"]
+    build_cmd += [os.path.abspath(__file__), "--build_template_db"]
     run_sequentially(
-        [
-            (
-                "Building the testing-database template",
-                [
-                    sys.executable,
-                    "-c",
-                    "from tests.test_examples import create_test_database; "
-                    f"create_test_database(r'{DB_TEMPLATE_PATH}')",
-                ],
-            )
-        ],
+        [("Building the testing-database template", build_cmd)],
         env=None,
     )
     # Copying only the .db file would silently lose any pages still sitting
