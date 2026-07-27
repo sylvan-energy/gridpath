@@ -32,7 +32,11 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values, import_csv
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import (
+    create_results_df,
+    duals_wrapper,
+    none_dual_type_error_wrapper,
+)
 from gridpath.project.common_functions import (
     check_if_boundary_type_and_last_timepoint,
     check_boundary_type,
@@ -1110,7 +1114,25 @@ def export_results(
         "water_flow_vol_per_sec",
         "water_flow_min_violation_vol_per_sec",
         "water_flow_max_violation_vol_per_sec",
+        "water_link_min_flow_constraint_dual",
+        "water_link_min_flow_constraint_marginal_cost_per_vol_per_sec",
+        "water_link_max_flow_constraint_dual",
+        "water_link_max_flow_constraint_marginal_cost_per_vol_per_sec",
     ]
+
+    def tmp_flow_constraint_dual_and_marginal_cost(constraint, wl, dep_tmp, arr_tmp):
+        dual = (
+            duals_wrapper(m, constraint[wl, dep_tmp, arr_tmp])
+            if (wl, dep_tmp, arr_tmp) in constraint
+            else None
+        )
+        # The constraints are indexed by the flow bounds at the departure
+        # timepoint, so normalize by the departure timepoint's coefficient
+        return [
+            dual,
+            none_dual_type_error_wrapper(dual, m.tmp_objective_coefficient[dep_tmp]),
+        ]
+
     tmp_data = [
         [
             wl,
@@ -1126,6 +1148,12 @@ def export_results(
                 m.Water_Link_Max_Flow_Violation_Vol_per_Sec_Expression[
                     wl, dep_tmp, arr_tmp
                 ]
+            ),
+            *tmp_flow_constraint_dual_and_marginal_cost(
+                m.Water_Link_Minimum_Flow_Constraint, wl, dep_tmp, arr_tmp
+            ),
+            *tmp_flow_constraint_dual_and_marginal_cost(
+                m.Water_Link_Maximum_Flow_Constraint, wl, dep_tmp, arr_tmp
             ),
         ]
         for (wl, dep_tmp, arr_tmp) in m.WATER_LINK_DEPARTURE_ARRIVAL_TMPS
@@ -1153,66 +1181,127 @@ def export_results(
 
     hrz_results_columns = [
         "hrs_in_bt_hrz",
+        "min_allowed_avg_flow",
         "max_allowed_avg_flow",
         "threshold_side_stream_avg_vol_per_second",
         "upstream_exogenous_inflows_avg_vol_per_second",
         "adjusted_max_allowed_avg_flow",
         "actual_avg_flow_vol_per_second",
-        "violation_expression_avg_flow_vol_per_second",
+        "min_violation_expression_avg_flow_vol_per_second",
+        "max_violation_expression_avg_flow_vol_per_second",
+        "min_total_hrz_flow_constraint_dual",
+        "min_total_hrz_flow_constraint_marginal_cost_per_vol_per_sec",
+        "max_total_hrz_flow_constraint_dual",
+        "max_total_hrz_flow_constraint_marginal_cost_per_vol_per_sec",
     ]
+
+    def hrz_flow_constraint_dual_and_marginal_cost(constraint, wl, bt, hrz):
+        dual = (
+            duals_wrapper(m, constraint[wl, bt, hrz])
+            if (wl, bt, hrz) in constraint
+            else None
+        )
+        return [
+            dual,
+            none_dual_type_error_wrapper(dual, m.hrz_objective_coefficient[bt, hrz]),
+        ]
+
+    def hrs_in_bt_hrz(bt, hrz):
+        return sum(m.hrs_in_tmp[tmp] for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])
+
+    def upstream_exogenous_inflows_avg_vol_per_second(wl, bt, hrz):
+        return sum(
+            m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp] * m.hrs_in_tmp[tmp]
+            for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
+            for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
+        ) / hrs_in_bt_hrz(bt, hrz)
+
+    def actual_avg_flow_vol_per_second(wl, bt, hrz):
+        return sum(
+            value(
+                m.Water_Link_Flow_Rate_Vol_per_Sec[
+                    wl, dep_tmp, m.arrival_timepoint[wl, dep_tmp]
+                ]
+            )
+            * m.hrs_in_tmp[dep_tmp]
+            for dep_tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
+        ) / hrs_in_bt_hrz(bt, hrz)
+
     hrz_data = [
         [
             wl,
             bt,
             hrz,
-            # hrs_in_bt_hrz
-            sum(m.hrs_in_tmp[tmp] for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]),
-            # max_allowed_avg_flow
-            m.max_bt_hrz_flow_avg_vol_per_second[wl, bt, hrz],
-            # threshold_side_stream_avg_vol_per_second
-            m.threshold_side_stream_avg_vol_per_second[wl, bt, hrz],
-            # upstream_exogenous_inflows_avg_vol_per_second
-            sum(
-                m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
-                * m.hrs_in_tmp[tmp]
-                for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
-                for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
-            )
-            / sum(m.hrs_in_tmp[tmp] for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]),
-            # adjusted_max_allowed_avg_flow
-            m.max_bt_hrz_flow_avg_vol_per_second[wl, bt, hrz]
-            + max(
-                (
-                    sum(
-                        m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp]
-                        * m.hrs_in_tmp[tmp]
-                        for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
-                        for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
-                    )
-                    / sum(m.hrs_in_tmp[tmp] for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])
-                    - m.threshold_side_stream_avg_vol_per_second[wl, bt, hrz]
-                ),
-                0,
+            hrs_in_bt_hrz(bt, hrz),
+            # min_allowed_avg_flow
+            (
+                m.min_bt_hrz_flow_avg_vol_per_second[wl, bt, hrz]
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT
+                else None
             ),
-            # actual_avg_flow_vol_per_second
-            sum(
+            # max_allowed_avg_flow
+            (
+                m.max_bt_hrz_flow_avg_vol_per_second[wl, bt, hrz]
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
+                else None
+            ),
+            # threshold_side_stream_avg_vol_per_second
+            (
+                m.threshold_side_stream_avg_vol_per_second[wl, bt, hrz]
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
+                else None
+            ),
+            # upstream_exogenous_inflows_avg_vol_per_second
+            (
+                upstream_exogenous_inflows_avg_vol_per_second(wl, bt, hrz)
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
+                else None
+            ),
+            # adjusted_max_allowed_avg_flow
+            (
+                m.max_bt_hrz_flow_avg_vol_per_second[wl, bt, hrz]
+                + max(
+                    (
+                        upstream_exogenous_inflows_avg_vol_per_second(wl, bt, hrz)
+                        - m.threshold_side_stream_avg_vol_per_second[wl, bt, hrz]
+                    ),
+                    0,
+                )
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
+                else None
+            ),
+            actual_avg_flow_vol_per_second(wl, bt, hrz),
+            # min_violation_expression_avg_flow_vol_per_second
+            (
                 value(
-                    m.Water_Link_Flow_Rate_Vol_per_Sec[
-                        wl, dep_tmp, m.arrival_timepoint[wl, dep_tmp]
+                    m.Water_Link_Hrz_Min_Flow_Violation_Avg_Vol_per_Sec_Expression[
+                        wl, bt, hrz
                     ]
                 )
-                * m.hrs_in_tmp[dep_tmp]
-                for dep_tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
-            )
-            / sum(m.hrs_in_tmp[tmp] for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]),
-            # violation_expression
-            value(
-                m.Water_Link_Hrz_Max_Flow_Violation_Avg_Vol_per_Sec_Expression[
-                    wl, bt, hrz
-                ]
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT
+                else None
+            ),
+            # max_violation_expression_avg_flow_vol_per_second
+            (
+                value(
+                    m.Water_Link_Hrz_Max_Flow_Violation_Avg_Vol_per_Sec_Expression[
+                        wl, bt, hrz
+                    ]
+                )
+                if (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
+                else None
+            ),
+            *hrz_flow_constraint_dual_and_marginal_cost(
+                m.Water_Link_Min_Total_Hrz_Flow_Constraint, wl, bt, hrz
+            ),
+            *hrz_flow_constraint_dual_and_marginal_cost(
+                m.Water_Link_Max_Total_Hrz_Flow_Constraint, wl, bt, hrz
             ),
         ]
-        for (wl, bt, hrz) in m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
+        for (wl, bt, hrz) in sorted(
+            set(m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT)
+            | set(m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT)
+        )
     ]
     hrz_results_df = create_results_df(
         index_columns=["water_link", "balancing_type", "horizon"],
@@ -1234,6 +1323,107 @@ def export_results(
         sep=",",
         index=True,
     )
+
+    ramp_results_columns = [
+        "allowed_flow_delta_vol_per_sec",
+        "water_link_flow_ramp_constraint_dual",
+        "water_link_flow_ramp_constraint_marginal_cost_per_vol_per_sec",
+    ]
+
+    def ramp_constraint_dual(wl, ramp_limit, tmp, future_tmp):
+        return (
+            duals_wrapper(
+                m,
+                m.Water_Link_Flow_Ramp_Constraint[wl, ramp_limit, tmp, future_tmp],
+            )
+            if (wl, ramp_limit, tmp, future_tmp) in m.Water_Link_Flow_Ramp_Constraint
+            else None
+        )
+
+    ramp_data = [
+        [
+            wl,
+            ramp_limit,
+            tmp,
+            future_tmp,
+            m.water_link_ramp_limit_tmp_allowed_flow_delta[wl, ramp_limit, tmp],
+            ramp_constraint_dual(wl, ramp_limit, tmp, future_tmp),
+            # The allowed flow delta applies at the ramp's starting
+            # timepoint, so normalize by that timepoint's coefficient
+            none_dual_type_error_wrapper(
+                ramp_constraint_dual(wl, ramp_limit, tmp, future_tmp),
+                m.tmp_objective_coefficient[tmp],
+            ),
+        ]
+        for (wl, ramp_limit, tmp, future_tmp) in m.WATER_LINK_RAMP_LIMIT_DEP_ARR_TMPS
+    ]
+    ramp_results_df = create_results_df(
+        index_columns=["water_link", "ramp_limit", "timepoint", "future_timepoint"],
+        results_columns=ramp_results_columns,
+        data=ramp_data,
+    )
+
+    ramp_results_df.to_csv(
+        os.path.join(
+            scenario_directory,
+            weather_iteration,
+            hydro_iteration,
+            availability_iteration,
+            subproblem,
+            stage,
+            "results",
+            "system_water_link_ramp_timepoint.csv",
+        ),
+        sep=",",
+        index=True,
+    )
+
+
+def save_duals(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    instance,
+    dynamic_components,
+):
+    instance.constraint_indices["Water_Link_Minimum_Flow_Constraint"] = [
+        "water_link",
+        "departure_timepoint",
+        "arrival_timepoint",
+        "dual",
+    ]
+
+    instance.constraint_indices["Water_Link_Maximum_Flow_Constraint"] = [
+        "water_link",
+        "departure_timepoint",
+        "arrival_timepoint",
+        "dual",
+    ]
+
+    instance.constraint_indices["Water_Link_Min_Total_Hrz_Flow_Constraint"] = [
+        "water_link",
+        "balancing_type",
+        "horizon",
+        "dual",
+    ]
+
+    instance.constraint_indices["Water_Link_Max_Total_Hrz_Flow_Constraint"] = [
+        "water_link",
+        "balancing_type",
+        "horizon",
+        "dual",
+    ]
+
+    instance.constraint_indices["Water_Link_Flow_Ramp_Constraint"] = [
+        "water_link",
+        "ramp_limit",
+        "timepoint",
+        "future_timepoint",
+        "dual",
+    ]
 
 
 def import_results_into_database(

@@ -34,6 +34,8 @@ from pyomo.environ import (
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.common_functions import (
     create_results_df,
+    duals_wrapper,
+    none_dual_type_error_wrapper,
 )
 from gridpath.project.common_functions import (
     check_if_first_timepoint,
@@ -280,8 +282,72 @@ def export_results(
     :param d:
     :return:
     """
-    # TODO: export elevation here
-    pass
+    results_columns = [
+        "endogenous_starting_elevation",
+        "elevation_volume_relationship_constraint_dual",
+        "elevation_volume_relationship_constraint_marginal_cost_per_volumeunit",
+    ]
+
+    def elevation_volume_constraint_dual(r, seg, tmp):
+        return (
+            duals_wrapper(m, m.Elevation_Volume_Relationship_Constraint[r, seg, tmp])
+            if (r, seg, tmp) in m.Elevation_Volume_Relationship_Constraint
+            else None
+        )
+
+    data = [
+        [
+            r,
+            seg,
+            tmp,
+            value(m.Reservoir_Endogenous_Starting_Elevation_ElevationUnit[r, tmp]),
+            elevation_volume_constraint_dual(r, seg, tmp),
+            none_dual_type_error_wrapper(
+                elevation_volume_constraint_dual(r, seg, tmp),
+                m.tmp_objective_coefficient[tmp],
+            ),
+        ]
+        for (r, seg) in m.WATER_NODES_W_RESERVOIRS_SEGMENTS
+        for tmp in m.TMPS
+    ]
+    results_df = create_results_df(
+        index_columns=["water_node", "segment", "timepoint"],
+        results_columns=results_columns,
+        data=data,
+    )
+
+    results_df.to_csv(
+        os.path.join(
+            scenario_directory,
+            weather_iteration,
+            hydro_iteration,
+            availability_iteration,
+            subproblem,
+            stage,
+            "results",
+            "system_water_node_elevation_segment_timepoint.csv",
+        ),
+        sep=",",
+        index=True,
+    )
+
+
+def save_duals(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    instance,
+    dynamic_components,
+):
+    instance.constraint_indices["Elevation_Volume_Relationship_Constraint"] = [
+        "water_node",
+        "segment",
+        "timepoint",
+        "dual",
+    ]
 
 
 # TODO: results import

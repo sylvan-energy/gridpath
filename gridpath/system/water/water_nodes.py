@@ -19,6 +19,8 @@ Water nodes and inflow rate parameters.
 
 import csv
 import os.path
+
+import pandas as pd
 from pyomo.environ import (
     Set,
     Param,
@@ -32,6 +34,7 @@ from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
 )
+from gridpath.system.water import WATER_NODE_TMP_DF
 
 
 def add_model_components(
@@ -172,6 +175,44 @@ def add_model_components(
     m.WATER_LINKS_FROM_BY_WATER_NODE = Set(
         m.WATER_NODES, initialize=water_links_from_by_water_node_init
     )
+
+
+def export_results(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    m,
+    d,
+):
+    """
+    Create the consolidated water node-timepoint results dataframe that the
+    other water modules will update with their results, and add this
+    module's exogenous inflows to it.
+    """
+    wn_tmp_df = pd.DataFrame(
+        columns=[
+            "water_node",
+            "timepoint",
+            "exogenous_water_inflow_rate_vol_per_sec",
+        ],
+        data=[
+            [
+                wn,
+                tmp,
+                m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp],
+            ]
+            for wn in m.WATER_NODES
+            for tmp in m.TMPS
+        ],
+    ).set_index(["water_node", "timepoint"])
+
+    wn_tmp_df.sort_index(inplace=True)
+
+    # Add the dataframe to the dynamic components to pass to other modules
+    setattr(d, WATER_NODE_TMP_DF, wn_tmp_df)
 
 
 def load_model_data(

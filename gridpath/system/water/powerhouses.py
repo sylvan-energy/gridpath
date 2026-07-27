@@ -33,7 +33,11 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values, import_csv
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import (
+    create_results_df,
+    duals_wrapper,
+    none_dual_type_error_wrapper,
+)
 from gridpath.project.operations.operational_types.common_functions import (
     get_optype_inputs_as_df,
 )
@@ -370,7 +374,17 @@ def export_results(
         "gross_head",
         "net_head",
         "water_discharge_to_powerhouse_rate_vol_per_sec",
+        "generator_water_allocation_constraint_dual",
+        "generator_water_allocation_constraint_marginal_cost_per_vol_per_sec",
     ]
+
+    def allocation_constraint_dual(p, tmp):
+        return (
+            duals_wrapper(m, m.Generator_Water_Allocation_Constraint[p, tmp])
+            if (p, tmp) in m.Generator_Water_Allocation_Constraint
+            else None
+        )
+
     data = [
         [
             p,
@@ -382,6 +396,11 @@ def export_results(
                 m.Discharge_Water_to_Powerhouse_Rate_Vol_Per_Sec[
                     m.powerhouse_water_node[p], tmp
                 ]
+            ),
+            allocation_constraint_dual(p, tmp),
+            none_dual_type_error_wrapper(
+                allocation_constraint_dual(p, tmp),
+                m.tmp_objective_coefficient[tmp],
             ),
         ]
         for p in m.POWERHOUSES
@@ -407,6 +426,23 @@ def export_results(
         sep=",",
         index=True,
     )
+
+
+def save_duals(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    instance,
+    dynamic_components,
+):
+    instance.constraint_indices["Generator_Water_Allocation_Constraint"] = [
+        "powerhouse",
+        "timepoint",
+        "dual",
+    ]
 
 
 def import_results_into_database(

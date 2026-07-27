@@ -73,6 +73,7 @@ def all_modules_list():
         "system.water.reservoirs",
         "system.water.water_node_balance",
         "system.water.powerhouses",
+        "system.water.consolidate_results",
         "system.load_balance",
         "system.load_balance.static_load_requirement",
         "project",
@@ -523,6 +524,7 @@ def optional_modules_list():
             "system.water.powerhouses",
             "objective.system.water.aggregate_reservoir_violation_penalty_costs",
             "objective.system.water.aggregate_flow_violation_penalty_costs",
+            "system.water.consolidate_results",
         ],
     }
     return optional_modules
