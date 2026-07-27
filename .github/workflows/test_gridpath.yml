@@ -26,7 +26,7 @@ jobs:
     strategy:
       # Reduced matrix on pull requests (each OS once, plus the oldest
       # Python and the coverage cell); full OS x Python matrix otherwise
-      matrix: ${{ github.event_name == 'pull_request' && fromJSON('{"include":[{"os":"ubuntu-latest","python-version":"3.11"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.14"},{"os":"windows-latest","python-version":"3.13"}]}') || fromJSON('{"os":["windows-latest","macos-latest","ubuntu-latest"],"python-version":["3.11","3.12","3.13","3.14"]}') }}
+      matrix: ${{ github.event_name == 'pull_request' && fromJSON('{"include":[{"os":"ubuntu-latest","python-version":"3.11"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.13"},{"os":"windows-latest","python-version":"3.14"}]}') || fromJSON('{"os":["windows-latest","macos-latest","ubuntu-latest"],"python-version":["3.11","3.12","3.13","3.14"]}') }}
 
     steps:
     - uses: actions/checkout@v4
