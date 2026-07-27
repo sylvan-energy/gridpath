@@ -2,9 +2,12 @@
 # It installs Python dependencies (including the HiGHS solver via highspy), runs
 # the GridPath test suite with coverage, and sends coverage results to coveralls
 # We run this on Linux, MacOS, and Windows with Python 3.11, 3.12, 3.13, and 3.14
-# The suite runs via scripts/run_tests_parallel.py: a parallel (pytest-xdist)
-# phase for the tests that are safe to run concurrently, then a serial phase
-# for the tests that share on-disk state
+# The suite runs via scripts/run_tests_parallel.py: a pytest-xdist lane for the
+# tests that are safe to run concurrently, plus serial lanes for the tests that
+# share on-disk state
+# Pull requests run a reduced matrix (each OS once, the oldest and the
+# coverage Python); pushes to main/develop and the nightly run cover the full
+# OS x Python matrix
 
 name: test-suite
 
@@ -21,9 +24,9 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-        python-version: [ "3.11", "3.12", "3.13", "3.14" ]
+      # Reduced matrix on pull requests (each OS once, plus the oldest
+      # Python and the coverage cell); full OS x Python matrix otherwise
+      matrix: ${{ github.event_name == 'pull_request' && fromJSON('{"include":[{"os":"ubuntu-latest","python-version":"3.11"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.14"},{"os":"windows-latest","python-version":"3.13"}]}') || fromJSON('{"os":["windows-latest","macos-latest","ubuntu-latest"],"python-version":["3.11","3.12","3.13","3.14"]}') }}
 
     steps:
     - uses: actions/checkout@v4
