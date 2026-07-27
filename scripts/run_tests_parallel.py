@@ -58,19 +58,6 @@ SHARED_STATE_TEST_PATHS = [
     "tests/test_run_scenario_parallel.py",
 ]
 
-# Test directories missing __init__.py, which `python -m unittest discover`
-# (and therefore CI) silently skips; pytest would collect them, so they are
-# ignored here too to keep this script running exactly the same tests as
-# the unittest suite. As of 2026-07-27, 43 of those 53 tests pass and 10
-# fail from drift — remove these ignores once the packages are fixed.
-NON_PACKAGE_TEST_DIRS = [
-    "tests/project/policy",
-    "tests/system/policy/generic_policy",
-    "tests/system/policy/performance_standard",
-    "tests/objective/system/reliability",
-    "tests/transmission/reliability",
-]
-
 # Deselected from phase 1 and run in phase 2 instead (they reuse other
 # test_examples tests' scenario directories)
 DESELECTED_NODE_IDS = [
@@ -105,7 +92,7 @@ def main(args=None):
     # relative --ignore paths against the current working directory when
     # it visits each directory — so relative ignores stop matching after
     # the chdir
-    for path in SHARED_STATE_TEST_PATHS + NON_PACKAGE_TEST_DIRS:
+    for path in SHARED_STATE_TEST_PATHS:
         phase_1_cmd.append("--ignore=" + os.path.join(REPO_ROOT, *path.split("/")))
     for node_id in DESELECTED_NODE_IDS:
         phase_1_cmd += ["--deselect", node_id]

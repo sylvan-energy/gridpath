@@ -35,7 +35,8 @@ PREREQUISITE_MODULE_NAMES = [
     "system.reliability.local_capacity.local_capacity_balance",
 ]
 NAME_OF_MODULE_BEING_TESTED = (
-    "objective.system" ".local_capacity.aggregate_local_capacity_violation_penalties"
+    "objective.system.reliability"
+    ".local_capacity.aggregate_local_capacity_violation_penalties"
 )
 IMPORTED_PREREQ_MODULES = list()
 for mdl in PREREQUISITE_MODULE_NAMES:
