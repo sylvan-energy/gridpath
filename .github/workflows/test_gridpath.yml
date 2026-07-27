@@ -39,9 +39,10 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         cache: pip
-        # No requirements.txt in this repo — key the pip cache on setup.py,
-        # where the dependencies are pinned
-        cache-dependency-path: setup.py
+        # Key the pip cache on pyproject.toml, where the dependencies are
+        # pinned (the root requirements.txt is a freeze snapshot, not what
+        # the install step uses)
+        cache-dependency-path: pyproject.toml
     - name: Install Python dependencies
       run: |
         python -m pip install .[coverage,parallel_tests] --upgrade pip
