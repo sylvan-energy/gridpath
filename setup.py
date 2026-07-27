@@ -32,7 +32,8 @@ extras_gurobi = ["gurobipy"]  # Gurobi Python interface
 
 extras_parallel_tests = [
     "pytest",  # test runner (collects the unittest suite as is)
-    "pytest-xdist",  # parallel test execution (see scripts/run_tests_parallel.sh)
+    "pytest-xdist",  # parallel test execution (see scripts/run_tests_parallel.py)
+    "pytest-cov",  # coverage measurement that reaches the xdist workers
 ]
 
 extras_all = (

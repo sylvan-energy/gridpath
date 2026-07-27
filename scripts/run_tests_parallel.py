@@ -1,0 +1,128 @@
+# Copyright 2026 Sylvan Energy Analytics LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Run the GridPath test suite in two phases:
+
+Phase 1 (parallel): everything that is safe to run concurrently, via
+pytest-xdist. Each worker gets its own copy of the unittest_examples
+database (see the PYTEST_XDIST_WORKER handling in tests/test_examples.py).
+
+Phase 2 (serial): tests that share writable state on disk and must not
+overlap with each other or with phase 1:
+  - tests/test_data_toolkit and tests/test_run_data_toolkit.py regenerate
+    committed fixture CSVs under db/csvs_test_examples/, which phase 1's
+    database builds read;
+  - tests/test_viz.py and tests/test_run_scenario_parallel.py re-solve
+    example scenarios whose examples/<scenario>/ directories phase 1's
+    example tests also write;
+  - the two deselected test_examples tests reuse the examples/ directories
+    of other test_examples tests (test_example_multi_stage_prod_cost_parallel
+    runs the "multi_stage_prod_cost" scenario; test_incomplete_only runs
+    "test").
+
+Usage:
+    python scripts/run_tests_parallel.py [--coverage]
+
+Requires the "parallel_tests" extra (pip install -e .[parallel_tests]);
+--coverage additionally requires the "coverage" extra and appends phase 2's
+coverage data to phase 1's, leaving a combined .coverage file at the repo
+root (pytest-cov measures the xdist worker processes, which a plain
+"coverage run -m pytest" would miss).
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Tests with shared on-disk state, excluded from phase 1 and run serially
+# in phase 2 (see module docstring for what each one shares)
+SHARED_STATE_TEST_PATHS = [
+    "tests/test_data_toolkit",
+    "tests/test_run_data_toolkit.py",
+    "tests/test_viz.py",
+    "tests/test_run_scenario_parallel.py",
+]
+
+# Test directories missing __init__.py, which `python -m unittest discover`
+# (and therefore CI) silently skips; pytest would collect them, so they are
+# ignored here too to keep this script running exactly the same tests as
+# the unittest suite. As of 2026-07-27, 43 of those 53 tests pass and 10
+# fail from drift — remove these ignores once the packages are fixed.
+NON_PACKAGE_TEST_DIRS = [
+    "tests/project/policy",
+    "tests/system/policy/generic_policy",
+    "tests/system/policy/performance_standard",
+    "tests/objective/system/reliability",
+    "tests/transmission/reliability",
+]
+
+# Deselected from phase 1 and run in phase 2 instead (they reuse other
+# test_examples tests' scenario directories)
+DESELECTED_NODE_IDS = [
+    "tests/test_examples.py::TestExamples::test_example_multi_stage_prod_cost_parallel",
+    "tests/test_examples.py::TestExamples::test_incomplete_only",
+]
+
+
+def run_phase(name, cmd):
+    print(f"=== {name} ===", flush=True)
+    returncode = subprocess.run(cmd, cwd=REPO_ROOT).returncode
+    if returncode != 0:
+        sys.exit(returncode)
+
+
+def main(args=None):
+    if args is None:
+        args = sys.argv[1:]
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="measure test coverage via pytest-cov (combined .coverage "
+        "file at the repo root)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    phase_1_cmd = [sys.executable, "-m", "pytest", "tests", "-n", "auto"]
+    phase_1_cmd += ["--dist", "worksteal", "-q"]
+    # The --ignore paths must be absolute: some test modules os.chdir at
+    # import time, which happens mid-collection, and pytest resolves
+    # relative --ignore paths against the current working directory when
+    # it visits each directory — so relative ignores stop matching after
+    # the chdir
+    for path in SHARED_STATE_TEST_PATHS + NON_PACKAGE_TEST_DIRS:
+        phase_1_cmd.append("--ignore=" + os.path.join(REPO_ROOT, *path.split("/")))
+    for node_id in DESELECTED_NODE_IDS:
+        phase_1_cmd += ["--deselect", node_id]
+
+    phase_2_cmd = [sys.executable, "-m", "pytest", "-q"]
+    phase_2_cmd += SHARED_STATE_TEST_PATHS + DESELECTED_NODE_IDS
+
+    if parsed_args.coverage:
+        # --cov-report= suppresses the terminal report; the .coverage data
+        # file is what downstream tools (coveralls) consume
+        phase_1_cmd += ["--cov", "--cov-report="]
+        phase_2_cmd += ["--cov", "--cov-append", "--cov-report="]
+
+    run_phase("Phase 1: parallel (pytest-xdist)", phase_1_cmd)
+    run_phase("Phase 2: serial (shared on-disk state)", phase_2_cmd)
+    print("=== All tests passed ===")
+
+
+if __name__ == "__main__":
+    main()
