@@ -24,15 +24,13 @@ it (see set_up_test_database in tests/test_examples.py).
 Phase 2 (serial): tests that share writable state on disk and must not
 overlap with each other or with phase 1:
   - tests/test_data_toolkit and tests/test_run_data_toolkit.py regenerate
-    committed fixture CSVs under db/csvs_test_examples/, which phase 1's
-    database builds read;
-  - tests/test_viz.py and tests/test_run_scenario_parallel.py re-solve
-    example scenarios whose examples/<scenario>/ directories phase 1's
-    example tests also write;
-  - the two deselected test_examples tests reuse the examples/ directories
-    of other test_examples tests (test_example_multi_stage_prod_cost_parallel
-    runs the "multi_stage_prod_cost" scenario; test_incomplete_only runs
-    "test").
+    committed fixture CSVs under db/csvs_test_examples/, some of which
+    both file sets write;
+  - tests/test_viz.py solves several example scenarios in one setUpClass;
+    it is self-contained (template-database copy plus a temporary copy of
+    the scenario directories) but stays out of phase 1 because worksteal
+    scheduling would re-run that expensive setUpClass on every worker
+    that picks up one of its tests.
 
 Usage:
     python scripts/run_tests_parallel.py [--coverage]
@@ -57,14 +55,6 @@ SHARED_STATE_TEST_PATHS = [
     "tests/test_data_toolkit",
     "tests/test_run_data_toolkit.py",
     "tests/test_viz.py",
-    "tests/test_run_scenario_parallel.py",
-]
-
-# Deselected from phase 1 and run in phase 2 instead (they reuse other
-# test_examples tests' scenario directories)
-DESELECTED_NODE_IDS = [
-    "tests/test_examples.py::TestExamples::test_example_multi_stage_prod_cost_parallel",
-    "tests/test_examples.py::TestExamples::test_incomplete_only",
 ]
 
 
@@ -104,11 +94,9 @@ def main(args=None):
     # the chdir
     for path in SHARED_STATE_TEST_PATHS:
         phase_1_cmd.append("--ignore=" + os.path.join(REPO_ROOT, *path.split("/")))
-    for node_id in DESELECTED_NODE_IDS:
-        phase_1_cmd += ["--deselect", node_id]
 
     phase_2_cmd = [sys.executable, "-m", "pytest", "-q"]
-    phase_2_cmd += SHARED_STATE_TEST_PATHS + DESELECTED_NODE_IDS
+    phase_2_cmd += SHARED_STATE_TEST_PATHS
 
     if parsed_args.coverage:
         # --cov-report= suppresses the terminal report; the .coverage data

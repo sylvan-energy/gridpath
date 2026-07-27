@@ -14,6 +14,8 @@
 
 import logging
 import os
+import shutil
+import tempfile
 import unittest
 
 from gridpath import run_end_to_end
@@ -45,6 +47,16 @@ XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
 DB_NAME = f"unittest_examples{XDIST_WORKER}"
 DB_PATH = f"../db/{DB_NAME}.db"
 
+# The example scenarios solved to populate results for the plot tests
+SCENARIOS_TO_RUN = [
+    "test",
+    "test_new_solar_carbon_cap",
+    "2periods_new_build_rps_percent_target",
+    "2periods_gen_lin_econ_retirement",
+    "2periods_new_build_2zones",
+    "2horizons_w_hydro",
+]
+
 
 class TestViz(unittest.TestCase):
     @classmethod
@@ -56,80 +68,31 @@ class TestViz(unittest.TestCase):
 
         set_up_test_database(DB_PATH)
 
+        # Solve the scenarios in a temporary copy of their example
+        # directories, so that these runs don't write into examples/
+        # directories that concurrently running tests may also be using
+        cls.scenarios_dir = tempfile.TemporaryDirectory()
+        for scenario_name in SCENARIOS_TO_RUN:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                os.path.join(cls.scenarios_dir.name, scenario_name),
+            )
+
         try:
             # Run a few scenarios to populate results
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "test",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "test_new_solar_carbon_cap",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2periods_new_build_rps_percent_target",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2periods_gen_lin_econ_retirement",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2periods_new_build_2zones",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2horizons_w_hydro",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
+            for scenario_name in SCENARIOS_TO_RUN:
+                run_end_to_end.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        cls.scenarios_dir.name,
+                        "--quiet",
+                        "--mute_solver_output",
+                    ]
+                )
         except Exception as e:
             print(
                 "Error encountered during population of testing database "
@@ -333,6 +296,7 @@ class TestViz(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.scenarios_dir.cleanup()
         os.remove(DB_PATH)
         for temp_file_ext in ["-shm", "-wal"]:
             temp_file = "{}{}".format(DB_PATH, temp_file_ext)

@@ -21,6 +21,7 @@ import pandas as pd
 import platform
 import shutil
 import sqlite3
+import tempfile
 import unittest
 
 from gridpath import run_end_to_end, run_scenario, validate_inputs
@@ -625,30 +626,38 @@ class TestExamples(unittest.TestCase):
     def test_example_multi_stage_prod_cost_parallel(self):
         """
         Check "multi_stage_prod_cost" example running subproblems in parallel
-        (getting inputs and optimization)
+        (getting inputs and optimization); run in a temporary copy of the
+        scenario directory, so that this test doesn't write into the
+        examples/ directory that test_example_multi_stage_prod_cost may be
+        using concurrently
         :return:
         """
-        run_end_to_end.main(
-            [
-                "--database",
-                DB_PATH,
-                "--scenario",
-                "multi_stage_prod_cost",
-                "--scenario_location",
-                EXAMPLES_DIRECTORY,
-                # "--log",
-                # "--write_solver_files_to_logs_dir",
-                # "--keepfiles",
-                # "--symbolic",
-                "--n_parallel_get_inputs",
-                "3",
-                "--n_parallel_solve",
-                "3",
-                "--quiet",
-                "--mute_solver_output",
-                "--testing",
-            ]
-        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
+                os.path.join(tmp_dir, "multi_stage_prod_cost"),
+            )
+            run_end_to_end.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    "multi_stage_prod_cost",
+                    "--scenario_location",
+                    tmp_dir,
+                    # "--log",
+                    # "--write_solver_files_to_logs_dir",
+                    # "--keepfiles",
+                    # "--symbolic",
+                    "--n_parallel_get_inputs",
+                    "3",
+                    "--n_parallel_solve",
+                    "3",
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--testing",
+                ]
+            )
 
     def test_example_multi_stage_prod_cost_w_hydro(self):
         """
@@ -1336,19 +1345,27 @@ class TestExamples(unittest.TestCase):
     def test_incomplete_only(self):
         """
         Check that the "incomplete only" functionality works with no errors.
+        Run in a temporary copy of the scenario directory, so that this test
+        doesn't write into the examples/ directory that test_example_test
+        may be using concurrently.
         :return:
         """
-        actual_objective = run_scenario.main(
-            [
-                "--scenario",
-                "test",
-                "--scenario_location",
-                EXAMPLES_DIRECTORY,
-                "--quiet",
-                "--mute_solver_output",
-                "--incomplete_only",
-            ]
-        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, "test"),
+                os.path.join(tmp_dir, "test"),
+            )
+            actual_objective = run_scenario.main(
+                [
+                    "--scenario",
+                    "test",
+                    "--scenario_location",
+                    tmp_dir,
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--incomplete_only",
+                ]
+            )
 
     def test_example_test_w_storage_starting_soc(self):
         """
