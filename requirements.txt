@@ -12,7 +12,7 @@ coveralls==4.1.0
 dill==0.4.1
 docutils==0.20.1
 duckdb==1.5.4
-GridPath==2026.7.0
+GridPath==2026.7.1
 gurobipy==13.0.2
 highspy==1.15.1
 idna==3.18

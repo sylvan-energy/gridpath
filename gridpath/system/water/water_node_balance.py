@@ -18,25 +18,15 @@ total inflows equal total outflows. For nodes with reservoirs, total inflows
 minus total inflows equals the change in reservoir volume between timepoints.
 """
 
-import csv
-import os.path
-from pyomo.environ import (
-    Boolean,
-    NonNegativeIntegers,
-    Constraint,
-    Expression,
-    Any,
-    value,
-)
+from pyomo.environ import Constraint
 
-from gridpath.auxiliary.db_interface import directories_to_db_values, import_csv
 from gridpath.common_functions import (
     create_results_df,
+    duals_wrapper,
+    none_dual_type_error_wrapper,
+    update_results_df,
 )
-from gridpath.project.common_functions import (
-    check_if_first_timepoint,
-    check_boundary_type,
-)
+from gridpath.system.water import WATER_NODE_TMP_DF
 
 
 def add_model_components(
@@ -130,72 +120,32 @@ def export_results(
     d,
 ):
     """
-    :param scenario_directory:
-    :param subproblem:
-    :param stage:
-    :param m:
-    :param d:
-    :return:
+    Add the node outflow constraint duals to the consolidated water
+    node-timepoint results dataframe.
     """
     results_columns = [
-        "starting_elevation",
-        "starting_volume",
-        "min_volume_violation",
-        "max_volume_violation",
-        "exogenous_water_inflow_rate_vol_per_sec",
-        "endogenous_water_inflow_rate_vol_per_sec",
-        "gross_water_inflow_rate_vol_per_sec",
-        "discharge_water_to_powerhouse_rate_vol_per_sec",
-        "spill_water_rate_vol_per_sec",
-        "evap_losses_NOT_IMPLEMENTED",
-        "gross_water_outflow_rate_vol_per_sec",
+        "water_node_outflow_constraint_dual",
+        "water_node_outflow_constraint_marginal_cost_per_vol_per_sec",
     ]
+
+    def outflow_constraint_dual(wn, tmp):
+        # The constraint is skipped for nodes with no outgoing links, so
+        # check membership first
+        return (
+            duals_wrapper(m, m.Water_Node_Outflow_Constraint[wn, tmp])
+            if (wn, tmp) in m.Water_Node_Outflow_Constraint
+            else None
+        )
+
     data = [
         [
             wn,
             tmp,
-            (
-                value(m.Reservoir_Starting_Elevation_ElevationUnit[wn, tmp])
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
+            outflow_constraint_dual(wn, tmp),
+            none_dual_type_error_wrapper(
+                outflow_constraint_dual(wn, tmp),
+                m.tmp_objective_coefficient[tmp],
             ),
-            (
-                value(m.Reservoir_Starting_Volume_WaterVolumeUnit[wn, tmp])
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
-            ),
-            (
-                value(m.Min_Reservoir_Storage_Violation[wn, tmp])
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
-            ),
-            (
-                value(m.Max_Reservoir_Storage_Violation[wn, tmp])
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
-            ),
-            m.total_exogenous_water_inflow_rate_vol_per_sec[wn, tmp],
-            value(m.Endogenous_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]),
-            value(m.Gross_Water_Node_Inflow_Rate_Vol_Per_Sec[wn, tmp]),
-            value(
-                m.Discharge_Water_to_Powerhouse_Rate_Vol_Per_Sec[wn, tmp]
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
-            ),
-            (
-                value(m.Spill_Water_Rate_Vol_Per_Sec[wn, tmp])
-                if wn in m.WATER_NODES_W_RESERVOIRS
-                else None
-            ),
-            (
-                # # TODO: implement the correct evaporative-loss calculation;
-                # #  depends on area, which depends on elevation
-                # m.evaporation_coefficient[wn]
-                # if wn in m.WATER_NODES_W_RESERVOIRS
-                # else None
-                None
-            ),
-            value(m.Gross_Water_Node_Outflow_Rate_Vol_per_Sec[wn, tmp]),
         ]
         for wn in m.WATER_NODES
         for tmp in m.TMPS
@@ -206,86 +156,21 @@ def export_results(
         data=data,
     )
 
-    results_df.to_csv(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "results",
-            "system_water_node_timepoint.csv",
-        ),
-        sep=",",
-        index=True,
-    )
-
-    results_columns = [
-        "reservoir_target_release_avg_flow_volunit_per_sec",
-        "total_target_release_violation_volunit",
-        "avg_target_release_violation_flow_volunit_per_sec",
-    ]
-    data = [
-        [
-            wn,
-            bt,
-            hrz,
-            m.reservoir_target_release_avg_flow_volunit_per_sec[wn, bt, hrz],
-            value(m.Target_Release_Violation_VolUnit[wn, bt, hrz]),
-            value(m.Target_Release_Violation_VolUnit[wn, bt, hrz])
-            / sum(3600 * m.hrs_in_tmp[tmp] for tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]),
-        ]
-        for (
-            wn,
-            bt,
-            hrz,
-        ) in m.WATER_NODE_RESERVOIR_BT_HRZS_WITH_TOTAL_RELEASE_REQUIREMENTS
-    ]
-    results_df = create_results_df(
-        index_columns=["water_node", "balancing_type", "horizon"],
-        results_columns=results_columns,
-        data=data,
-    )
-
-    results_df.to_csv(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "results",
-            "system_water_node_bt_hrz.csv",
-        ),
-        sep=",",
-        index=True,
-    )
+    update_results_df(getattr(d, WATER_NODE_TMP_DF), results_df)
 
 
-def import_results_into_database(
-    scenario_id,
+def save_duals(
+    scenario_directory,
     weather_iteration,
     hydro_iteration,
     availability_iteration,
     subproblem,
     stage,
-    c,
-    db,
-    results_directory,
-    quiet,
+    instance,
+    dynamic_components,
 ):
-    import_csv(
-        conn=db,
-        cursor=c,
-        scenario_id=scenario_id,
-        weather_iteration=weather_iteration,
-        hydro_iteration=hydro_iteration,
-        availability_iteration=availability_iteration,
-        subproblem=subproblem,
-        stage=stage,
-        quiet=quiet,
-        results_directory=results_directory,
-        which_results="system_water_node_timepoint",
-    )
+    instance.constraint_indices["Water_Node_Outflow_Constraint"] = [
+        "water_node",
+        "timepoint",
+        "dual",
+    ]

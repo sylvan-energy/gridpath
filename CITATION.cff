@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use GridPath, please cite it as below."
+title: "GridPath"
+type: software
+authors:
+  - family-names: "Mileva"
+    given-names: "Ana"
+    affiliation: "Sylvan Energy Analytics"
+  - family-names: "De Moor"
+    given-names: "Gerrit"
+    affiliation: "Powerline"
+  - family-names: "Deshmukh"
+    given-names: "Ranjit"
+    affiliation: "University of California, Santa Barbara"
+  - name: "The GridPath Contributors"
+abstract: >-
+  GridPath is a versatile simulation and optimization platform for
+  power-system planning and operations, capable of production-cost,
+  capacity-expansion, asset-valuation, and reliability modeling.
+version: "v2026.7.1"
+date-released: 2026-07-20
+license: Apache-2.0
+doi: 10.5281/zenodo.5822994
+repository-code: "https://github.com/sylvan-energy/gridpath"
+url: "https://www.gridpath.io"
+keywords:
+  - energy
+  - electricity
+  - power
+  - renewables
+  - planning
+  - operations
