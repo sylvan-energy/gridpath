@@ -40,7 +40,10 @@ from viz import (
 # expects; the rest of the global variables are relative paths from there
 os.chdir(os.path.join(os.path.dirname(__file__), "..", "gridpath"))
 EXAMPLES_DIRECTORY = os.path.join("..", "examples")
-DB_NAME = "unittest_examples"
+# When running in parallel via pytest-xdist, give each worker process its
+# own database (PYTEST_XDIST_WORKER is e.g. "gw0"; unset in serial runs)
+XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+DB_NAME = f"unittest_examples{XDIST_WORKER}"
 DB_PATH = f"../db/{DB_NAME}.db"
 DB_SCHEMA = f"../db/db_schema.sql"
 DATA_DIRECTORY = "../db/data"

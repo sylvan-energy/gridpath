@@ -31,7 +31,10 @@ from db.utilities import port_csvs_to_db, scenario
 # expects; the rest of the global variables are relative paths from there
 os.chdir(os.path.join(os.path.dirname(__file__), "..", "gridpath"))
 EXAMPLES_DIRECTORY = os.path.join("..", "examples")
-DB_NAME = "unittest_examples"
+# When running in parallel via pytest-xdist, give each worker process its
+# own database (PYTEST_XDIST_WORKER is e.g. "gw0"; unset in serial runs)
+XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+DB_NAME = f"unittest_examples{XDIST_WORKER}"
 DB_PATH = f"../db/{DB_NAME}.db"
 DB_SCHEMA = f"../db/db_schema.sql"
 DATA_DIRECTORY = "../db/data"
@@ -189,14 +192,17 @@ class TestExamples(unittest.TestCase):
         # (numpy floats are written as, e.g., 'np.float64(42.0)')
         actual_objective = objective_values_to_float(actual_objective)
 
-        # Uncomment this to save new objective function values
-        df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
-        df.set_index("test_scenario", inplace=True)
-        # Set dtype to 'object' so that we can have floats and dictionaries
-        # in the column
-        df["actual_objective"] = df["actual_objective"].astype("object")
-        df.at[scenario_name, "actual_objective"] = actual_objective
-        df.to_csv(TEST_SCENARIOS_CSV, index=True)
+        # Record the actual objective in the test-scenarios CSV; skip when
+        # running in parallel via pytest-xdist, as concurrent whole-file
+        # rewrites from multiple workers would lose each other's updates
+        if not XDIST_WORKER:
+            df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
+            df.set_index("test_scenario", inplace=True)
+            # Set dtype to 'object' so that we can have floats and
+            # dictionaries in the column
+            df["actual_objective"] = df["actual_objective"].astype("object")
+            df.at[scenario_name, "actual_objective"] = actual_objective
+            df.to_csv(TEST_SCENARIOS_CSV, index=True)
 
         self.assertDictAlmostEqual(expected_objective, actual_objective, places=1)
 
