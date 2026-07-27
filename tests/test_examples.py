@@ -19,6 +19,7 @@ import multiprocessing
 import os
 import pandas as pd
 import platform
+import shutil
 import sqlite3
 import unittest
 
@@ -57,6 +58,69 @@ PYTHON_VERSION = platform.python_version()
 # and Python versions exceed any fixed absolute tolerance (one ULP at 1e15
 # is ~0.125), so we also allow a relative difference
 OBJECTIVE_REL_TOL = 1e-9
+
+# A pre-built database to copy instead of building the testing database
+# from the CSVs; set by scripts/run_tests_parallel.py, which builds the
+# template once rather than once per pytest-xdist worker
+DB_TEMPLATE_ENV_VAR = "GRIDPATH_TEST_EXAMPLES_DB_TEMPLATE"
+
+
+def create_test_database(db_path):
+    """
+    Build the testing database at db_path from the test-examples CSVs.
+    """
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    create_database.main(
+        [
+            "--database",
+            db_path,
+            "--db_schema",
+            DB_SCHEMA,
+            "--data_directory",
+            DATA_DIRECTORY,
+        ]
+    )
+
+    try:
+        port_csvs_to_db.main(
+            ["--database", db_path, "--csv_location", CSV_PATH, "--quiet"]
+        )
+    except Exception as e:
+        print(
+            "Error encountered during population of testing database "
+            "{}. Deleting database ...".format(db_path)
+        )
+        logging.exception(e)
+        os.remove(db_path)
+
+    try:
+        scenario.main(["--database", db_path, "--csv_path", SCENARIOS_CSV, "--quiet"])
+    except Exception as e:
+        print(
+            "Error encountered during population of testing database "
+            "{}. Deleting database ...".format(db_path)
+        )
+        logging.exception(e)
+        os.remove(db_path)
+
+
+def set_up_test_database(db_path):
+    """
+    Copy the pre-built template database to db_path if one has been provided
+    (parallel runs); otherwise build the database from the CSVs.
+    """
+    template_path = os.environ.get(DB_TEMPLATE_ENV_VAR)
+    if template_path and os.path.exists(template_path):
+        # Clear any stale database files first: copying a fresh .db file
+        # next to a leftover -wal/-shm from an aborted run would corrupt it
+        for stale in [db_path, f"{db_path}-shm", f"{db_path}-wal"]:
+            if os.path.exists(stale):
+                os.remove(stale)
+        shutil.copyfile(template_path, db_path)
+    else:
+        create_test_database(db_path)
 
 
 class TestExamples(unittest.TestCase):
@@ -212,44 +276,7 @@ class TestExamples(unittest.TestCase):
         Set up the testing database
         :return:
         """
-
-        if os.path.exists(DB_PATH):
-            os.remove(DB_PATH)
-
-        create_database.main(
-            [
-                "--database",
-                DB_PATH,
-                "--db_schema",
-                DB_SCHEMA,
-                "--data_directory",
-                DATA_DIRECTORY,
-            ]
-        )
-
-        try:
-            port_csvs_to_db.main(
-                ["--database", DB_PATH, "--csv_location", CSV_PATH, "--quiet"]
-            )
-        except Exception as e:
-            print(
-                "Error encountered during population of testing database "
-                "{}.db. Deleting database ...".format(DB_NAME)
-            )
-            logging.exception(e)
-            os.remove(DB_PATH)
-
-        try:
-            scenario.main(
-                ["--database", DB_PATH, "--csv_path", SCENARIOS_CSV, "--quiet"]
-            )
-        except Exception as e:
-            print(
-                "Error encountered during population of testing database "
-                "{}.db. Deleting database ...".format(DB_NAME)
-            )
-            logging.exception(e)
-            os.remove(DB_PATH)
+        set_up_test_database(DB_PATH)
 
     def validate_and_test_example_generic(
         self, scenario_name, solver=None, skip_validation=False, additional_args=[]

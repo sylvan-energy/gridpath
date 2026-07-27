@@ -17,7 +17,9 @@ Run the GridPath test suite in two phases:
 
 Phase 1 (parallel): everything that is safe to run concurrently, via
 pytest-xdist. Each worker gets its own copy of the unittest_examples
-database (see the PYTEST_XDIST_WORKER handling in tests/test_examples.py).
+database (see the PYTEST_XDIST_WORKER handling in tests/test_examples.py);
+the database is built once as a template beforehand and the workers copy
+it (see set_up_test_database in tests/test_examples.py).
 
 Phase 2 (serial): tests that share writable state on disk and must not
 overlap with each other or with phase 1:
@@ -66,9 +68,17 @@ DESELECTED_NODE_IDS = [
 ]
 
 
-def run_phase(name, cmd):
+# Where to pre-build the examples testing database that the test classes
+# then copy instead of each rebuilding it from the CSVs; the path is passed
+# to the test processes via this environment variable (see
+# set_up_test_database in tests/test_examples.py)
+DB_TEMPLATE_ENV_VAR = "GRIDPATH_TEST_EXAMPLES_DB_TEMPLATE"
+DB_TEMPLATE_PATH = os.path.join(REPO_ROOT, "db", "unittest_examples_template.db")
+
+
+def run_phase(name, cmd, env=None):
     print(f"=== {name} ===", flush=True)
-    returncode = subprocess.run(cmd, cwd=REPO_ROOT).returncode
+    returncode = subprocess.run(cmd, cwd=REPO_ROOT, env=env).returncode
     if returncode != 0:
         sys.exit(returncode)
 
@@ -106,8 +116,26 @@ def main(args=None):
         phase_1_cmd += ["--cov", "--cov-report="]
         phase_2_cmd += ["--cov", "--cov-append", "--cov-report="]
 
-    run_phase("Phase 1: parallel (pytest-xdist)", phase_1_cmd)
-    run_phase("Phase 2: serial (shared on-disk state)", phase_2_cmd)
+    # Build the examples testing database once; the test classes copy it
+    # instead of each xdist worker rebuilding it from the CSVs
+    run_phase(
+        "Building the testing-database template",
+        [
+            sys.executable,
+            "-c",
+            "from tests.test_examples import create_test_database; "
+            f"create_test_database(r'{DB_TEMPLATE_PATH}')",
+        ],
+    )
+    env = os.environ.copy()
+    env[DB_TEMPLATE_ENV_VAR] = DB_TEMPLATE_PATH
+
+    try:
+        run_phase("Phase 1: parallel (pytest-xdist)", phase_1_cmd, env=env)
+        run_phase("Phase 2: serial (shared on-disk state)", phase_2_cmd, env=env)
+    finally:
+        if os.path.exists(DB_TEMPLATE_PATH):
+            os.remove(DB_TEMPLATE_PATH)
     print("=== All tests passed ===")
 
 

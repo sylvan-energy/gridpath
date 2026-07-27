@@ -17,8 +17,7 @@ import os
 import unittest
 
 from gridpath import run_end_to_end
-from db import create_database
-from db.utilities import port_csvs_to_db, scenario
+from tests.test_examples import set_up_test_database
 from viz import (
     capacity_factor_plot,
     capacity_new_plot,
@@ -45,10 +44,6 @@ EXAMPLES_DIRECTORY = os.path.join("..", "examples")
 XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
 DB_NAME = f"unittest_examples{XDIST_WORKER}"
 DB_PATH = f"../db/{DB_NAME}.db"
-DB_SCHEMA = f"../db/db_schema.sql"
-DATA_DIRECTORY = "../db/data"
-CSV_PATH = "../db//csvs_test_examples"
-SCENARIOS_CSV = os.path.join(CSV_PATH, "scenarios.csv")
 
 
 class TestViz(unittest.TestCase):
@@ -59,36 +54,9 @@ class TestViz(unittest.TestCase):
         :return:
         """
 
-        if os.path.exists(DB_PATH):
-            os.remove(DB_PATH)
-
-        create_database.main(
-            [
-                "--database",
-                DB_PATH,
-                "--db_schema",
-                DB_SCHEMA,
-                "--data_directory",
-                DATA_DIRECTORY,
-            ]
-        )
+        set_up_test_database(DB_PATH)
 
         try:
-            port_csvs_to_db.main(
-                ["--database", DB_PATH, "--csv_location", CSV_PATH, "--quiet"]
-            )
-        except Exception as e:
-            print(
-                "Error encountered during population of testing database "
-                "{}.db. Deleting database ...".format(DB_NAME)
-            )
-            logging.exception(e)
-            os.remove(DB_PATH)
-
-        try:
-            scenario.main(
-                ["--database", DB_PATH, "--csv_path", SCENARIOS_CSV, "--quiet"]
-            )
             # Run a few scenarios to populate results
             run_end_to_end.main(
                 [
