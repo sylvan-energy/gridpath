@@ -1503,6 +1503,7 @@ CREATE TABLE inputs_system_water_flows
     hrz_max_flow_violation_penalty_cost_per_hour FLOAT,
     water_flow_timepoint_bounds_scenario_id      INTEGER,
     water_flow_horizon_bounds_scenario_id        INTEGER,
+    water_flow_upstream_node_map_scenario_id     INTEGER,
     water_flow_ramp_limit_scenario_id            INTEGER,
     PRIMARY KEY (water_flow_scenario_id, water_link),
     FOREIGN KEY (water_flow_scenario_id) REFERENCES
@@ -1528,6 +1529,7 @@ CREATE TABLE inputs_system_water_flows_timepoint_bounds
     timepoint                               FLOAT,
     min_tmp_flow_vol_per_second             FLOAT,
     max_tmp_flow_vol_per_second             FLOAT,
+    threshold_side_stream_vol_per_second    FLOAT,
     PRIMARY KEY (water_link, water_flow_timepoint_bounds_scenario_id,
                  timepoint),
     FOREIGN KEY (water_link, water_flow_timepoint_bounds_scenario_id) REFERENCES
@@ -1563,27 +1565,29 @@ CREATE TABLE inputs_system_water_flows_horizon_bounds
             (water_link, water_flow_horizon_bounds_scenario_id)
 );
 
-DROP TABLE IF EXISTS subscenarios_system_water_flows_horizon_bounds_upstream_node_map;
-CREATE TABLE subscenarios_system_water_flows_horizon_bounds_upstream_node_map
+-- Water nodes upstream of a water link whose exogenous inflows count
+-- toward the side stream thresholds (both by-timepoint and by-horizon)
+DROP TABLE IF EXISTS subscenarios_system_water_flows_upstream_node_map;
+CREATE TABLE subscenarios_system_water_flows_upstream_node_map
 (
-    water_link                            TEXT,
-    water_flow_horizon_bounds_scenario_id INTEGER,
-    name                                  VARCHAR(32),
-    description                           VARCHAR(128),
-    PRIMARY KEY (water_link, water_flow_horizon_bounds_scenario_id)
+    water_link                               TEXT,
+    water_flow_upstream_node_map_scenario_id INTEGER,
+    name                                     VARCHAR(32),
+    description                              VARCHAR(128),
+    PRIMARY KEY (water_link, water_flow_upstream_node_map_scenario_id)
 );
 
-DROP TABLE IF EXISTS inputs_system_water_flows_horizon_bounds_upstream_node_map;
-CREATE TABLE inputs_system_water_flows_horizon_bounds_upstream_node_map
+DROP TABLE IF EXISTS inputs_system_water_flows_upstream_node_map;
+CREATE TABLE inputs_system_water_flows_upstream_node_map
 (
-    water_link                            TEXT,
-    water_flow_horizon_bounds_scenario_id INTEGER,
-    upstream_water_node                   TEXT,
-    PRIMARY KEY (water_link, water_flow_horizon_bounds_scenario_id,
+    water_link                               TEXT,
+    water_flow_upstream_node_map_scenario_id INTEGER,
+    upstream_water_node                      TEXT,
+    PRIMARY KEY (water_link, water_flow_upstream_node_map_scenario_id,
                  upstream_water_node),
-    FOREIGN KEY (water_link, water_flow_horizon_bounds_scenario_id) REFERENCES
-        subscenarios_system_water_flows_horizon_bounds
-            (water_link, water_flow_horizon_bounds_scenario_id)
+    FOREIGN KEY (water_link, water_flow_upstream_node_map_scenario_id) REFERENCES
+        subscenarios_system_water_flows_upstream_node_map
+            (water_link, water_flow_upstream_node_map_scenario_id)
 );
 
 -- Water flow ramp limits
@@ -8145,6 +8149,10 @@ CREATE TABLE results_system_water_link_timepoint
     water_flow_vol_per_sec               FLOAT,
     water_flow_min_violation_vol_per_sec FLOAT,
     water_flow_max_violation_vol_per_sec FLOAT,
+    max_tmp_flow_vol_per_second          FLOAT,
+    threshold_side_stream_vol_per_second FLOAT,
+    upstream_exogenous_inflow_vol_per_sec FLOAT,
+    adjusted_max_tmp_flow_vol_per_second FLOAT,
     water_link_min_flow_constraint_dual  FLOAT,
     water_link_min_flow_constraint_marginal_cost_per_vol_per_sec FLOAT,
     water_link_max_flow_constraint_dual  FLOAT,
