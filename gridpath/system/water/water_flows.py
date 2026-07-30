@@ -1,4 +1,5 @@
 # Copyright 2016-2025 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,6 +104,16 @@ def add_model_components(
     )
     m.max_tmp_flow_vol_per_second = Param(m.WATER_LINKS, m.TMPS, default=float("inf"))
 
+    # Threshold upstream inflow above which max timepoint flows will be
+    # adjusted
+    # If not specified, defaults to infinity, so no adjustment will be made
+    m.threshold_side_stream_vol_per_second = Param(
+        m.WATER_LINKS,
+        m.TMPS,
+        within=NonNegativeReals,
+        default=float("inf"),
+    )
+
     # Min and max total flows by horizon
     m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT = Set(
         dimen=3, within=m.WATER_LINKS * m.BLN_TYPE_HRZS
@@ -127,6 +138,23 @@ def add_model_components(
         m.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT,
         within=NonNegativeReals,
         default=float("inf"),
+    )
+
+    # Mapping of the water nodes upstream of a water link whose exogenous
+    # inflows count toward the side stream thresholds (both by-timepoint and
+    # by-horizon)
+    m.WATER_LINK_UPSTREAM_WATER_NODES = Set(within=m.WATER_LINKS * m.WATER_NODES)
+
+    def upstream_water_nodes_by_water_link_init(mod):
+        nodes_by_link = {wl: [] for wl in mod.WATER_LINKS}
+        for _wl, wn in mod.WATER_LINK_UPSTREAM_WATER_NODES:
+            nodes_by_link[_wl].append(wn)
+
+        return nodes_by_link
+
+    m.UPSTREAM_WATER_NODES_BY_WATER_LINK = Set(
+        m.WATER_LINKS,
+        initialize=upstream_water_nodes_by_water_link_init,
     )
 
     # Set WATER_LINK_DEPARTURE_ARRIVAL_TMPS
@@ -376,15 +404,37 @@ def add_model_components(
     )
 
     def max_tmp_flow_rule(mod, wl, dep_tmp, arr_tmp):
+        """
+        Rule for max flows in a timepoint. The max is a parameter by
+        timepoint plus an optional adjustment for upstream exogenous inflows
+        (requires a mapping to be provided of water nodes upstream from
+        water link wl) above a threshold inflow rate
+        (threshold_side_stream_vol_per_second). If the latter is not
+        specified, the max_tmp_flow_vol_per_second will bind.
+        """
         max_flow = mod.max_tmp_flow_vol_per_second[wl, dep_tmp]
         if max_flow == float("inf"):
             return Constraint.Skip
+        threshold = mod.threshold_side_stream_vol_per_second[wl, dep_tmp]
+        # Avoid the upstream-inflow sum in the common case of no threshold
+        # (the adjustment is always 0 with an infinite threshold)
+        if threshold == float("inf"):
+            side_stream_adjustment = 0
+        else:
+            side_stream_adjustment = max(
+                sum(
+                    mod.total_exogenous_water_inflow_rate_vol_per_sec[wn, dep_tmp]
+                    for wn in mod.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
+                )
+                - threshold,
+                0,
+            )
         return (
             mod.Water_Link_Flow_Rate_Vol_per_Sec[wl, dep_tmp, arr_tmp]
             - mod.Water_Link_Max_Flow_Violation_Vol_per_Sec_Expression[
                 wl, dep_tmp, arr_tmp
             ]
-            <= max_flow
+            <= max_flow + side_stream_adjustment
         )
 
     m.Water_Link_Maximum_Flow_Constraint = Constraint(
@@ -412,20 +462,6 @@ def add_model_components(
     m.Water_Link_Min_Total_Hrz_Flow_Constraint = Constraint(
         m.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT,
         rule=min_total_hrz_flow_constraint_rule,
-    )
-
-    m.WATER_LINK_UPSTREAM_WATER_NODES = Set(within=m.WATER_LINKS * m.WATER_NODES)
-
-    def upstream_water_nodes_by_water_link_init(mod):
-        nodes_by_link = {wl: [] for wl in mod.WATER_LINKS}
-        for _wl, wn in mod.WATER_LINK_UPSTREAM_WATER_NODES:
-            nodes_by_link[_wl].append(wn)
-
-        return nodes_by_link
-
-    m.UPSTREAM_WATER_NODES_BY_WATER_LINK = Set(
-        m.WATER_LINKS,
-        initialize=upstream_water_nodes_by_water_link_init,
     )
 
     def max_total_hrz_flow_constraint_rule(mod, wl, bt, hrz):
@@ -661,7 +697,11 @@ def load_model_data(
     if os.path.exists(tmp_fname):
         data_portal.load(
             filename=tmp_fname,
-            param=(m.min_tmp_flow_vol_per_second, m.max_tmp_flow_vol_per_second),
+            param=(
+                m.min_tmp_flow_vol_per_second,
+                m.max_tmp_flow_vol_per_second,
+                m.threshold_side_stream_vol_per_second,
+            ),
         )
 
     hrz_min_fname = os.path.join(
@@ -770,8 +810,9 @@ def get_inputs_from_database(
         """)
 
     c1 = conn.cursor()
-    tmp_sql = f"""SELECT water_link, timepoint, 
-            min_tmp_flow_vol_per_second, max_tmp_flow_vol_per_second
+    tmp_sql = f"""SELECT water_link, timepoint,
+            min_tmp_flow_vol_per_second, max_tmp_flow_vol_per_second,
+            threshold_side_stream_vol_per_second
             FROM inputs_system_water_flows_timepoint_bounds
             WHERE (water_link, water_flow_timepoint_bounds_scenario_id) in (
                 SELECT water_link, water_flow_timepoint_bounds_scenario_id
@@ -851,11 +892,11 @@ def get_inputs_from_database(
     hrz_max_flow_bounds = c3.execute(hrz_max_sql)
 
     wl_upstream_wn_map_sql = f"""SELECT water_link, upstream_water_node
-            FROM inputs_system_water_flows_horizon_bounds_upstream_node_map
-            WHERE (water_link, water_flow_horizon_bounds_scenario_id) in (
-                SELECT water_link, water_flow_horizon_bounds_scenario_id
+            FROM inputs_system_water_flows_upstream_node_map
+            WHERE (water_link, water_flow_upstream_node_map_scenario_id) in (
+                SELECT water_link, water_flow_upstream_node_map_scenario_id
                 FROM inputs_system_water_flows
-                WHERE water_flow_scenario_id = 
+                WHERE water_flow_scenario_id =
                 {subscenarios.WATER_FLOW_SCENARIO_ID}
             )
             AND water_link IN (
@@ -1114,6 +1155,10 @@ def export_results(
         "water_flow_vol_per_sec",
         "water_flow_min_violation_vol_per_sec",
         "water_flow_max_violation_vol_per_sec",
+        "max_tmp_flow_vol_per_second",
+        "threshold_side_stream_vol_per_second",
+        "upstream_exogenous_inflow_vol_per_sec",
+        "adjusted_max_tmp_flow_vol_per_second",
         "water_link_min_flow_constraint_dual",
         "water_link_min_flow_constraint_marginal_cost_per_vol_per_sec",
         "water_link_max_flow_constraint_dual",
@@ -1133,6 +1178,23 @@ def export_results(
             none_dual_type_error_wrapper(dual, m.tmp_objective_coefficient[dep_tmp]),
         ]
 
+    def upstream_exogenous_inflow_vol_per_sec(wl, dep_tmp):
+        return sum(
+            m.total_exogenous_water_inflow_rate_vol_per_sec[wn, dep_tmp]
+            for wn in m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]
+        )
+
+    def adjusted_max_tmp_flow_vol_per_second(wl, dep_tmp):
+        max_flow = m.max_tmp_flow_vol_per_second[wl, dep_tmp]
+        if max_flow == float("inf"):
+            return None
+        threshold = m.threshold_side_stream_vol_per_second[wl, dep_tmp]
+        if threshold == float("inf"):
+            return max_flow
+        return max_flow + max(
+            upstream_exogenous_inflow_vol_per_sec(wl, dep_tmp) - threshold, 0
+        )
+
     tmp_data = [
         [
             wl,
@@ -1149,6 +1211,25 @@ def export_results(
                     wl, dep_tmp, arr_tmp
                 ]
             ),
+            # max_tmp_flow_vol_per_second
+            (
+                m.max_tmp_flow_vol_per_second[wl, dep_tmp]
+                if m.max_tmp_flow_vol_per_second[wl, dep_tmp] != float("inf")
+                else None
+            ),
+            # threshold_side_stream_vol_per_second
+            (
+                m.threshold_side_stream_vol_per_second[wl, dep_tmp]
+                if m.threshold_side_stream_vol_per_second[wl, dep_tmp] != float("inf")
+                else None
+            ),
+            # upstream_exogenous_inflow_vol_per_sec
+            (
+                upstream_exogenous_inflow_vol_per_sec(wl, dep_tmp)
+                if len(m.UPSTREAM_WATER_NODES_BY_WATER_LINK[wl]) > 0
+                else None
+            ),
+            adjusted_max_tmp_flow_vol_per_second(wl, dep_tmp),
             *tmp_flow_constraint_dual_and_marginal_cost(
                 m.Water_Link_Minimum_Flow_Constraint, wl, dep_tmp, arr_tmp
             ),
