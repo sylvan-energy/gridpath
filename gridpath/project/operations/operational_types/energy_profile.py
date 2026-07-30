@@ -12,14 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" """
+"""
+This operational type describes projects that deliver a pre-specified
+fraction of their period-level energy in each timepoint, e.g. an energy
+contract with a fixed delivery profile. Power provision in each timepoint
+must be at least the profiled energy for the timepoint (the period energy
+times the timepoint's energy fraction, converted to power via the hours in
+timepoint and timepoint weight) and may exceed it by up to the project's
+shaping capacity, if any.
+
+Energy fractions may be negative in some timepoints, in which case the
+project's power provision is negative there, i.e. the project acts as load.
+Note that costs for this operational type include variable O&M costs, which
+are incurred on power provision, so negative power provision in a timepoint
+results in a negative variable O&M cost, i.e. a cost credit.
+"""
 
 from pyomo.environ import (
     Param,
     Set,
-    NonNegativeReals,
     Reals,
-    Expression,
     Var,
     Constraint,
 )
@@ -88,11 +100,26 @@ def add_model_components(
     | Required Input Params                                                   |
     +=========================================================================+
     | | :code:`energy_profile_energy_fraction`                                |
-    | | *Defined over*: :code:`ENERGY_PROFILE`                                |
+    | | *Defined over*: :code:`ENERGY_PROFILE_OPR_TMPS`                       |
     | | *Within*: :code:`Reals`                                               |
     |                                                                         |
-    | The project's power output in each operational timepoint as a fraction  |
-    | of its available capacity (i.e. the capacity factor).                   |
+    | The fraction of the project's period-level energy delivered in each     |
+    | operational timepoint. Can be negative, in which case the project acts  |
+    | as load in the timepoint.                                               |
+    +-------------------------------------------------------------------------+
+
+    |
+
+    +-------------------------------------------------------------------------+
+    | Variables                                                               |
+    +=========================================================================+
+    | | :code:`EnergyProfile_Provide_Power_MW`                                |
+    | | *Defined over*: :code:`ENERGY_PROFILE_OPR_TMPS`                       |
+    | | *Within*: :code:`Reals`                                               |
+    |                                                                         |
+    | Power provision in MW in each operational timepoint. Negative in        |
+    | timepoints with a negative energy fraction; note that any variable O&M  |
+    | cost then also accrues negatively (a credit) in those timepoints.       |
     +-------------------------------------------------------------------------+
 
     |
@@ -100,13 +127,13 @@ def add_model_components(
     +-------------------------------------------------------------------------+
     | Constraints                                                             |
     +=========================================================================+
-    | | :code:`EnergyProfile_No_Upward_Reserves_Constraint`                  |
-    | | *Defined over*: :code:`ENERGY_PROFILE_OPR_TMPS`                    |
+    | | :code:`EnergyProfile_No_Upward_Reserves_Constraint`                   |
+    | | *Defined over*: :code:`ENERGY_PROFILE_OPR_TMPS`                       |
     |                                                                         |
     | Variable must-take generator projects cannot provide upward reserves.   |
     +-------------------------------------------------------------------------+
-    | | :code:`EnergyProfile_No_Downward_Reserves_Constraint`                |
-    | | *Defined over*: :code:`ENERGY_PROFILE_OPR_TMPS`                    |
+    | | :code:`EnergyProfile_No_Downward_Reserves_Constraint`                 |
+    | | *Defined over*: :code:`ENERGY_PROFILE_OPR_TMPS`                       |
     |                                                                         |
     | Variable must-take generator projects cannot provide downward reserves. |
     +-------------------------------------------------------------------------+
@@ -134,34 +161,15 @@ def add_model_components(
         ),
     )
 
-    m.ENERGY_PROFILE_OPR_PRDS = Set(
-        dimen=2,
-        initialize=lambda mod: subset_init_by_set_membership(
-            mod=mod,
-            superset="PRJ_OPR_PRDS",
-            index=0,
-            membership_set=mod.ENERGY_PROFILE,
-        ),
-    )
-
     # Required Params
     ###########################################################################
 
     m.energy_profile_energy_fraction = Param(m.ENERGY_PROFILE_OPR_TMPS, within=Reals)
-    m.energy_profile_peak_deviation_demand_charge = Param(
-        m.ENERGY_PROFILE, m.PERIODS, m.MONTHS, within=NonNegativeReals, default=0
-    )
 
     # Variables
-    m.EnergyProfile_Provide_Power_MW = Var(
-        m.ENERGY_PROFILE_OPR_TMPS, within=NonNegativeReals
-    )
-    m.EnergyProfile_Peak_Deviation_in_Month = Var(
-        m.ENERGY_PROFILE_OPR_PRDS,
-        m.MONTHS,
-        within=NonNegativeReals,
-        initialize=0,
-    )
+    # Negative power is possible in timepoints with negative energy
+    # fractions (e.g., profiles that include load-modifier behavior)
+    m.EnergyProfile_Provide_Power_MW = Var(m.ENERGY_PROFILE_OPR_TMPS, within=Reals)
 
     # Constraints
     ###########################################################################
@@ -188,32 +196,6 @@ def add_model_components(
 
     m.EnergyProfile_Provide_Power_Max_Constraint = Constraint(
         m.ENERGY_PROFILE_OPR_TMPS, rule=provide_power_max_constraint_rule
-    )
-
-    def monthly_peak_deviation_rule(mod, prj, tmp):
-        if mod.energy_profile_peak_deviation_demand_charge == 0:
-            return Constraint.Skip
-        else:
-            return mod.EnergyProfile_Peak_Deviation_in_Month[
-                prj, mod.period[tmp], mod.month[tmp]
-            ] >= (
-                mod.EnergyProfile_Provide_Power_MW[prj, tmp]
-                - sum(
-                    mod.EnergyProfile_Provide_Power_MW[prj, _tmp]
-                    * mod.hrs_in_tmp[_tmp]
-                    * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-                / sum(
-                    mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-            )
-
-    m.EnergyProfile_Peak_Deviation_in_Month_Constraint = Constraint(
-        m.ENERGY_PROFILE_OPR_TMPS, rule=monthly_peak_deviation_rule
     )
 
     # TODO: remove this constraint once input validation is in place that
@@ -273,20 +255,14 @@ def add_model_components(
 
 def power_provision_rule(mod, prj, tmp):
     """
-    Power provision from energy_profile generators is their total energy for
-    the period times the energy profile fraction for the timepoint,
-    and converted to power via the hours in timepoint and timepoint weight
-    parameters.
+    Power provision from energy_profile projects is at least their total
+    energy for the period times the energy profile fraction for the
+    timepoint (converted to power via the hours in timepoint and timepoint
+    weight parameters) and at most that amount plus the project's shaping
+    capacity. It is negative in timepoints with a negative energy fraction.
     """
 
     return mod.EnergyProfile_Provide_Power_MW[prj, tmp]
-
-
-def peak_deviation_monthly_demand_charge_cost_rule(mod, prj, prd, mnth):
-    return (
-        mod.EnergyProfile_Peak_Deviation_in_Month[prj, prd, mnth]
-        * mod.energy_profile_peak_deviation_demand_charge[prj, prd, mnth]
-    )
 
 
 def power_delta_rule(mod, g, tmp):

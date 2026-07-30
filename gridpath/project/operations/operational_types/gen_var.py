@@ -20,7 +20,11 @@ on local weather. Curtailment (dispatch down) is allowed. GridPath includes
 experimental features to allow these generators to provide upward and/or
 downward reserves.
 
-Costs for this operational type include variable O&M costs.
+Costs for this operational type include variable O&M costs, which are
+incurred on all available power (including what's curtailed). Capacity
+factors may be negative (e.g. profiles that are net of onsite load), in
+which case power provision is negative in those timepoints and the variable
+O&M cost accrues negatively, i.e. as a cost credit.
 
 """
 
@@ -130,10 +134,12 @@ def add_model_components(
     +=========================================================================+
     | | :code:`GenVar_Provide_Power_MW`                                       |
     | | *Defined over*: :code:`GEN_VAR_OPR_TMPS`                              |
-    | | *Within*: :code:`NonNegativeReals`                                    |
+    | | *Within*: :code:`Reals`                                               |
     |                                                                         |
     | Power provision in MW from this project in each timepoint in which the  |
     | project is operational (capacity exists and the project is available).  |
+    | Negative in timepoints with a negative capacity factor (e.g. profiles   |
+    | net of onsite load), in which case the project acts as load.            |
     +-------------------------------------------------------------------------+
     | | :code:`GenVar_Scheduled_Curtailment_MW`                               |
     | | *Defined over*: :code:`GEN_VAR_OPR_TMPS`                              |
@@ -394,7 +400,8 @@ def power_provision_rule(mod, g, tmp):
 def variable_om_cost_rule(mod, g, tmp):
     """
     Variable cost is incurred on all power produced (including what's
-    curtailed).
+    curtailed). In timepoints with a negative capacity factor, this cost
+    is negative, i.e. a credit.
     """
     return (
         mod.Capacity_MW[g, mod.period[tmp]]

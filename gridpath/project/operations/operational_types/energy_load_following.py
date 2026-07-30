@@ -276,26 +276,38 @@ def add_model_components(
     )
 
     def monthly_peak_deviation_rule(mod, prj, tmp):
-        if mod.energy_load_following_peak_deviation_demand_charge == 0:
+        prd = mod.period[tmp]
+        mnth = mod.month[tmp]
+        if mod.energy_load_following_peak_deviation_demand_charge[prj, prd, mnth] == 0:
             return Constraint.Skip
-        else:
-            return mod.EnergyLoadFollowing_Peak_Deviation_in_Month[
-                prj, mod.period[tmp], mod.month[tmp]
-            ] >= (
-                mod.EnergyLoadFollowing_Provide_Power_MW[prj, tmp]
-                - sum(
-                    mod.EnergyLoadFollowing_Provide_Power_MW[prj, _tmp]
-                    * mod.hrs_in_tmp[_tmp]
-                    * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-                / sum(
-                    mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
+
+        # Group timepoints and total the weighted hours by (period, month)
+        # once on the first call rather than rescanning TMPS_IN_PRD for
+        # every project-timepoint
+        if not hasattr(mod, "_gridpath_energy_load_following_tmps_by_prd_mnth"):
+            tmps_by_prd_mnth = {}
+            for _tmp in mod.TMPS:
+                tmps_by_prd_mnth.setdefault(
+                    (mod.period[_tmp], mod.month[_tmp]), []
+                ).append(_tmp)
+            mod._gridpath_energy_load_following_tmps_by_prd_mnth = tmps_by_prd_mnth
+            mod._gridpath_energy_load_following_wtd_hrs_by_prd_mnth = {
+                key: sum(mod.hrs_in_tmp[t] * mod.tmp_weight[t] for t in tmps)
+                for key, tmps in tmps_by_prd_mnth.items()
+            }
+
+        return mod.EnergyLoadFollowing_Peak_Deviation_in_Month[prj, prd, mnth] >= (
+            mod.EnergyLoadFollowing_Provide_Power_MW[prj, tmp]
+            - sum(
+                mod.EnergyLoadFollowing_Provide_Power_MW[prj, _tmp]
+                * mod.hrs_in_tmp[_tmp]
+                * mod.tmp_weight[_tmp]
+                for _tmp in mod._gridpath_energy_load_following_tmps_by_prd_mnth[
+                    prd, mnth
+                ]
             )
+            / mod._gridpath_energy_load_following_wtd_hrs_by_prd_mnth[prd, mnth]
+        )
 
     m.EnergyLoadFollowing_Peak_Deviation_in_Month_Constraint = Constraint(
         m.ENERGY_LOAD_FOLLOWING_OPR_TMPS, rule=monthly_peak_deviation_rule
