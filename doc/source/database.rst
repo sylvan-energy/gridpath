@@ -197,8 +197,20 @@ Hydro Operational Characteristics
 
 .. automodule:: db.csvs_test_examples.project.opchar.hydro_operational_chars.doc
 
+=====================
+Opchar Timepoint Maps
+=====================
+
+.. automodule:: db.csvs_test_examples.project.opchar.timepoint_maps.doc
+
+===================
+Opchar Horizon Maps
+===================
+
+.. automodule:: db.csvs_test_examples.project.opchar.horizon_maps.doc
+
 *******************
-Transmission Inputs 
+Transmission Inputs
 *******************
 
 Optional inputs needed if transmission feature is enabled for a scenario.

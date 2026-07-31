@@ -460,6 +460,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_w_var_profile_tmp_map(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_w_var_profile_tmp_map" example: same as
+        "2periods_new_build", but Wind's profile is specified for the 2020
+        timepoints only and repeated in 2030 via an opchar timepoint map, so
+        the objective function value must be identical.
+        """
+        scenario_name = "2periods_new_build_w_var_profile_tmp_map"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_2zones(self):
         """
         Check validation and objective function value of
@@ -602,6 +613,21 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "single_stage_prod_cost_linked_subproblems_w_hydro"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_single_stage_prod_cost_linked_subproblems_w_hydro_w_hrz_map(
+        self,
+    ):
+        """
+        Check objective function values of
+        "single_stage_prod_cost_linked_subproblems_w_hydro_w_hrz_map"
+        example: same as "single_stage_prod_cost_linked_subproblems_w_hydro",
+        but Hydro's operational characteristics are specified for the first
+        day horizon only and repeated for the other horizons via an opchar
+        horizon map, so the objective function values must be identical.
+        :return:
+        """
+        scenario_name = "single_stage_prod_cost_linked_subproblems_w_hydro_w_hrz_map"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_multi_stage_prod_cost(self):

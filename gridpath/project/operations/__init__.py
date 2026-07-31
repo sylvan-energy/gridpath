@@ -1,4 +1,5 @@
 # Copyright 2016-2025 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1581,6 +1582,81 @@ def import_results_into_database(
 ###############################################################################
 
 
+def validate_opchar_temporal_map_references(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    Check that any opchar timepoint/horizon maps referenced by projects via
+    the *_tmp_map_scenario_id / *_hrz_map_scenario_id columns of
+    inputs_project_operational_chars actually have data in the respective
+    map inputs table (inputs_project_opchar_timepoint_map /
+    inputs_project_opchar_horizon_map). A dangling reference would
+    otherwise silently behave as if no map were assigned.
+    """
+    c = conn.cursor()
+    map_columns = [
+        row[1]
+        for row in c.execute("PRAGMA table_info(inputs_project_operational_chars)")
+        if row[1].endswith("_tmp_map_scenario_id")
+        or row[1].endswith("_hrz_map_scenario_id")
+    ]
+
+    errors = []
+    for map_column in map_columns:
+        map_table = (
+            "inputs_project_opchar_timepoint_map"
+            if map_column.endswith("_tmp_map_scenario_id")
+            else "inputs_project_opchar_horizon_map"
+        )
+        map_id_column = (
+            "opchar_timepoint_map_scenario_id"
+            if map_column.endswith("_tmp_map_scenario_id")
+            else "opchar_horizon_map_scenario_id"
+        )
+        dangling = c.execute(f"""
+            SELECT project, {map_column}
+            FROM inputs_project_operational_chars
+            WHERE project_operational_chars_scenario_id =
+                {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+            AND project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                    {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )
+            AND {map_column} IS NOT NULL
+            AND {map_column} NOT IN (
+                SELECT {map_id_column} FROM {map_table}
+            )
+        """).fetchall()
+        for project, map_id in dangling:
+            errors.append(
+                f"Project '{project}': {map_column} is {int(map_id)}, but "
+                f"{map_table} has no rows for {map_id_column} "
+                f"{int(map_id)}."
+            )
+
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_project_operational_chars",
+        severity="High",
+        errors=errors,
+    )
+
+
 def validate_inputs(
     scenario_id,
     subscenarios,
@@ -1680,6 +1756,18 @@ def validate_inputs(
                 prj_df, ["min_stable_level_fraction"], min=0, max=1, strict_min=True
             ),
         )
+
+    # Check that referenced opchar timepoint/horizon maps have data
+    validate_opchar_temporal_map_references(
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        conn=conn,
+    )
 
     # Convert input data into DataFrame
     hr_df = cursor_to_df(heat_rates)

@@ -2027,6 +2027,62 @@ CREATE TABLE inputs_project_capacity_groups
 
 -- -- Operations -- --
 
+-- Operating characteristics temporal maps
+-- Optional, reusable maps for pointing timepoint-/horizon-indexed operating
+-- characteristics inputs (e.g., variable generator profiles, hydro
+-- operational characteristics) at data stored under other timepoints /
+-- horizons, so that repeating data does not need to be specified more than
+-- once (e.g., profiles specified for one period and repeated in all future
+-- periods, or a representative day repeated within a period).
+-- Maps are project-agnostic relations from the model's timepoint (horizon)
+-- to the timepoint (horizon) under which the data is stored in the
+-- respective inputs table; a timepoint (horizon) not listed in a map reads
+-- data at the timepoint (horizon) itself. Projects opt in per input type
+-- via the *_tmp_map_scenario_id / *_hrz_map_scenario_id columns of
+-- inputs_project_operational_chars below; a NULL map means the data must
+-- cover all model timepoints (horizons) directly.
+DROP TABLE IF EXISTS subscenarios_project_opchar_timepoint_map;
+CREATE TABLE subscenarios_project_opchar_timepoint_map
+(
+    opchar_timepoint_map_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_project_opchar_timepoint_map;
+CREATE TABLE inputs_project_opchar_timepoint_map
+(
+    opchar_timepoint_map_scenario_id INTEGER,
+    timepoint                        INTEGER,
+    data_timepoint                   INTEGER,
+    PRIMARY KEY (opchar_timepoint_map_scenario_id, timepoint),
+    FOREIGN KEY (opchar_timepoint_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_timepoint_map
+            (opchar_timepoint_map_scenario_id)
+);
+
+DROP TABLE IF EXISTS subscenarios_project_opchar_horizon_map;
+CREATE TABLE subscenarios_project_opchar_horizon_map
+(
+    opchar_horizon_map_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                           VARCHAR(32),
+    description                    VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_project_opchar_horizon_map;
+CREATE TABLE inputs_project_opchar_horizon_map
+(
+    opchar_horizon_map_scenario_id INTEGER,
+    balancing_type_horizon         VARCHAR(32),
+    horizon                        INTEGER,
+    data_horizon                   INTEGER,
+    PRIMARY KEY (opchar_horizon_map_scenario_id, balancing_type_horizon,
+                 horizon),
+    FOREIGN KEY (opchar_horizon_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id)
+);
+
 -- Project operational characteristics
 -- These vary by operational type
 -- Generators that do not have certain characteristics (e.g. hydro does not
@@ -2055,6 +2111,7 @@ CREATE TABLE inputs_project_operational_chars
     variable_om_cost_per_mwh                              FLOAT,   -- simple variable O&M
     variable_om_cost_by_period_scenario_id                INTEGER, -- determines by period simple variable O&M
     variable_om_cost_by_timepoint_scenario_id             INTEGER, -- determines by tmp simple variable O&M
+    variable_om_cost_by_timepoint_tmp_map_scenario_id     INTEGER, -- optional timepoint map for by-tmp variable O&M
     project_fuel_scenario_id                              INTEGER,
     heat_rate_curves_scenario_id                          INTEGER, -- determined heat rate curve
     variable_om_curves_scenario_id                        INTEGER, -- determined variable O&M curve
@@ -2100,12 +2157,17 @@ CREATE TABLE inputs_project_operational_chars
     last_commitment_stage                                 INTEGER,
     n_startup_limit_scenario_id                           INTEGER,
     variable_generator_profile_scenario_id                INTEGER, -- determines var profiles
+    variable_generator_profile_tmp_map_scenario_id        INTEGER, -- optional timepoint map for var profiles
     cap_factor_default                                    FLOAT,
     curtailment_cost_scenario_id                          INTEGER,
     hydro_operational_chars_scenario_id                   INTEGER, -- determines hydro MWa, min, max
+    hydro_operational_chars_hrz_map_scenario_id           INTEGER, -- optional horizon map for hydro opchars
     energy_profile_scenario_id                            INTEGER,
+    energy_profile_tmp_map_scenario_id                    INTEGER, -- optional timepoint map for energy profiles
     energy_hrz_shaping_scenario_id                        INTEGER,
+    energy_hrz_shaping_hrz_map_scenario_id                INTEGER, -- optional horizon map for energy hrz shaping
     energy_slice_hrz_shaping_scenario_id                  INTEGER,
+    energy_slice_hrz_shaping_hrz_map_scenario_id          INTEGER, -- optional horizon map for energy slice hrz shaping
     base_net_requirement_scenario_id                      INTEGER,
     peak_deviation_demand_charge_scenario_id              INTEGER,
     lf_reserves_up_derate                                 FLOAT,
@@ -2126,12 +2188,15 @@ CREATE TABLE inputs_project_operational_chars
     cap_factor_limits_scenario_id                         INTEGER,
     partial_availability_threshold                        FLOAT,
     stor_exog_state_of_charge_scenario_id                 INTEGER, -- determines storage SOC
+    stor_exog_state_of_charge_tmp_map_scenario_id         INTEGER, -- optional timepoint map for storage exog SOC
     nonfuel_carbon_emissions_per_mwh                      FLOAT,
     powerhouse                                            TEXT,
     generator_efficiency                                  FLOAT,
     linked_load_component                                 TEXT,
     load_modifier_profile_scenario_id                     INTEGER,
+    load_modifier_profile_tmp_map_scenario_id             INTEGER, -- optional timepoint map for load modifier profiles
     load_component_shift_bounds_scenario_id               INTEGER,
+    load_component_shift_bounds_hrz_map_scenario_id       INTEGER, -- optional horizon map for load component shift bounds
     efficiency_factor                                     FLOAT,
     energy_requirement_factor                             FLOAT,
     losses_factor_in_energy_target                        FLOAT,
@@ -2215,6 +2280,34 @@ CREATE TABLE inputs_project_operational_chars
     FOREIGN KEY (project, load_modifier_profile_scenario_id) REFERENCES
         subscenarios_project_load_modifier_profiles (project,
                                                      load_modifier_profile_scenario_id),
+-- Ensure the referenced opchar timepoint/horizon maps exist
+    FOREIGN KEY (variable_om_cost_by_timepoint_tmp_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_timepoint_map
+            (opchar_timepoint_map_scenario_id),
+    FOREIGN KEY (variable_generator_profile_tmp_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_timepoint_map
+            (opchar_timepoint_map_scenario_id),
+    FOREIGN KEY (energy_profile_tmp_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_timepoint_map
+            (opchar_timepoint_map_scenario_id),
+    FOREIGN KEY (stor_exog_state_of_charge_tmp_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_timepoint_map
+            (opchar_timepoint_map_scenario_id),
+    FOREIGN KEY (load_modifier_profile_tmp_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_timepoint_map
+            (opchar_timepoint_map_scenario_id),
+    FOREIGN KEY (hydro_operational_chars_hrz_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id),
+    FOREIGN KEY (energy_hrz_shaping_hrz_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id),
+    FOREIGN KEY (energy_slice_hrz_shaping_hrz_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id),
+    FOREIGN KEY (load_component_shift_bounds_hrz_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id),
     FOREIGN KEY (operational_type) REFERENCES mod_operational_types
         (operational_type)
 );

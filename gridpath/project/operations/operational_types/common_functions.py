@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -561,11 +562,33 @@ def load_var_profile_inputs(
 
 
 # TODO: consolidate with horizon equivalent methods below
+# The map_* keys describe the optional opchar temporal maps
+# (inputs_project_opchar_timepoint_map / inputs_project_opchar_horizon_map):
+# a project may point its data subscenario at data stored under other
+# timepoints/horizons via the corresponding *_tmp_map_scenario_id /
+# *_hrz_map_scenario_id column of inputs_project_operational_chars (derived
+# from the data subscenario column name via map_column_suffix). The
+# map_resolved_index_cte resolves each model timepoint (bt-horizon) to the
+# timepoint (horizon) to read data at -- itself if not listed in the map --
+# and map_select_columns/map_join_condition relabel the data rows with the
+# model timepoint (horizon) when joining the data table through the map.
 TIMEPOINT_INDEX_QUERY_PARAMS = {
     "select_columns": "timepoint",
     "index_columns": "timepoint",
     "index_join_table": "inputs_temporal",
     "index_columns_join_table": "timepoint",
+    "map_column_suffix": "_tmp_map_scenario_id",
+    "map_resolved_index_cte": """,
+        resolved_index_{map_id} AS (
+            SELECT rt.timepoint AS timepoint,
+                COALESCE(m.data_timepoint, rt.timepoint) AS data_timepoint
+            FROM relevant_temporal rt
+            LEFT JOIN inputs_project_opchar_timepoint_map m
+                ON m.opchar_timepoint_map_scenario_id = {map_id}
+                AND m.timepoint = rt.timepoint
+        )""",
+    "map_select_columns": "resolved_index.timepoint AS timepoint",
+    "map_join_condition": "{table}.timepoint = resolved_index.data_timepoint",
 }
 
 BT_HRZ_INDEX_QUERY_PARAMS = {
@@ -573,6 +596,24 @@ BT_HRZ_INDEX_QUERY_PARAMS = {
     "index_columns": "balancing_type_project, horizon",
     "index_join_table": "inputs_temporal_horizon_timepoints",
     "index_columns_join_table": "balancing_type_horizon, horizon",
+    "map_column_suffix": "_hrz_map_scenario_id",
+    # DISTINCT, as relevant_temporal has one row per timepoint here
+    "map_resolved_index_cte": """,
+        resolved_index_{map_id} AS (
+            SELECT DISTINCT rt.balancing_type_horizon AS balancing_type_horizon,
+                rt.horizon AS horizon,
+                COALESCE(m.data_horizon, rt.horizon) AS data_horizon
+            FROM relevant_temporal rt
+            LEFT JOIN inputs_project_opchar_horizon_map m
+                ON m.opchar_horizon_map_scenario_id = {map_id}
+                AND m.balancing_type_horizon = rt.balancing_type_horizon
+                AND m.horizon = rt.horizon
+        )""",
+    "map_select_columns": "resolved_index.balancing_type_horizon AS "
+    "balancing_type_project, resolved_index.horizon AS horizon",
+    "map_join_condition": "{table}.balancing_type_project = "
+    "resolved_index.balancing_type_horizon "
+    "AND {table}.horizon = resolved_index.data_horizon",
 }
 
 
@@ -601,6 +642,12 @@ def get_prj_temporal_index_opr_inputs_from_db(
     index_columns = opr_index_dict["index_columns"]
     index_join_table = opr_index_dict["index_join_table"]
     index_columns_join_table = opr_index_dict["index_columns_join_table"]
+    # The opchar column with the project's (optional) timepoint/horizon map
+    # for this input type, e.g. variable_generator_profile_scenario_id -->
+    # variable_generator_profile_tmp_map_scenario_id
+    map_column = subscenario_id_column.replace(
+        "_scenario_id", opr_index_dict["map_column_suffix"]
+    )
 
     optype_filter = (
         f"""AND operational_type = '{op_type}'""" if op_type != "all" else ""
@@ -613,7 +660,7 @@ def get_prj_temporal_index_opr_inputs_from_db(
             WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
         ),
         optype_projects AS (
-            SELECT project, {subscenario_id_column}
+            SELECT project, {subscenario_id_column}, {map_column}
             FROM inputs_project_operational_chars
             WHERE project_operational_chars_scenario_id = {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
             {optype_filter}
@@ -633,18 +680,30 @@ def get_prj_temporal_index_opr_inputs_from_db(
             FROM {table}_iterations
         )
     """
-    cte_sql = cte_prj_sql + cte_tmp_sql
 
-    # Query iteration configuration once to see which combinations actually exist
-    # We'll only iterate over those to make the UNION ALL queries
+    # Query iteration and map configuration once to see which combinations
+    # actually exist; we'll only iterate over those to make the UNION ALL
+    # queries
     c = conn.cursor()
     iteration_configs = c.execute(f"""
         {cte_prj_sql}
-        SELECT DISTINCT varies_by_weather_iteration, varies_by_hydro_iteration
+        SELECT DISTINCT varies_by_weather_iteration, varies_by_hydro_iteration,
+            {map_column}
         FROM {table}_iterations
+        JOIN optype_projects USING (project, {subscenario_id_column})
         WHERE project IN portfolio_projects
-        AND (project, {subscenario_id_column}) IN optype_projects
     """).fetchall()
+
+    # Add a resolved-index CTE for each distinct temporal map in use; if no
+    # projects use a map, the query is unchanged
+    map_ids = sorted(
+        {config[2] for config in iteration_configs if config[2] is not None}
+    )
+    map_cte_sql = "".join(
+        opr_index_dict["map_resolved_index_cte"].format(map_id=map_id)
+        for map_id in map_ids
+    )
+    cte_sql = cte_prj_sql + cte_tmp_sql + map_cte_sql
 
     # If no iteration configs exist, return empty result
     if not iteration_configs:
@@ -653,15 +712,22 @@ def get_prj_temporal_index_opr_inputs_from_db(
     # If weather_iteration and hydro_iteration are both 0, we should only have (0,0) config
     if weather_iteration == 0 and hydro_iteration == 0:
         # Check if any projects vary by iteration when they shouldn't
-        non_zero_configs = [config for config in iteration_configs if config != (0, 0)]
+        non_zero_configs = [
+            config for config in iteration_configs if config[:2] != (0, 0)
+        ]
         if non_zero_configs:
             raise ValueError(
                 f"Table {table} has iteration configurations {non_zero_configs} "
                 f"but weather_iteration=0 and hydro_iteration=0. "
                 f"Projects should not vary by iteration when iterations are set to 0."
             )
-        # Force iteration_configs to only (0,0)
-        iteration_configs = [(0, 0)]
+        # Force iteration_configs to only (0,0) (preserving the distinct
+        # temporal maps in use)
+        forced_configs = []
+        if any(config[2] is None for config in iteration_configs):
+            forced_configs.append((0, 0, None))
+        forced_configs += [(0, 0, map_id) for map_id in map_ids]
+        iteration_configs = forced_configs
 
     # Check if weather_iteration is 0 but projects vary by weather
     if weather_iteration == 0:
@@ -683,15 +749,28 @@ def get_prj_temporal_index_opr_inputs_from_db(
                 f"Projects should not vary by hydro iteration when hydro_iteration is set to 0."
             )
 
-    # Build UNION ALL queries only for iteration configs that actually exist
+    # Build UNION ALL queries only for iteration/map configs that actually
+    # exist
     union_parts = []
     stage_subquery = "" if exclude_stage else f"AND stage_id = {stage}"
 
-    for varies_weather, varies_hydro in iteration_configs:
+    for varies_weather, varies_hydro, map_id in iteration_configs:
         weather_iter = weather_iteration if varies_weather else 0
         hydro_iter = hydro_iteration if varies_hydro else 0
 
-        union_parts.append(f"""
+        if map_id is None:
+            # If any projects use a temporal map for this input, keep them
+            # out of the no-map branch; with no maps in use, the query is
+            # unchanged
+            map_filter = (
+                f"""AND (project, {subscenario_id_column}) IN (
+                SELECT project, {subscenario_id_column} FROM optype_projects
+                WHERE {map_column} IS NULL
+            )"""
+                if map_ids
+                else ""
+            )
+            union_parts.append(f"""
             SELECT project, {select_columns}, {data_column}
             FROM {table}
             WHERE project IN (SELECT project FROM portfolio_projects)
@@ -703,6 +782,35 @@ def get_prj_temporal_index_opr_inputs_from_db(
                 AND varies_by_hydro_iteration = {varies_hydro}
             )
             AND ({index_columns}) IN (SELECT {index_columns_join_table} FROM relevant_temporal)
+            AND weather_iteration = {weather_iter}
+            AND hydro_iteration = {hydro_iter}
+            {stage_subquery}
+            {map_filter}
+        """)
+        else:
+            # Projects with a temporal map read their data at the resolved
+            # (mapped) timepoints/horizons instead, relabeled with the
+            # model's timepoints/horizons
+            map_select_columns = opr_index_dict["map_select_columns"]
+            map_join_condition = opr_index_dict["map_join_condition"].format(
+                table=table
+            )
+            union_parts.append(f"""
+            SELECT project, {map_select_columns}, {data_column}
+            FROM {table}
+            JOIN resolved_index_{map_id} AS resolved_index
+                ON {map_join_condition}
+            WHERE project IN (SELECT project FROM portfolio_projects)
+            AND (project, {subscenario_id_column}) IN (
+                SELECT project, {subscenario_id_column} FROM optype_projects
+                WHERE {map_column} = {map_id}
+            )
+            AND (project, {subscenario_id_column}) IN (
+                SELECT project, {subscenario_id_column}
+                FROM iteration_config
+                WHERE varies_by_weather_iteration = {varies_weather}
+                AND varies_by_hydro_iteration = {varies_hydro}
+            )
             AND weather_iteration = {weather_iter}
             AND hydro_iteration = {hydro_iter}
             {stage_subquery}
