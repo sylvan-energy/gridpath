@@ -1,0 +1,4 @@
+water_node	max_powerhouse_release_vol_unit_per_sec	max_spill_vol_unit_per_sec	max_total_outflow_vol_unit_per_sec	allow_target_release_violation	target_release_violation_cost	minimum_volume_volumeunit	maximum_volume_volumeunit	allow_min_volume_violation	min_volume_violation_cost	allow_max_volume_violation	max_volume_violation_cost	evaporation_coefficient	elevation_type
+Water_Node_1	0.1	0.1	0.15	.	.	22500.0	25000.0	.	.	.	.	0.0	exogenous
+Water_Node_2	0.1	0.1	0.15	.	.	1250.0	1750.0	.	.	.	.	0.0	exogenous
+Water_Node_3	0.1	0.1	0.15	.	.	50.0	75.0	.	.	.	.	0.0	constant

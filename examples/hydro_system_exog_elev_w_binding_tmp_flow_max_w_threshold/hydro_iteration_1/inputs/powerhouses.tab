@@ -1,0 +1,4 @@
+powerhouse	powerhouse_water_node	tailwater_elevation	headloss_factor	turbine_efficiency
+Powerhouse1	Water_Node_1	800.0	0.05	0.9
+Powerhouse2	Water_Node_2	400.0	0.05	0.9
+Powerhouse3	Water_Node_3	100.0	0.05	0.9

@@ -1779,6 +1779,21 @@ class TestExamples(unittest.TestCase):
         scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_hydro_system_exog_elev_w_binding_tmp_flow_max_w_threshold(self):
+        """
+        Check the timepoint-level threshold sidestream flow adjustment: same
+        per-timepoint max water flow bounds as
+        hydro_system_exog_elev_w_binding_tmp_flow_max, but with a threshold
+        sidestream inflow below the upstream exogenous inflows and an
+        upstream-node map for the bounded links, so the max flow bounds are
+        relaxed by (upstream inflow - threshold) in every timepoint. The
+        objective must improve substantially relative to the base binding
+        example (the caps no longer force as much unserved energy).
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max_w_threshold"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_hydro_system_exog_elev_w_flow_and_volume_violations(self):
         """
         Check water system violation penalties: a horizon min flow

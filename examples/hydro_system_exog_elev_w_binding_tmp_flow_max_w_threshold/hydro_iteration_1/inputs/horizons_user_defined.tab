@@ -1,0 +1,4 @@
+horizon	balancing_type_horizon	boundary
+1	day	circular
+1	half_day	circular
+2	half_day	circular
