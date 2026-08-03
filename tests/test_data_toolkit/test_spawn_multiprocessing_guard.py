@@ -81,16 +81,22 @@ def _run_pool_fn_in_worker(queue):
     mock_conn = MagicMock()
     mock_conn.close = MagicMock()
 
-    with patch(
-        "data_toolkit.project.create_monte_carlo_gen_input_csvs_common"
-        ".connect_to_database",
-        return_value=mock_conn,
-    ), patch(
-        "data_toolkit.project.create_monte_carlo_gen_input_csvs_common" ".pd.read_sql",
-        return_value=dummy_units,
-    ), patch(
-        "data_toolkit.project.create_monte_carlo_gen_input_csvs_common" ".get_context",
-        side_effect=tracking_get_context,
+    with (
+        patch(
+            "data_toolkit.project.create_monte_carlo_gen_input_csvs_common"
+            ".connect_to_database",
+            return_value=mock_conn,
+        ),
+        patch(
+            "data_toolkit.project.create_monte_carlo_gen_input_csvs_common"
+            ".pd.read_sql",
+            return_value=dummy_units,
+        ),
+        patch(
+            "data_toolkit.project.create_monte_carlo_gen_input_csvs_common"
+            ".get_context",
+            side_effect=tracking_get_context,
+        ),
     ):
         from data_toolkit.project.create_monte_carlo_gen_input_csvs_common import (
             get_monte_carlo_timeseries_project_pool_and_make_profile_csvs,

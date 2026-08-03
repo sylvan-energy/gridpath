@@ -19,7 +19,9 @@ import multiprocessing
 import os
 import pandas as pd
 import platform
+import shutil
 import sqlite3
+import tempfile
 import unittest
 
 from gridpath import run_end_to_end, run_scenario, validate_inputs
@@ -31,7 +33,10 @@ from db.utilities import port_csvs_to_db, scenario
 # expects; the rest of the global variables are relative paths from there
 os.chdir(os.path.join(os.path.dirname(__file__), "..", "gridpath"))
 EXAMPLES_DIRECTORY = os.path.join("..", "examples")
-DB_NAME = "unittest_examples"
+# When running in parallel via pytest-xdist, give each worker process its
+# own database (PYTEST_XDIST_WORKER is e.g. "gw0"; unset in serial runs)
+XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+DB_NAME = f"unittest_examples{XDIST_WORKER}"
 DB_PATH = f"../db/{DB_NAME}.db"
 DB_SCHEMA = f"../db/db_schema.sql"
 DATA_DIRECTORY = "../db/data"
@@ -54,6 +59,69 @@ PYTHON_VERSION = platform.python_version()
 # and Python versions exceed any fixed absolute tolerance (one ULP at 1e15
 # is ~0.125), so we also allow a relative difference
 OBJECTIVE_REL_TOL = 1e-9
+
+# A pre-built database to copy instead of building the testing database
+# from the CSVs; set by scripts/run_tests_parallel.py, which builds the
+# template once rather than once per pytest-xdist worker
+DB_TEMPLATE_ENV_VAR = "GRIDPATH_TEST_EXAMPLES_DB_TEMPLATE"
+
+
+def create_test_database(db_path):
+    """
+    Build the testing database at db_path from the test-examples CSVs.
+    """
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    create_database.main(
+        [
+            "--database",
+            db_path,
+            "--db_schema",
+            DB_SCHEMA,
+            "--data_directory",
+            DATA_DIRECTORY,
+        ]
+    )
+
+    try:
+        port_csvs_to_db.main(
+            ["--database", db_path, "--csv_location", CSV_PATH, "--quiet"]
+        )
+    except Exception as e:
+        print(
+            "Error encountered during population of testing database "
+            "{}. Deleting database ...".format(db_path)
+        )
+        logging.exception(e)
+        os.remove(db_path)
+
+    try:
+        scenario.main(["--database", db_path, "--csv_path", SCENARIOS_CSV, "--quiet"])
+    except Exception as e:
+        print(
+            "Error encountered during population of testing database "
+            "{}. Deleting database ...".format(db_path)
+        )
+        logging.exception(e)
+        os.remove(db_path)
+
+
+def set_up_test_database(db_path):
+    """
+    Copy the pre-built template database to db_path if one has been provided
+    (parallel runs); otherwise build the database from the CSVs.
+    """
+    template_path = os.environ.get(DB_TEMPLATE_ENV_VAR)
+    if template_path and os.path.exists(template_path):
+        # Clear any stale database files first: copying a fresh .db file
+        # next to a leftover -wal/-shm from an aborted run would corrupt it
+        for stale in [db_path, f"{db_path}-shm", f"{db_path}-wal"]:
+            if os.path.exists(stale):
+                os.remove(stale)
+        shutil.copyfile(template_path, db_path)
+    else:
+        create_test_database(db_path)
 
 
 class TestExamples(unittest.TestCase):
@@ -189,14 +257,17 @@ class TestExamples(unittest.TestCase):
         # (numpy floats are written as, e.g., 'np.float64(42.0)')
         actual_objective = objective_values_to_float(actual_objective)
 
-        # Uncomment this to save new objective function values
-        df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
-        df.set_index("test_scenario", inplace=True)
-        # Set dtype to 'object' so that we can have floats and dictionaries
-        # in the column
-        df["actual_objective"] = df["actual_objective"].astype("object")
-        df.at[scenario_name, "actual_objective"] = actual_objective
-        df.to_csv(TEST_SCENARIOS_CSV, index=True)
+        # Record the actual objective in the test-scenarios CSV; skip when
+        # running in parallel via pytest-xdist, as concurrent whole-file
+        # rewrites from multiple workers would lose each other's updates
+        if not XDIST_WORKER:
+            df = pd.read_csv(TEST_SCENARIOS_CSV, delimiter=",")
+            df.set_index("test_scenario", inplace=True)
+            # Set dtype to 'object' so that we can have floats and
+            # dictionaries in the column
+            df["actual_objective"] = df["actual_objective"].astype("object")
+            df.at[scenario_name, "actual_objective"] = actual_objective
+            df.to_csv(TEST_SCENARIOS_CSV, index=True)
 
         self.assertDictAlmostEqual(expected_objective, actual_objective, places=1)
 
@@ -206,44 +277,7 @@ class TestExamples(unittest.TestCase):
         Set up the testing database
         :return:
         """
-
-        if os.path.exists(DB_PATH):
-            os.remove(DB_PATH)
-
-        create_database.main(
-            [
-                "--database",
-                DB_PATH,
-                "--db_schema",
-                DB_SCHEMA,
-                "--data_directory",
-                DATA_DIRECTORY,
-            ]
-        )
-
-        try:
-            port_csvs_to_db.main(
-                ["--database", DB_PATH, "--csv_location", CSV_PATH, "--quiet"]
-            )
-        except Exception as e:
-            print(
-                "Error encountered during population of testing database "
-                "{}.db. Deleting database ...".format(DB_NAME)
-            )
-            logging.exception(e)
-            os.remove(DB_PATH)
-
-        try:
-            scenario.main(
-                ["--database", DB_PATH, "--csv_path", SCENARIOS_CSV, "--quiet"]
-            )
-        except Exception as e:
-            print(
-                "Error encountered during population of testing database "
-                "{}.db. Deleting database ...".format(DB_NAME)
-            )
-            logging.exception(e)
-            os.remove(DB_PATH)
+        set_up_test_database(DB_PATH)
 
     def validate_and_test_example_generic(
         self, scenario_name, solver=None, skip_validation=False, additional_args=[]
@@ -592,30 +626,38 @@ class TestExamples(unittest.TestCase):
     def test_example_multi_stage_prod_cost_parallel(self):
         """
         Check "multi_stage_prod_cost" example running subproblems in parallel
-        (getting inputs and optimization)
+        (getting inputs and optimization); run in a temporary copy of the
+        scenario directory, so that this test doesn't write into the
+        examples/ directory that test_example_multi_stage_prod_cost may be
+        using concurrently
         :return:
         """
-        run_end_to_end.main(
-            [
-                "--database",
-                DB_PATH,
-                "--scenario",
-                "multi_stage_prod_cost",
-                "--scenario_location",
-                EXAMPLES_DIRECTORY,
-                # "--log",
-                # "--write_solver_files_to_logs_dir",
-                # "--keepfiles",
-                # "--symbolic",
-                "--n_parallel_get_inputs",
-                "3",
-                "--n_parallel_solve",
-                "3",
-                "--quiet",
-                "--mute_solver_output",
-                "--testing",
-            ]
-        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
+                os.path.join(tmp_dir, "multi_stage_prod_cost"),
+            )
+            run_end_to_end.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    "multi_stage_prod_cost",
+                    "--scenario_location",
+                    tmp_dir,
+                    # "--log",
+                    # "--write_solver_files_to_logs_dir",
+                    # "--keepfiles",
+                    # "--symbolic",
+                    "--n_parallel_get_inputs",
+                    "3",
+                    "--n_parallel_solve",
+                    "3",
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--testing",
+                ]
+            )
 
     def test_example_multi_stage_prod_cost_w_hydro(self):
         """
@@ -1303,19 +1345,27 @@ class TestExamples(unittest.TestCase):
     def test_incomplete_only(self):
         """
         Check that the "incomplete only" functionality works with no errors.
+        Run in a temporary copy of the scenario directory, so that this test
+        doesn't write into the examples/ directory that test_example_test
+        may be using concurrently.
         :return:
         """
-        actual_objective = run_scenario.main(
-            [
-                "--scenario",
-                "test",
-                "--scenario_location",
-                EXAMPLES_DIRECTORY,
-                "--quiet",
-                "--mute_solver_output",
-                "--incomplete_only",
-            ]
-        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, "test"),
+                os.path.join(tmp_dir, "test"),
+            )
+            actual_objective = run_scenario.main(
+                [
+                    "--scenario",
+                    "test",
+                    "--scenario_location",
+                    tmp_dir,
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--incomplete_only",
+                ]
+            )
 
     def test_example_test_w_storage_starting_soc(self):
         """
@@ -1727,6 +1777,21 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_hydro_system_exog_elev_w_binding_tmp_flow_max_w_threshold(self):
+        """
+        Check the timepoint-level threshold sidestream flow adjustment: same
+        per-timepoint max water flow bounds as
+        hydro_system_exog_elev_w_binding_tmp_flow_max, but with a threshold
+        sidestream inflow below the upstream exogenous inflows and an
+        upstream-node map for the bounded links, so the max flow bounds are
+        relaxed by (upstream inflow - threshold) in every timepoint. The
+        objective must improve substantially relative to the base binding
+        example (the caps no longer force as much unserved energy).
+        :return:
+        """
+        scenario_name = "hydro_system_exog_elev_w_binding_tmp_flow_max_w_threshold"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_hydro_system_exog_elev_w_flow_and_volume_violations(self):

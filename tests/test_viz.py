@@ -14,11 +14,12 @@
 
 import logging
 import os
+import shutil
+import tempfile
 import unittest
 
 from gridpath import run_end_to_end
-from db import create_database
-from db.utilities import port_csvs_to_db, scenario
+from tests.test_examples import set_up_test_database
 from viz import (
     capacity_factor_plot,
     capacity_new_plot,
@@ -40,12 +41,21 @@ from viz import (
 # expects; the rest of the global variables are relative paths from there
 os.chdir(os.path.join(os.path.dirname(__file__), "..", "gridpath"))
 EXAMPLES_DIRECTORY = os.path.join("..", "examples")
-DB_NAME = "unittest_examples"
+# When running in parallel via pytest-xdist, give each worker process its
+# own database (PYTEST_XDIST_WORKER is e.g. "gw0"; unset in serial runs)
+XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+DB_NAME = f"unittest_examples{XDIST_WORKER}"
 DB_PATH = f"../db/{DB_NAME}.db"
-DB_SCHEMA = f"../db/db_schema.sql"
-DATA_DIRECTORY = "../db/data"
-CSV_PATH = "../db//csvs_test_examples"
-SCENARIOS_CSV = os.path.join(CSV_PATH, "scenarios.csv")
+
+# The example scenarios solved to populate results for the plot tests
+SCENARIOS_TO_RUN = [
+    "test",
+    "test_new_solar_carbon_cap",
+    "2periods_new_build_rps_percent_target",
+    "2periods_gen_lin_econ_retirement",
+    "2periods_new_build_2zones",
+    "2horizons_w_hydro",
+]
 
 
 class TestViz(unittest.TestCase):
@@ -56,109 +66,33 @@ class TestViz(unittest.TestCase):
         :return:
         """
 
-        if os.path.exists(DB_PATH):
-            os.remove(DB_PATH)
+        set_up_test_database(DB_PATH)
 
-        create_database.main(
-            [
-                "--database",
-                DB_PATH,
-                "--db_schema",
-                DB_SCHEMA,
-                "--data_directory",
-                DATA_DIRECTORY,
-            ]
-        )
+        # Solve the scenarios in a temporary copy of their example
+        # directories, so that these runs don't write into examples/
+        # directories that concurrently running tests may also be using
+        cls.scenarios_dir = tempfile.TemporaryDirectory()
+        for scenario_name in SCENARIOS_TO_RUN:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                os.path.join(cls.scenarios_dir.name, scenario_name),
+            )
 
         try:
-            port_csvs_to_db.main(
-                ["--database", DB_PATH, "--csv_location", CSV_PATH, "--quiet"]
-            )
-        except Exception as e:
-            print(
-                "Error encountered during population of testing database "
-                "{}.db. Deleting database ...".format(DB_NAME)
-            )
-            logging.exception(e)
-            os.remove(DB_PATH)
-
-        try:
-            scenario.main(
-                ["--database", DB_PATH, "--csv_path", SCENARIOS_CSV, "--quiet"]
-            )
             # Run a few scenarios to populate results
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "test",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "test_new_solar_carbon_cap",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2periods_new_build_rps_percent_target",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2periods_gen_lin_econ_retirement",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2periods_new_build_2zones",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    "2horizons_w_hydro",
-                    "--scenario_location",
-                    EXAMPLES_DIRECTORY,
-                    "--quiet",
-                    "--mute_solver_output",
-                ]
-            )
+            for scenario_name in SCENARIOS_TO_RUN:
+                run_end_to_end.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        cls.scenarios_dir.name,
+                        "--quiet",
+                        "--mute_solver_output",
+                    ]
+                )
         except Exception as e:
             print(
                 "Error encountered during population of testing database "
@@ -362,6 +296,7 @@ class TestViz(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.scenarios_dir.cleanup()
         os.remove(DB_PATH)
         for temp_file_ext in ["-shm", "-wal"]:
             temp_file = "{}{}".format(DB_PATH, temp_file_ext)

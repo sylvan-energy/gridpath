@@ -111,8 +111,8 @@ To install all packages, run::
 
     pip install -e .[all]
 
-GridPath's developer extras can be installed individually. See the setup.py file in
-the repository.
+GridPath's developer extras can be installed individually. See the pyproject.toml
+file in the repository.
 
 If you would like to edit the user-interface code, you will also need Node.js in
 addition to Python and will be required to install various node packages.

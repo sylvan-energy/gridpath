@@ -209,22 +209,11 @@ def add_model_components(
         m.ENERGY_HRZ_SHAPING_OPR_BT_HRZS, within=NonNegativeReals
     )
 
-    m.energy_hrz_shaping_peak_deviation_demand_charge = Param(
-        m.ENERGY_HRZ_SHAPING, m.PERIODS, m.MONTHS, within=NonNegativeReals, default=0
-    )
-
     # Variables
     ###########################################################################
 
     m.EnergyHrzShaping_Provide_Power_MW = Var(
         m.ENERGY_HRZ_SHAPING_OPR_TMPS, within=NonNegativeReals
-    )
-
-    m.EnergyHrzShaping_Peak_Deviation_in_Month = Var(
-        m.ENERGY_HRZ_SHAPING_OPR_PRDS,
-        m.MONTHS,
-        within=NonNegativeReals,
-        initialize=0,
     )
 
     # Constraints
@@ -240,32 +229,6 @@ def add_model_components(
 
     m.EnergyHrzShaping_Energy_Budget_Constraint = Constraint(
         m.ENERGY_HRZ_SHAPING_OPR_BT_HRZS, rule=energy_budget_rule
-    )
-
-    def monthly_peak_deviation_rule(mod, prj, tmp):
-        if mod.energy_hrz_shaping_peak_deviation_demand_charge == 0:
-            return Constraint.Skip
-        else:
-            return mod.EnergyHrzShaping_Peak_Deviation_in_Month[
-                prj, mod.period[tmp], mod.month[tmp]
-            ] >= (
-                mod.EnergyHrzShaping_Provide_Power_MW[prj, tmp]
-                - sum(
-                    mod.EnergyHrzShaping_Provide_Power_MW[prj, _tmp]
-                    * mod.hrs_in_tmp[_tmp]
-                    * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-                / sum(
-                    mod.hrs_in_tmp[_tmp] * mod.tmp_weight[_tmp]
-                    for _tmp in mod.TMPS_IN_PRD[mod.period[tmp]]
-                    if mod.month[tmp] == mod.month[_tmp]
-                )
-            )
-
-    m.EnergyHrzShaping_Peak_Deviation_in_Month_Constraint = Constraint(
-        m.ENERGY_HRZ_SHAPING_OPR_TMPS, rule=monthly_peak_deviation_rule
     )
 
     def total_energy_constraint(mod, prj, prd):
@@ -305,13 +268,6 @@ def max_power_rule(mod, prj, tmp):
             mod.balancing_type_project[prj],
             mod.horizon[tmp, mod.balancing_type_project[prj]],
         ]
-    )
-
-
-def peak_deviation_monthly_demand_charge_cost_rule(mod, prj, prd, mnth):
-    return (
-        mod.EnergyHrzShaping_Peak_Deviation_in_Month[prj, prd, mnth]
-        * mod.energy_hrz_shaping_peak_deviation_demand_charge[prj, prd, mnth]
     )
 
 

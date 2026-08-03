@@ -1,0 +1,4 @@
+water_node	timepoint	reservoir_target_starting_volume
+Water_Node_1	1.0	23750
+Water_Node_2	1.0	1500
+Water_Node_3	1.0	62.5
