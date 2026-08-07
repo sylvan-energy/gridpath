@@ -84,33 +84,33 @@ gridpath_load_scenarios = "db.utilities.scenario:main"
 gridpath_get_pudl_data = "data_toolkit.raw_data.pudl.download_data_from_pudl:main"
 gridpath_pudl_to_gridpath_raw = "data_toolkit.raw_data.pudl.pudl_to_gridpath_raw_data:main"
 gridpath_get_pcm_demo_inputs = "data_toolkit.raw_data.get_pcm_demo_user_defined_inputs:main"
-gridpath_get_ra_toolkit_data_raw = "data_toolkit.raw_data.ra_toolkit.get_ra_toolkit_data:main"
+gridpath_get_ra_toolkit_data_raw = "ra_toolkit.raw_data.get_ra_toolkit_data:main"
 gridpath_run_data_toolkit = "data_toolkit.run_data_toolkit:main"
 gridpath_load_raw_data = "data_toolkit.load_raw_data:main"
 gridpath_manual_adjustments = "data_toolkit.manual_adjustments:main"
 gridpath_eiaaeo_to_fuel_chars_input_csvs = "data_toolkit.fuels.eiaaeo_to_fuel_chars_input_csvs:main"
 gridpath_eiaaeo_fuel_price_input_csvs = "data_toolkit.fuels.eiaaeo_fuel_price_input_csvs:main"
 gridpath_eia860_to_project_availability_input_csvs = "data_toolkit.project.availability.eia860_to_project_availability_input_csvs:main"
-gridpath_create_sync_gen_weather_derate_input_csvs = "data_toolkit.project.availability.weather_derates.create_sync_gen_weather_derate_input_csvs:main"
-gridpath_create_monte_carlo_gen_weather_derate_input_csvs = "data_toolkit.project.availability.weather_derates.create_monte_carlo_gen_weather_derate_input_csvs:main"
-gridpath_create_availability_iteration_input_csvs = "data_toolkit.project.availability.outages.create_availability_iteration_input_csvs:main"
+gridpath_create_sync_gen_weather_derate_input_csvs = "ra_toolkit.project.availability.weather_derates.create_sync_gen_weather_derate_input_csvs:main"
+gridpath_create_monte_carlo_gen_weather_derate_input_csvs = "ra_toolkit.project.availability.weather_derates.create_monte_carlo_gen_weather_derate_input_csvs:main"
+gridpath_create_availability_iteration_input_csvs = "ra_toolkit.project.availability.outages.create_availability_iteration_input_csvs:main"
 gridpath_eia860_to_project_specified_capacity_input_csvs = "data_toolkit.project.capacity_specified.eia860_to_project_specified_capacity_input_csvs:main"
 gridpath_eia860_to_project_fixed_cost_input_csvs = "data_toolkit.project.fixed_cost.eia860_to_project_fixed_cost_input_csvs:main"
 gridpath_eia860_to_project_load_zone_input_csvs = "data_toolkit.project.load_zones.eia860_to_project_load_zone_input_csvs:main"
 gridpath_eia860_to_project_opchar_input_csvs = "data_toolkit.project.opchar.eia860_to_project_opchar_input_csvs:main"
 gridpath_eia860_to_project_fuel_input_csvs = "data_toolkit.project.opchar.fuels.eia860_to_project_fuel_input_csvs:main"
 gridpath_eia860_to_project_heat_rate_input_csvs = "data_toolkit.project.opchar.heat_rates.eia860_to_project_heat_rate_input_csvs:main"
-gridpath_create_hydro_iteration_input_csvs = "data_toolkit.project.opchar.hydro.create_hydro_iteration_input_csvs:main"
-gridpath_create_sync_var_gen_input_csvs = "data_toolkit.project.opchar.var_profiles.create_sync_var_gen_input_csvs:main"
-gridpath_create_monte_carlo_var_gen_input_csvs = "data_toolkit.project.opchar.var_profiles.create_monte_carlo_var_gen_input_csvs:main"
+gridpath_create_hydro_iteration_input_csvs = "ra_toolkit.project.opchar.hydro.create_hydro_iteration_input_csvs:main"
+gridpath_create_sync_var_gen_input_csvs = "ra_toolkit.project.opchar.var_profiles.create_sync_var_gen_input_csvs:main"
+gridpath_create_monte_carlo_var_gen_input_csvs = "ra_toolkit.project.opchar.var_profiles.create_monte_carlo_var_gen_input_csvs:main"
 gridpath_eia860_to_project_portfolio_input_csvs = "data_toolkit.project.portfolios.eia860_to_project_portfolio_input_csvs:main"
 gridpath_eia930_load_zone_input_csvs = "data_toolkit.system.eia930_load_zone_input_csvs:main"
-gridpath_create_sync_load_input_csvs = "data_toolkit.system.create_sync_load_input_csvs:main"
-gridpath_create_monte_carlo_load_input_csvs = "data_toolkit.system.create_monte_carlo_load_input_csvs:main"
-gridpath_create_temporal_iteration_csv = "data_toolkit.temporal.create_temporal_iteration_csv:main"
-gridpath_create_temporal_scenarios = "data_toolkit.temporal.create_temporal_scenarios:main"
-gridpath_create_monte_carlo_weather_draws = "data_toolkit.temporal.create_monte_carlo_weather_draws:main"
-gridpath_create_monte_carlo_weather_draw_profiles = "data_toolkit.temporal.create_monte_carlo_weather_draw_profiles:main"
+gridpath_create_sync_load_input_csvs = "ra_toolkit.load.create_sync_load_input_csvs:main"
+gridpath_create_monte_carlo_load_input_csvs = "ra_toolkit.load.create_monte_carlo_load_input_csvs:main"
+gridpath_create_temporal_iteration_csv = "ra_toolkit.temporal.create_temporal_iteration_csv:main"
+gridpath_create_temporal_scenarios = "ra_toolkit.temporal.create_temporal_scenarios:main"
+gridpath_create_monte_carlo_weather_draws = "ra_toolkit.temporal.create_monte_carlo_weather_draws:main"
+gridpath_create_monte_carlo_weather_draw_profiles = "ra_toolkit.temporal.create_monte_carlo_weather_draw_profiles:main"
 gridpath_eia930_to_transmission_load_zone_input_csvs = "data_toolkit.transmission.load_zones.eia930_to_transmission_load_zone_input_csvs:main"
 gridpath_eia930_to_transmission_availability_input_csvs = "data_toolkit.transmission.availability.eia930_to_transmission_availability_input_csvs:main"
 gridpath_eia930_to_transmission_specified_capacity_input_csvs = "data_toolkit.transmission.capacity_specified.eia930_to_transmission_specified_capacity_input_csvs:main"
@@ -131,6 +131,46 @@ gridpath_viz_energy_plot = "viz.energy_plot:main"
 gridpath_viz_energy_target_plot = "viz.energy_target_plot:main"
 gridpath_viz_project_operations_plot = "viz.project_operations_plot:main"
 
+# Data Toolkit step registry: gridpath_run_data_toolkit resolves the steps
+# named in a settings CSV's 'script' column from this group. Entry name =
+# step name (the settings-CSV / --single_step_only vocabulary); value = the
+# module implementing it, which must expose main(args_list) and
+# parse_arguments(args_list). Other installed packages can register
+# additional steps in this group. NOTE: editable installs pick up changes
+# here only after re-running 'pip install -e .'.
+[project.entry-points."gridpath.data_toolkit_steps"]
+create_database = "db.create_database"
+load_raw_data = "data_toolkit.load_raw_data"
+create_temporal_scenarios = "ra_toolkit.temporal.create_temporal_scenarios"
+create_monte_carlo_weather_draws = "ra_toolkit.temporal.create_monte_carlo_weather_draws"
+create_monte_carlo_weather_draw_profiles = "ra_toolkit.temporal.create_monte_carlo_weather_draw_profiles"
+eia930_load_zone_input_csvs = "data_toolkit.system.eia930_load_zone_input_csvs"
+create_sync_load_input_csvs = "ra_toolkit.load.create_sync_load_input_csvs"
+create_monte_carlo_load_input_csvs = "ra_toolkit.load.create_monte_carlo_load_input_csvs"
+eia860_to_project_portfolio_input_csvs = "data_toolkit.project.portfolios.eia860_to_project_portfolio_input_csvs"
+eia860_to_project_load_zone_input_csvs = "data_toolkit.project.load_zones.eia860_to_project_load_zone_input_csvs"
+eia860_to_project_specified_capacity_input_csvs = "data_toolkit.project.capacity_specified.eia860_to_project_specified_capacity_input_csvs"
+eia860m_to_project_specified_capacity_input_csvs = "data_toolkit.project.capacity_specified.eia860m_to_project_specified_capacity_input_csvs"
+eia860_to_project_fixed_cost_input_csvs = "data_toolkit.project.fixed_cost.eia860_to_project_fixed_cost_input_csvs"
+eia860_to_project_availability_input_csvs = "data_toolkit.project.availability.eia860_to_project_availability_input_csvs"
+eia860_to_project_opchar_input_csvs = "data_toolkit.project.opchar.eia860_to_project_opchar_input_csvs"
+eia860_to_project_fuel_input_csvs = "data_toolkit.project.opchar.fuels.eia860_to_project_fuel_input_csvs"
+eia860_to_project_heat_rate_input_csvs = "data_toolkit.project.opchar.heat_rates.eia860_to_project_heat_rate_input_csvs"
+create_availability_iteration_input_csvs = "ra_toolkit.project.availability.outages.create_availability_iteration_input_csvs"
+create_sync_gen_weather_derate_input_csvs = "ra_toolkit.project.availability.weather_derates.create_sync_gen_weather_derate_input_csvs"
+create_monte_carlo_gen_weather_derate_input_csvs = "ra_toolkit.project.availability.weather_derates.create_monte_carlo_gen_weather_derate_input_csvs"
+create_sync_var_gen_input_csvs = "ra_toolkit.project.opchar.var_profiles.create_sync_var_gen_input_csvs"
+create_monte_carlo_var_gen_input_csvs = "ra_toolkit.project.opchar.var_profiles.create_monte_carlo_var_gen_input_csvs"
+create_hydro_iteration_input_csvs = "ra_toolkit.project.opchar.hydro.create_hydro_iteration_input_csvs"
+manual_adjustments = "data_toolkit.manual_adjustments"
+eiaaeo_to_fuel_chars_input_csvs = "data_toolkit.fuels.eiaaeo_to_fuel_chars_input_csvs"
+eiaaeo_fuel_price_input_csvs = "data_toolkit.fuels.eiaaeo_fuel_price_input_csvs"
+eia930_to_transmission_portfolio_input_csvs = "data_toolkit.transmission.portfolios.eia930_to_transmission_portfolio_input_csvs"
+eia930_to_transmission_load_zone_input_csvs = "data_toolkit.transmission.load_zones.eia930_to_transmission_load_zone_input_csvs"
+eia930_to_transmission_specified_capacity_input_csvs = "data_toolkit.transmission.capacity_specified.eia930_to_transmission_specified_capacity_input_csvs"
+eia930_to_transmission_availability_input_csvs = "data_toolkit.transmission.availability.eia930_to_transmission_availability_input_csvs"
+eia930_to_transmission_opchar_input_csvs = "data_toolkit.transmission.opchar.eia930_to_transmission_opchar_input_csvs"
+
 [tool.setuptools]
 include-package-data = true
 # so the DB metadata can record the version
@@ -141,7 +181,7 @@ py-modules = ["version"]
 # so list them explicitly. `ui` has no __init__.py and has never shipped in
 # the wheel (its entry points work only in editable installs); `tests` is
 # deliberately not packaged.
-include = ["gridpath*", "db*", "viz*", "data_toolkit*"]
+include = ["gridpath*", "db*", "viz*", "data_toolkit*", "ra_toolkit*"]
 # find_packages() semantics: only dirs with __init__.py (the pyproject default
 # of namespaces = true would pull in e.g. db/csvs_test_examples/*/doc.py)
 namespaces = false

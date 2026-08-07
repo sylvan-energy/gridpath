@@ -14,84 +14,74 @@
 # limitations under the License.
 
 from argparse import ArgumentParser
-from gridpath.common_functions import get_version_parser
+from importlib.metadata import entry_points
 
 import pandas as pd
 import sys
 
-# GridPath modules
-from db import create_database
-from data_toolkit import load_raw_data
-from data_toolkit.temporal import (
-    create_temporal_scenarios,
-    create_monte_carlo_weather_draws,
-    create_monte_carlo_weather_draw_profiles,
-)
-from data_toolkit.system import (
-    eia930_load_zone_input_csvs,
-    create_monte_carlo_load_input_csvs,
-    create_sync_load_input_csvs,
-)
-from data_toolkit.project.portfolios import (
-    eia860_to_project_portfolio_input_csvs,
-)
-from data_toolkit.project.load_zones import (
-    eia860_to_project_load_zone_input_csvs,
-)
-from data_toolkit.project.capacity_specified import (
-    eia860_to_project_specified_capacity_input_csvs,
-)
-from data_toolkit.project.fixed_cost import (
-    eia860_to_project_fixed_cost_input_csvs,
-)
-from data_toolkit.project.availability import (
-    eia860_to_project_availability_input_csvs,
-)
-from data_toolkit.project.availability.outages import (
-    create_availability_iteration_input_csvs,
-)
-from data_toolkit.project.availability.weather_derates import (
-    create_sync_gen_weather_derate_input_csvs,
-    create_monte_carlo_gen_weather_derate_input_csvs,
-)
-from data_toolkit.project.opchar import (
-    eia860_to_project_opchar_input_csvs,
-)
-from data_toolkit.project.opchar.fuels import (
-    eia860_to_project_fuel_input_csvs,
-)
-from data_toolkit.project.opchar.heat_rates import (
-    eia860_to_project_heat_rate_input_csvs,
-)
-from data_toolkit.project.opchar.var_profiles import (
-    create_monte_carlo_var_gen_input_csvs,
-    create_sync_var_gen_input_csvs,
-)
-from data_toolkit.project.opchar.hydro import (
-    create_hydro_iteration_input_csvs,
-)
-from data_toolkit.fuels import (
-    eiaaeo_to_fuel_chars_input_csvs,
-    eiaaeo_fuel_price_input_csvs,
-)
-from data_toolkit.transmission.portfolios import (
-    eia930_to_transmission_portfolio_input_csvs,
-)
-from data_toolkit.transmission.load_zones import (
-    eia930_to_transmission_load_zone_input_csvs,
-)
-from data_toolkit.transmission.capacity_specified import (
-    eia930_to_transmission_specified_capacity_input_csvs,
-)
-from data_toolkit.transmission.availability import (
-    eia930_to_transmission_availability_input_csvs,
-)
-from data_toolkit.transmission.opchar import (
-    eia930_to_transmission_opchar_input_csvs,
-)
-from data_toolkit import manual_adjustments
+from gridpath.common_functions import get_version_parser
 
 # TODO: add checks if files exists, tell user to delete before running
+
+# Data Toolkit steps are resolved by name from this entry-point group
+# (declared in pyproject.toml), not from a hardcoded import list. Each
+# entry maps a step name — the name used in the settings CSV's 'script'
+# column and by --single_step_only — to the module implementing it; the
+# module must expose main(args_list) and parse_arguments(args_list).
+# Any installed package (e.g. ra_toolkit, or third-party plugins) can
+# register steps in this group, and they become runnable from the same
+# settings CSV with no changes here.
+STEP_ENTRY_POINT_GROUP = "gridpath.data_toolkit_steps"
+
+
+def get_registered_steps():
+    """
+    Return {step_name: EntryPoint} for every step registered in the
+    STEP_ENTRY_POINT_GROUP entry-point group across all installed
+    packages. Modules are NOT imported here — call .load() on an entry
+    point (or use get_step_module) to get the module.
+    """
+    registered_steps = {}
+    for entry_point in entry_points(group=STEP_ENTRY_POINT_GROUP):
+        already_registered = registered_steps.get(entry_point.name)
+        if already_registered is not None and already_registered.value != (
+            entry_point.value
+        ):
+            raise RuntimeError(
+                f"Data Toolkit step '{entry_point.name}' is registered "
+                f"twice with different targets: "
+                f"'{already_registered.value}' and '{entry_point.value}'. "
+                f"Check for conflicting installed packages."
+            )
+        registered_steps[entry_point.name] = entry_point
+
+    if not registered_steps:
+        raise RuntimeError(
+            f"No Data Toolkit steps found in the "
+            f"'{STEP_ENTRY_POINT_GROUP}' entry-point group. The installed "
+            f"GridPath package metadata is likely stale — re-run "
+            f"'pip install -e .' (or reinstall GridPath) and try again."
+        )
+
+    return registered_steps
+
+
+def get_step_module(script_name, registered_steps=None):
+    """
+    Import and return the module implementing the *script_name* step.
+    """
+    if registered_steps is None:
+        registered_steps = get_registered_steps()
+    try:
+        entry_point = registered_steps[script_name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown Data Toolkit step '{script_name}'. Registered "
+            f"steps: {', '.join(sorted(registered_steps))}. If this step "
+            f"was recently added, re-run 'pip install -e .' to refresh "
+            f"the entry-point registry."
+        )
+    return entry_point.load()
 
 
 def parse_arguments(args):
@@ -110,30 +100,11 @@ def parse_arguments(args):
     parser.add_argument(
         "-step",
         "--single_step_only",
-        choices=[
-            "create_database",
-            "load_raw_data",
-            "create_sync_load_input_csvs",
-            "create_sync_var_gen_input_csvs",
-            "create_monte_carlo_weather_draws",
-            "create_monte_carlo_weather_draw_profiles",
-            "create_monte_carlo_load_input_csvs",
-            "create_monte_carlo_var_gen_input_csvs",
-            "create_hydro_iteration_input_csvs",
-            "create_availability_iteration_input_csvs",
-            "create_sync_gen_weather_derate_input_csvs",
-            "create_monte_carlo_gen_weather_derate_input_csvs",
-            "create_temporal_scenarios",
-            "create_project_input_csvs",
-            "create_transmission_input_csvs",
-            "create_fuel_input_csvs",
-            "eia860_to_project_portfolio_input_csvs",
-        ],
+        choices=sorted(get_registered_steps()),
         help="Run only the specified GridPath Data Toolkit step. All others "
         "will be skipped. If not specified, all steps in the settings "
         "file will be run.",
     )
-
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
     return parsed_arguments
@@ -146,6 +117,26 @@ def get_setting(settings_df, script, setting):
         ]["value"].values[0]
     except IndexError:
         return None
+
+
+def build_settings_list(settings_dict, script_name, quiet):
+    """
+    The argument list for a script's main(), built from its settings-CSV
+    rows: regular settings become '--setting value' pairs; rows flagged
+    script_true_false_arg become a bare '--setting' flag (or nothing,
+    per reverse_default_behavior).
+    """
+    settings_list = []
+    for setting in settings_dict[script_name]:
+        if pd.isna(setting[2]) or setting[2] == 0:
+            settings_list.append(f"--{setting[0]}")
+            settings_list.append(setting[1])
+        else:
+            settings_list.append(f"--{setting[0]}" if int(setting[3]) else "")
+
+    settings_list.append("--quiet" if quiet else "")
+
+    return settings_list
 
 
 def determine_skip(single_step_only, settings_dict, script_name):
@@ -193,25 +184,33 @@ def main(args=None):
                 )
             )
 
-    for script_name in settings_dict.keys():
-        skip = determine_skip(
+    registered_steps = get_registered_steps()
+
+    scripts_to_run = [
+        script_name
+        for script_name in settings_dict.keys()
+        if not determine_skip(
             single_step_only=parsed_args.single_step_only,
             settings_dict=settings_dict,
             script_name=script_name,
         )
-        if not skip:
-            settings_list = []
-            for setting in settings_dict[script_name]:
-                if pd.isna(setting[2]) or setting[2] == 0:
-                    settings_list.append(f"--{setting[0]}")
-                    settings_list.append(setting[1])
-                else:
-                    settings_list.append(f"--{setting[0]}" if int(setting[3]) else "")
+    ]
 
-            settings_list.append("--quiet" if parsed_args.quiet else "")
+    # Validate all requested step names upfront so an unknown name fails
+    # before any step has run (and had side effects)
+    for script_name in scripts_to_run:
+        if script_name not in registered_steps:
+            get_step_module(script_name, registered_steps)  # raises
 
-            # Run the script's main function with the requested arguments
-            getattr(globals()[script_name], "main")(settings_list)
+    for script_name in scripts_to_run:
+        settings_list = build_settings_list(
+            settings_dict=settings_dict,
+            script_name=script_name,
+            quiet=parsed_args.quiet,
+        )
+
+        # Run the script's main function with the requested arguments
+        get_step_module(script_name, registered_steps).main(settings_list)
 
 
 if __name__ == "__main__":
