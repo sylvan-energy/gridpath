@@ -43,6 +43,7 @@ from gridpath.common_functions import (
     ensure_empty_string,
 )
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.scenario_directory_cleanup import clear_cleanup_marker
 from gridpath.auxiliary.scenario_chars import (
     OptionalFeatures,
     SubScenarios,
@@ -578,6 +579,11 @@ def main(args=None):
 
     # Write the subproblem linked timepoints map file if needed
     write_linked_subproblems_map(scenario_directory, conn, subscenarios)
+
+    # The scenario directory contents have been regenerated, so remove the
+    # post-import cleanup marker if one was present (it blocks run_scenario
+    # and import_scenario_results while the directory is in a cleaned state)
+    clear_cleanup_marker(scenario_directory=scenario_directory)
 
     # Close the database connection
     # conn.commit()

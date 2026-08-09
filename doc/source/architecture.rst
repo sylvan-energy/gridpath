@@ -63,6 +63,10 @@ gridpath.run_end_to_end
 =======================
 .. automodule:: gridpath.run_end_to_end
 
+gridpath.scenario_directory_cleanup
+===================================
+.. automodule:: gridpath.scenario_directory_cleanup
+
 
 Input Validation
 ****************

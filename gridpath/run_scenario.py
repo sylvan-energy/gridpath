@@ -69,6 +69,7 @@ from gridpath.common_functions import (
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.scenario_directory_cleanup import check_scenario_directory_not_cleaned
 
 
 def start_step(step, quiet):
@@ -1796,6 +1797,18 @@ def main(args=None):
                 parsed_args.scenario_location, parsed_args.scenario
             )
         )
+
+    # Refuse to run from a cleaned scenario directory: the scenario
+    # structure is inferred from the directory tree below, so a partially
+    # cleaned tree would yield a silently wrong structure (and the inputs
+    # are gone)
+    check_scenario_directory_not_cleaned(
+        scenario_directory=scenario_directory,
+        attempted_action=(
+            "Running the scenario would infer a wrong scenario structure "
+            "from the cleaned directory tree."
+        ),
+    )
 
     scenario_structure = get_scenario_structure_from_disk(
         scenario_directory=scenario_directory

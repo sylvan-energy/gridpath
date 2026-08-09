@@ -54,6 +54,7 @@ from gridpath import (
 )
 from gridpath.run_scenario import _export_rule, _summarize_rule
 from gridpath.import_scenario_results import _import_rule
+from gridpath.scenario_directory_cleanup import cleanup_scenario_directory_for_run
 from gridpath.auxiliary.db_interface import get_scenario_id_and_name
 
 
@@ -112,7 +113,54 @@ def parse_arguments(args):
         help="Run only the specified E2E step. All others " "will be skipped.",
     )
 
+    # Scenario-directory lifecycle after successful results import
+    parser.add_argument(
+        "--cleanup_after_import",
+        default=False,
+        action="store_true",
+        help="After the other E2E steps complete, delete the "
+        "inputs/results directories of every iteration draw whose results "
+        "were all successfully imported into the database (scenario-level "
+        "files and logs are retained). Draws with skipped or failed "
+        "subproblems are left intact.",
+    )
+    parser.add_argument(
+        "--archive_after_import",
+        nargs="?",
+        const="tar",
+        choices=["tar", "tar.gz"],
+        default=None,
+        help="Like --cleanup_after_import, but first write one tarball per "
+        "cleaned iteration draw to the scenario's 'archive' directory "
+        "(default format 'tar').",
+    )
+
     parsed_arguments = parser.parse_args(args=args)
+
+    # The cleanup/archive steps are gated on the import statuses from a
+    # results import in the same run
+    if parsed_arguments.cleanup_after_import or (
+        parsed_arguments.archive_after_import is not None
+    ):
+        if parsed_arguments.cleanup_after_import and (
+            parsed_arguments.archive_after_import is not None
+        ):
+            parser.error(
+                "--cleanup_after_import and --archive_after_import are "
+                "mutually exclusive."
+            )
+        if parsed_arguments.skip_import_results:
+            parser.error(
+                "--cleanup_after_import/--archive_after_import cannot be "
+                "combined with --skip_import_results: cleanup requires the "
+                "import statuses from a results import in the same run."
+            )
+        if parsed_arguments.single_e2e_step_only is not None:
+            parser.error(
+                "--cleanup_after_import/--archive_after_import cannot be "
+                "combined with --single_e2e_step_only: cleanup requires the "
+                "import statuses from a results import in the same run."
+            )
 
     return parsed_arguments
 
@@ -602,10 +650,11 @@ def main(args=None):
     else:
         expected_objective_values = None
 
+    import_statuses = None
     if not skip_import_results and not parsed_args.skip_import_results:
         step_start_time = datetime.datetime.now()
         try:
-            import_scenario_results.main(args=args)
+            import_statuses = import_scenario_results.main(args=args)
         except Exception as e:
             logging.exception(e)
             end_time = update_db_for_run_end(
@@ -661,6 +710,50 @@ def main(args=None):
             scenario_id=scenario_id,
             process_id=process_id,
             step="process_results",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
+
+    if parsed_args.cleanup_after_import or (
+        parsed_args.archive_after_import is not None
+    ):
+        step_start_time = datetime.datetime.now()
+        try:
+            cleanup_scenario_directory_for_run(
+                db_path=db_path,
+                scenario_id_arg=parsed_args.scenario_id,
+                scenario_name_arg=scenario,
+                scenario_location=parsed_args.scenario_location,
+                import_statuses=import_statuses,
+                archive_format=parsed_args.archive_after_import,
+                quiet=parsed_args.quiet,
+                temporal_structure_csv_overwrite=parsed_args.temporal_structure_csv_overwrite,
+                temporal_structure_csv_path=parsed_args.temporal_structure_csv_path,
+            )
+        except Exception as e:
+            logging.exception(e)
+            end_time = update_db_for_run_end(
+                db_path=db_path,
+                scenario=scenario,
+                queue_order_id=queue_order_id,
+                process_id=process_id,
+                run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
+            )
+            print(
+                "Error encountered when cleaning up the scenario directory "
+                "for scenario {}. End time: {}. Total run time: {}.".format(
+                    scenario, end_time, end_time - start_time
+                )
+            )
+            sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="cleanup_after_import",
             step_start_time=step_start_time,
             timing_summary_file_path=timing_summary_file_path,
             quiet=parsed_args.quiet,

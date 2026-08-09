@@ -24,7 +24,14 @@ import sqlite3
 import tempfile
 import unittest
 
-from gridpath import run_end_to_end, run_scenario, validate_inputs
+from gridpath import (
+    get_scenario_inputs,
+    import_scenario_results,
+    run_end_to_end,
+    run_scenario,
+    validate_inputs,
+)
+from gridpath.scenario_directory_cleanup import CLEANUP_MARKER_FILENAME
 from db import create_database
 from db.common_functions import connect_to_database
 from db.utilities import port_csvs_to_db, scenario
@@ -657,6 +664,132 @@ class TestExamples(unittest.TestCase):
                     "--mute_solver_output",
                     "--testing",
                 ]
+            )
+
+    def test_cleanup_after_import_differential(self):
+        """
+        An E2E run with --cleanup_after_import must import the same rows into
+        the database as a run without it, end with only the scenario-level
+        files and logs on disk, refuse a re-import while the cleanup marker
+        is present (without touching the database results), and become
+        usable again after get_scenario_inputs regenerates the directory.
+        Run in temporary copies of the scenario directory, so this test
+        doesn't write into the examples/ directory that
+        test_example_ra_toolkit_monte_carlo may be using concurrently.
+        """
+        scenario_name = "ra_toolkit_monte_carlo"
+
+        def run_e2e(scenario_location, additional_args):
+            run_end_to_end.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    scenario_location,
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--testing",
+                ]
+                + additional_args
+            )
+
+        def get_results_rows():
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                scenario_id = conn.execute(
+                    "SELECT scenario_id FROM scenarios WHERE scenario_name = ?;",
+                    (scenario_name,),
+                ).fetchone()[0]
+                results_scenario_rows = conn.execute(
+                    "SELECT * FROM results_scenario WHERE scenario_id = ?;",
+                    (scenario_id,),
+                ).fetchall()
+                system_costs_rows = conn.execute(
+                    "SELECT * FROM results_system_costs WHERE scenario_id = ?;",
+                    (scenario_id,),
+                ).fetchall()
+            finally:
+                conn.close()
+
+            return (
+                sorted(results_scenario_rows, key=str),
+                sorted(system_costs_rows, key=str),
+            )
+
+        # Baseline run without cleanup
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                os.path.join(tmp_dir, scenario_name),
+            )
+            run_e2e(tmp_dir, [])
+            baseline_rows = get_results_rows()
+        self.assertTrue(len(baseline_rows[0]) > 0)
+
+        # Run with cleanup: identical database rows, cleaned directory
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            scenario_directory = os.path.join(tmp_dir, scenario_name)
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                scenario_directory,
+            )
+            # --log so the run writes the scenario-root logs directory,
+            # which cleanup must leave alone (the e2e log is still open)
+            run_e2e(tmp_dir, ["--cleanup_after_import", "--log"])
+            self.assertEqual(baseline_rows, get_results_rows())
+
+            # The iteration draws are gone; scenario-level files, logs, and
+            # the cleanup marker remain
+            remaining = sorted(os.listdir(scenario_directory))
+            self.assertNotIn("weather_iteration_1", remaining)
+            self.assertNotIn("weather_iteration_2", remaining)
+            for retained in [
+                "scenario_description.csv",
+                "features.csv",
+                "units.csv",
+                "logs",
+                CLEANUP_MARKER_FILENAME,
+            ]:
+                self.assertIn(retained, remaining)
+
+            # Re-import on the cleaned directory must refuse without
+            # touching the database results
+            with self.assertRaises(RuntimeError):
+                import_scenario_results.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        tmp_dir,
+                        "--quiet",
+                    ]
+                )
+            self.assertEqual(baseline_rows, get_results_rows())
+
+            # Regenerating the inputs removes the marker and makes the
+            # directory usable again
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    tmp_dir,
+                    "--quiet",
+                ]
+            )
+            self.assertFalse(
+                os.path.exists(
+                    os.path.join(scenario_directory, CLEANUP_MARKER_FILENAME)
+                )
+            )
+            self.assertTrue(
+                os.path.exists(os.path.join(scenario_directory, "weather_iteration_1"))
             )
 
     def test_example_multi_stage_prod_cost_w_hydro(self):

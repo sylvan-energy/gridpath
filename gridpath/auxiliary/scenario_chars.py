@@ -17,6 +17,7 @@
 Scenario characteristics in database.
 """
 
+from collections import namedtuple
 import copy
 import os.path
 import pandas as pd
@@ -27,6 +28,7 @@ from gridpath.auxiliary.auxiliary import (
     check_for_integer_subdirectories,
     check_for_starting_string_subdirectories,
 )
+from gridpath.common_functions import ensure_empty_string
 
 # TODO: conslidate use 0s and 1s to indicate no subdirectories?
 
@@ -230,6 +232,84 @@ def determine_directory_structure_from_scenario_structure(scenario_structure):
                         ].append(stage_string)
 
     return iteration_directory_strings_dict
+
+
+# A single (weather iteration, hydro iteration, availability iteration,
+# subproblem, stage) of the scenario directory structure: the directory-name
+# strings ("" for levels not in use) and the corresponding integer values (0
+# for levels not in use)
+DirectoryStructureCell = namedtuple(
+    "DirectoryStructureCell",
+    [
+        "weather_iteration_str",
+        "hydro_iteration_str",
+        "availability_iteration_str",
+        "subproblem_str",
+        "stage_str",
+        "weather_iteration",
+        "hydro_iteration",
+        "availability_iteration",
+        "subproblem",
+        "stage",
+    ],
+)
+
+
+def iterate_directory_structure(scenario_directory_structure):
+    """
+    :param scenario_directory_structure: the dictionary created by
+        ScenarioDirectoryStructure
+    :return: generator of DirectoryStructureCell
+
+    Iterate over every (weather iteration, hydro iteration, availability
+    iteration, subproblem, stage) of the scenario directory structure.
+    """
+    for weather_iteration_str in scenario_directory_structure.keys():
+        for hydro_iteration_str in scenario_directory_structure[
+            weather_iteration_str
+        ].keys():
+            for availability_iteration_str in scenario_directory_structure[
+                weather_iteration_str
+            ][hydro_iteration_str].keys():
+                for subproblem_str in scenario_directory_structure[
+                    weather_iteration_str
+                ][hydro_iteration_str][availability_iteration_str].keys():
+                    for stage_str in scenario_directory_structure[
+                        weather_iteration_str
+                    ][hydro_iteration_str][availability_iteration_str][subproblem_str]:
+                        # We may have passed "empty_string" to avoid actual
+                        # empty strings as dictionary keys; convert to actual
+                        # empty strings here for directory-path purposes
+                        w_str = ensure_empty_string(weather_iteration_str)
+                        h_str = ensure_empty_string(hydro_iteration_str)
+                        a_str = ensure_empty_string(availability_iteration_str)
+
+                        yield DirectoryStructureCell(
+                            weather_iteration_str=w_str,
+                            hydro_iteration_str=h_str,
+                            availability_iteration_str=a_str,
+                            subproblem_str=subproblem_str,
+                            stage_str=stage_str,
+                            weather_iteration=(
+                                0
+                                if w_str == ""
+                                else int(w_str.replace("weather_iteration_", ""))
+                            ),
+                            hydro_iteration=(
+                                0
+                                if h_str == ""
+                                else int(h_str.replace("hydro_iteration_", ""))
+                            ),
+                            availability_iteration=(
+                                0
+                                if a_str == ""
+                                else int(a_str.replace("availability_iteration_", ""))
+                            ),
+                            subproblem=(
+                                0 if subproblem_str == "" else int(subproblem_str)
+                            ),
+                            stage=0 if stage_str == "" else int(stage_str),
+                        )
 
 
 def get_scenario_structure_from_db(conn, scenario_id):
