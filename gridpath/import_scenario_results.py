@@ -452,88 +452,92 @@ def main(args=None):
     temporal_structure_csv_overwrite = parsed_arguments.temporal_structure_csv_overwrite
     temporal_structure_csv_path = parsed_arguments.temporal_structure_csv_path
 
+    # Close the connection on any raise (e.g. the cleaned-directory
+    # refusal): a connection left open by an error keeps the database file
+    # locked on Windows
     conn = connect_to_database(db_path=db_path)
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    if not parsed_arguments.quiet:
-        print(
-            "Importing results, started on {}... (connected to database {})".format(
-                datetime.datetime.now(), db_path
+        if not parsed_arguments.quiet:
+            print(
+                "Importing results, started on {}... (connected to database {})".format(
+                    datetime.datetime.now(), db_path
+                )
             )
+
+        scenario_id, scenario_name = get_scenario_id_and_name(
+            scenario_id_arg=scenario_id_arg,
+            scenario_name_arg=scenario_name_arg,
+            c=c,
+            script="import_scenario_results",
         )
 
-    scenario_id, scenario_name = get_scenario_id_and_name(
-        scenario_id_arg=scenario_id_arg,
-        scenario_name_arg=scenario_name_arg,
-        c=c,
-        script="import_scenario_results",
-    )
-
-    # Determine scenario directory
-    scenario_directory = determine_scenario_directory(
-        scenario_location=scenario_location, scenario_name=scenario_name
-    )
-
-    # Refuse to import from a cleaned scenario directory (checked first,
-    # before any other work): all prior results for the scenario are deleted
-    # below before importing, and missing results files are then skipped, so
-    # importing from a cleaned directory would wipe the scenario's database
-    # results and import nothing
-    check_scenario_directory_not_cleaned(
-        scenario_directory=scenario_directory,
-        attempted_action=(
-            "Importing results would first DELETE all of this scenario's "
-            "database results and then import nothing from the cleaned "
-            "directory."
-        ),
-    )
-
-    if temporal_structure_csv_overwrite:
-        scenario_structure = get_scenario_structure_from_csv(
-            temporal_structure_csv_path
-        )
-    else:
-        scenario_structure = get_scenario_structure_from_db(
-            conn=conn, scenario_id=scenario_id
+        # Determine scenario directory
+        scenario_directory = determine_scenario_directory(
+            scenario_location=scenario_location, scenario_name=scenario_name
         )
 
-    # Check that the saved scenario_id matches
-    sc_df = pd.read_csv(
-        os.path.join(scenario_directory, "scenario_description.csv"),
-        header=None,
-        index_col=0,
-    )
-    scenario_id_saved = int(sc_df.loc["scenario_id", 1])
-    if scenario_id_saved != scenario_id:
-        raise AssertionError("ERROR: saved scenario_id does not match")
+        # Refuse to import from a cleaned scenario directory (checked first,
+        # before any other work): all prior results for the scenario are
+        # deleted below before importing, and missing results files are then
+        # skipped, so importing from a cleaned directory would wipe the
+        # scenario's database results and import nothing
+        check_scenario_directory_not_cleaned(
+            scenario_directory=scenario_directory,
+            attempted_action=(
+                "Importing results would first DELETE all of this scenario's "
+                "database results and then import nothing from the cleaned "
+                "directory."
+            ),
+        )
 
-    # Delete all previous results for this scenario_id
-    # Each module also makes sure results are deleted, but this step ensures
-    # that if a scenario_id was run with different modules before, we also
-    # delete previously imported "phantom" results
-    delete_scenario_results(conn=conn, scenario_id=scenario_id)
+        if temporal_structure_csv_overwrite:
+            scenario_structure = get_scenario_structure_from_csv(
+                temporal_structure_csv_path
+            )
+        else:
+            scenario_structure = get_scenario_structure_from_db(
+                conn=conn, scenario_id=scenario_id
+            )
 
-    # Go through modules
-    modules_to_use = determine_modules(scenario_directory=scenario_directory)
-    loaded_modules = load_modules(modules_to_use)
+        # Check that the saved scenario_id matches
+        sc_df = pd.read_csv(
+            os.path.join(scenario_directory, "scenario_description.csv"),
+            header=None,
+            index_col=0,
+        )
+        scenario_id_saved = int(sc_df.loc["scenario_id", 1])
+        if scenario_id_saved != scenario_id:
+            raise AssertionError("ERROR: saved scenario_id does not match")
 
-    # Import appropriate results into database
-    import_statuses = import_scenario_results_into_database(
-        import_rule=import_rule,
-        loaded_modules=loaded_modules,
-        scenario_id=scenario_id,
-        scenario_structure=scenario_structure,
-        db=conn,
-        scenario_directory=scenario_directory,
-        ignore_incomplete=ignore_incomplete,
-        quiet=quiet,
-    )
+        # Delete all previous results for this scenario_id
+        # Each module also makes sure results are deleted, but this step
+        # ensures that if a scenario_id was run with different modules
+        # before, we also delete previously imported "phantom" results
+        delete_scenario_results(conn=conn, scenario_id=scenario_id)
 
-    update_db_last_modified(conn=conn, modification_type="results_import")
+        # Go through modules
+        modules_to_use = determine_modules(scenario_directory=scenario_directory)
+        loaded_modules = load_modules(modules_to_use)
 
-    # Close the database connection
-    conn.commit()
-    conn.close()
+        # Import appropriate results into database
+        import_statuses = import_scenario_results_into_database(
+            import_rule=import_rule,
+            loaded_modules=loaded_modules,
+            scenario_id=scenario_id,
+            scenario_structure=scenario_structure,
+            db=conn,
+            scenario_directory=scenario_directory,
+            ignore_incomplete=ignore_incomplete,
+            quiet=quiet,
+        )
+
+        update_db_last_modified(conn=conn, modification_type="results_import")
+
+        conn.commit()
+    finally:
+        conn.close()
 
     if not quiet:
         n_imported = sum(

@@ -381,15 +381,16 @@ class TestCleanupScenarioDirectory(unittest.TestCase):
 class TestCleanedDirectoryMarkerGuards(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
+        # addCleanup rather than tearDown: cleanups run LIFO, so database
+        # connections the tests register afterwards are closed BEFORE the
+        # directory is removed (Windows can't delete open files)
+        self.addCleanup(self.tmp_dir.cleanup)
         self.scenario_location = self.tmp_dir.name
         self.scenario_name = "guard_test_scenario"
         self.scenario_directory = os.path.join(
             self.scenario_location, self.scenario_name
         )
         os.makedirs(self.scenario_directory)
-
-    def tearDown(self):
-        self.tmp_dir.cleanup()
 
     def write_marker(self):
         with open(get_cleanup_marker_path(self.scenario_directory), "w") as f:
