@@ -1,0 +1,5 @@
+timeseries_name,consider_day_types
+load,1
+solar,0
+wind,0
+thermal,0

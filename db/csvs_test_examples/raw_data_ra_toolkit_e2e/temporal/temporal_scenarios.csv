@@ -1,0 +1,4 @@
+output_directory,temporal_scenario_id,temporal_scenario_name,n_passes,iterations_csv,base_csvs_directory
+./db/csvs_ra_toolkit_e2e/temporal,17,ra_toolkit_monte_carlo,1,./db/csvs_test_examples/raw_data_ra_toolkit_e2e/temporal/iterations/iterations_monte_carlo_all.csv,./db/csvs_test_examples/raw_data_ra_toolkit_e2e/temporal/base_csvs/ra_toolkit_monte_carlo
+./db/csvs_ra_toolkit_e2e/temporal,18,ra_toolkit_sync,1,./db/csvs_test_examples/raw_data_ra_toolkit_e2e/temporal/iterations/iterations_sync_all.csv,./db/csvs_test_examples/raw_data_ra_toolkit_e2e/temporal/base_csvs/ra_toolkit_sync
+./db/csvs_ra_toolkit_e2e/temporal,26,ra_toolkit_full,1,./db/csvs_test_examples/raw_data_ra_toolkit_e2e/temporal/iterations/iterations_sync_full.csv,./db/csvs_test_examples/raw_data_ra_toolkit_e2e/temporal/base_csvs/ra_toolkit_full
