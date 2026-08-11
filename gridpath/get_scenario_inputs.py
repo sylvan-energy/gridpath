@@ -316,14 +316,10 @@ def delete_prior_inputs(inputs_directory):
     for f in prior_input_tab_files:
         os.remove(os.path.join(inputs_directory, f))
 
-
-def parse_arguments(args):
+def create_parser():
     """
-    :param args: the script arguments specified by the user
-    :return: the parsed known argument values (<class 'argparse.Namespace'>
-    Python object)
-
-    Parse the known arguments.
+    
+    :return: argument parser object
     """
     parser = ArgumentParser(
         add_help=True,
@@ -335,9 +331,27 @@ def parse_arguments(args):
             get_version_parser(),
         ],
     )
+    
+    return parser
 
-    parsed_arguments = parser.parse_known_args(args=args)[0]
+def parse_arguments(func_args):
+    """
+    :param args: the function arguments specified by the caller
+    :return: the parsed known argument values (<class 'argparse.Namespace'>
+    Python object)
 
+    Parse the known arguments.
+    """
+    parser = create_parser()
+    
+    is_cli_entry_point = func_args is None
+    if is_cli_entry_point:
+        args = sys.argv[1:]
+        parsed_arguments = parser.parse_args(args=args)
+    else:
+        args = func_args
+        parsed_arguments = parser.parse_known_args(args=args)[0]
+    
     return parsed_arguments
 
 
@@ -469,16 +483,14 @@ def write_linked_subproblems_map(scenario_directory, conn, subscenarios):
         )
 
 
-def main(args=None):
+def main(func_args=None):
     """
 
     :return:
     """
     # Retrieve DB location and scenario_id and/or name from args
-    if args is None:
-        args = sys.argv[1:]
 
-    parsed_arguments = parse_arguments(args=args)
+    parsed_arguments = parse_arguments(func_args=func_args)
 
     db_path = parsed_arguments.database
     scenario_id_arg = parsed_arguments.scenario_id
