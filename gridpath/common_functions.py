@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
 import os.path
 import sys
 import warnings
@@ -382,6 +381,16 @@ def ensure_empty_string(string):
 # not this file
 RESULTS_EXPORT_COMPLETE_FILENAME = "results_export_complete.txt"
 
+# Fixed contents: presence is the signal (the file's modification time
+# provides the timestamp), and deterministic contents keep the committed
+# example scenario directories byte-identical across test-suite runs
+RESULTS_EXPORT_COMPLETE_FILE_CONTENTS = (
+    "Written by GridPath after all of this subproblem/stage's results files "
+    "were completely exported. Its presence tells --incomplete_only and the "
+    "results import that the export was not interrupted. Do not create "
+    "manually.\n"
+)
+
 
 def get_results_export_complete_file_path(
     scenario_directory,
@@ -426,7 +435,7 @@ def write_results_export_complete_file(
         stage=stage,
     )
     with open(complete_file_path + ".part", "w", newline="") as f:
-        f.write(datetime.datetime.now().isoformat(sep=" "))
+        f.write(RESULTS_EXPORT_COMPLETE_FILE_CONTENTS)
     os.replace(complete_file_path + ".part", complete_file_path)
 
 

@@ -1,1 +1,1 @@
-2026-08-12 11:50:11.943915
+Written by GridPath after all of this subproblem/stage's results files were completely exported. Its presence tells --incomplete_only and the results import that the export was not interrupted. Do not create manually.
