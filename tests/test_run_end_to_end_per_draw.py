@@ -312,6 +312,34 @@ class TestImportDrawsWorker(unittest.TestCase):
             {"weather_iteration_1"},
         )
 
+    def test_interrupted_export_stops_import_and_retains_draw(self):
+        # Draw 2's export was interrupted (kill mid-export): termination
+        # and status files exist but the export-complete file doesn't. The
+        # per-draw importer requires export completeness, so it must stop
+        # and leave draw 2's directory untouched rather than import a
+        # possibly partial tree
+        for subproblem in (1, 2):
+            write_subproblem_tree(
+                self.scenario_directory,
+                os.path.join("weather_iteration_1", str(subproblem)),
+            )
+            write_subproblem_tree(
+                self.scenario_directory,
+                os.path.join("weather_iteration_2", str(subproblem)),
+                export_complete=False,
+            )
+
+        import_state = self.run_worker([(1, 0, 0), (2, 0, 0)])
+
+        self.assertIsInstance(import_state.error, RuntimeError)
+        self.assertEqual(self.get_imported_weather_iterations(), [1])
+        self.assertFalse(
+            os.path.exists(os.path.join(self.scenario_directory, "weather_iteration_1"))
+        )
+        self.assertTrue(
+            os.path.exists(os.path.join(self.scenario_directory, "weather_iteration_2"))
+        )
+
     def test_reimport_is_idempotent(self):
         for subproblem in (1, 2):
             write_subproblem_tree(

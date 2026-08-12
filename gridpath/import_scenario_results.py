@@ -48,6 +48,7 @@ from gridpath.common_functions import (
     get_temporal_structure_csv_overwrite_parser,
     get_import_results_parser,
     get_version_parser,
+    results_export_complete,
 )
 from db.common_functions import (
     connect_to_database,
@@ -67,6 +68,11 @@ from gridpath.scenario_directory_cleanup import check_scenario_directory_not_cle
 # Statuses assigned to each (weather iteration, hydro iteration,
 # availability iteration, subproblem, stage) during results import
 IMPORT_STATUS_IMPORTED = "imported"
+# Imported, but the results-export-complete file was absent (the directory
+# predates export-complete files, or the export was interrupted partway),
+# so the imported results may be incomplete; deliberately NOT "imported", so
+# e.g. directory cleanup won't remove the subproblem's files
+IMPORT_STATUS_IMPORTED_EXPORT_UNVERIFIED = "imported_export_unverified"
 # Solver status file not found (only reachable with --ignore_incomplete;
 # without it, a missing file raises)
 IMPORT_STATUS_SKIPPED_NOT_SOLVED = "skipped_not_solved"
@@ -97,6 +103,7 @@ def import_scenario_results_into_database(
     scenario_directory,
     ignore_incomplete,
     quiet,
+    require_results_export_complete=False,
 ):
     """
     :param import_rule:
@@ -107,6 +114,13 @@ def import_scenario_results_into_database(
     :param scenario_directory:
     :param ignore_incomplete: boolean
     :param quiet: boolean
+    :param require_results_export_complete: boolean; if True, refuse to
+        import a subproblem/stage whose results-export-complete file is
+        absent (its results files may be incomplete). If False, such
+        subproblems/stages are imported but flagged with the
+        "imported_export_unverified" status -- directories solved before
+        GridPath wrote export-complete files have no way to prove
+        completeness
 
     :return: dictionary keyed by (weather_iteration, hydro_iteration,
         availability_iteration, subproblem, stage) tuples (integers, 0 where
@@ -213,6 +227,26 @@ def import_scenario_results_into_database(
         # throwing an error at some point during results-export,
         # so we don't attempt to import missing results into the database
         if solver_status == "ok":
+            # The export-complete file is the LAST file the export writes,
+            # so its absence means the results files may be incomplete (an
+            # interrupted export -- or a directory solved before GridPath
+            # wrote export-complete files)
+            export_complete = results_export_complete(
+                scenario_directory=scenario_directory,
+                weather_iteration=structure_cell.weather_iteration_str,
+                hydro_iteration=structure_cell.hydro_iteration_str,
+                availability_iteration=structure_cell.availability_iteration_str,
+                subproblem=structure_cell.subproblem_str,
+                stage=structure_cell.stage_str,
+            )
+            if not export_complete and require_results_export_complete:
+                raise RuntimeError(
+                    f"The results in {results_directory} may be incomplete: "
+                    f"the solve wrote its termination condition but not the "
+                    f"results-export-complete file, so the results export "
+                    f"appears to have been interrupted. Re-solve this "
+                    f"subproblem to import it."
+                )
             import_objective_function_value(
                 db=db,
                 scenario_id=scenario_id,
@@ -236,11 +270,12 @@ def import_scenario_results_into_database(
                 loaded_modules=loaded_modules,
                 quiet=quiet,
             )
-            import_statuses[cell] = (
-                IMPORT_STATUS_IMPORTED
-                if module_results_imported
-                else IMPORT_STATUS_SKIPPED_BY_IMPORT_RULE
-            )
+            if not module_results_imported:
+                import_statuses[cell] = IMPORT_STATUS_SKIPPED_BY_IMPORT_RULE
+            elif not export_complete:
+                import_statuses[cell] = IMPORT_STATUS_IMPORTED_EXPORT_UNVERIFIED
+            else:
+                import_statuses[cell] = IMPORT_STATUS_IMPORTED
         elif solver_status is None:
             import_statuses[cell] = IMPORT_STATUS_SKIPPED_NOT_SOLVED
         else:

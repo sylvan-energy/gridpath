@@ -64,8 +64,10 @@ from gridpath.common_functions import (
     create_logs_directory_if_not_exists,
     Logging,
     ensure_empty_string,
+    results_export_complete,
     string_from_time,
     append_to_timing_summary_file,
+    write_results_export_complete_file,
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
@@ -294,17 +296,29 @@ def run_optimization_for_subproblem_stage(
     # simulations
     skip_solve = False
     if parsed_arguments.incomplete_only:
-        termination_condition_file = os.path.join(
-            scenario_directory,
-            weather_iteration_directory,
-            hydro_iteration_directory,
-            availability_iteration_directory,
-            subproblem_directory,
-            stage_directory,
-            "results",
-            "termination_condition.txt",
-        )
-        if os.path.isfile(termination_condition_file):
+        # A subproblem/stage only counts as complete if its results were
+        # COMPLETELY written (the export-complete file is the last file the
+        # export writes); the termination condition file alone is written
+        # before the results files, so its presence doesn't guarantee an
+        # uninterrupted export
+        if results_export_complete(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration_directory,
+            hydro_iteration=hydro_iteration_directory,
+            availability_iteration=availability_iteration_directory,
+            subproblem=subproblem_directory,
+            stage=stage_directory,
+        ):
+            termination_condition_file = os.path.join(
+                scenario_directory,
+                weather_iteration_directory,
+                hydro_iteration_directory,
+                availability_iteration_directory,
+                subproblem_directory,
+                stage_directory,
+                "results",
+                "termination_condition.txt",
+            )
             with open(termination_condition_file, "r") as f:
                 termination_condition = f.read()
             if not parsed_arguments.quiet:
@@ -587,18 +601,20 @@ def is_subproblem_stage_complete(
     :param subproblem_directory: subproblem directory
     :param stage_directory: stage directory
     :return: True if the subproblem stage is complete, False otherwise
+
+    Complete means the results were COMPLETELY written: the check is for
+    the export-complete file, which the export writes last (the
+    termination condition file alone is written before the results files,
+    so its presence doesn't guarantee an uninterrupted export).
     """
-    termination_condition_file = os.path.join(
-        scenario_directory,
-        weather_iteration_directory,
-        hydro_iteration_directory,
-        availability_iteration_directory,
-        subproblem_directory,
-        stage_directory,
-        "results",
-        "termination_condition.txt",
+    return results_export_complete(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration_directory,
+        hydro_iteration=hydro_iteration_directory,
+        availability_iteration=availability_iteration_directory,
+        subproblem=subproblem_directory,
+        stage=stage_directory,
     )
-    return os.path.isfile(termination_condition_file)
 
 
 def run_optimization_for_subproblem_pool(pool_datum):
@@ -1161,6 +1177,19 @@ def save_results(
                     "Subproblem {}, stage {} was infeasible. "
                     "Exiting linked subproblem run.".format(subproblem, stage)
                 )
+
+    # Mark the subproblem/stage's results as completely written; this must
+    # be the LAST file written, so that its presence (checked by
+    # --incomplete_only and by the results import) guarantees the export
+    # was not interrupted partway
+    write_results_export_complete_file(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
 
 
 def create_abstract_model(

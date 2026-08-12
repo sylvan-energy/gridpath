@@ -28,8 +28,10 @@ import warnings
 
 from gridpath.auxiliary.import_export_rules import import_export_rules
 from gridpath.auxiliary.scenario_chars import ScenarioStructure
+from gridpath.common_functions import RESULTS_EXPORT_COMPLETE_FILENAME
 from gridpath.import_scenario_results import (
     IMPORT_STATUS_IMPORTED,
+    IMPORT_STATUS_IMPORTED_EXPORT_UNVERIFIED,
     IMPORT_STATUS_SKIPPED_NOT_SOLVED,
     IMPORT_STATUS_SKIPPED_SOLVER_STATUS_NOT_OK,
     IMPORT_STATUS_SKIPPED_BY_IMPORT_RULE,
@@ -46,17 +48,22 @@ def write_cell_results_files(
     termination_condition="optimal",
     solver_status="ok",
     objective_function_value="42.0",
+    export_complete=True,
 ):
     """
-    Write a cell's results directory; pass None for a file to omit it.
+    Write a cell's results directory; pass None for a file to omit it, and
+    export_complete=False to simulate an interrupted results export.
     """
     results_directory = os.path.join(scenario_directory, cell_directory, "results")
     os.makedirs(results_directory, exist_ok=True)
-    for fname, contents in [
+    files = [
         ("termination_condition.txt", termination_condition),
         ("solver_status.txt", solver_status),
         ("objective_function_value.txt", objective_function_value),
-    ]:
+    ]
+    if export_complete:
+        files.append((RESULTS_EXPORT_COMPLETE_FILENAME, "test"))
+    for fname, contents in files:
         if contents is not None:
             with open(os.path.join(results_directory, fname), "w") as f:
                 f.write(contents)
@@ -89,7 +96,11 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
         write_cell_results_files(self.scenario_directory, cell_directory, **kwargs)
 
     def import_results(
-        self, scenario_structure, import_rule=None, ignore_incomplete=False
+        self,
+        scenario_structure,
+        import_rule=None,
+        ignore_incomplete=False,
+        require_results_export_complete=False,
     ):
         return import_scenario_results_into_database(
             import_rule=import_rule,
@@ -100,6 +111,7 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
             scenario_directory=self.scenario_directory,
             ignore_incomplete=ignore_incomplete,
             quiet=True,
+            require_results_export_complete=require_results_export_complete,
         )
 
     def get_results_scenario_rows(self):
@@ -215,6 +227,48 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
             self.get_results_scenario_rows(),
             [(1, "optimal", 42.0), (2, "unknown", None)],
         )
+
+    def test_interrupted_export_flagged_as_unverified(self):
+        # Subproblem 2's export was interrupted: termination/status files
+        # written but no export-complete file. It still imports (the
+        # directory may simply predate export-complete files), but with the
+        # unverified status, which e.g. blocks directory cleanup
+        self.write_cell_results("1")
+        self.write_cell_results("2", export_complete=False)
+
+        import_statuses = self.import_results(two_subproblem_structure())
+
+        self.assertEqual(
+            import_statuses,
+            {
+                (0, 0, 0, 1, 0): IMPORT_STATUS_IMPORTED,
+                (0, 0, 0, 2, 0): IMPORT_STATUS_IMPORTED_EXPORT_UNVERIFIED,
+            },
+        )
+        # Both cells' available results were imported
+        self.assertEqual(
+            self.get_results_scenario_rows(),
+            [(1, "optimal", 42.0), (2, "optimal", 42.0)],
+        )
+
+    def test_interrupted_export_refused_when_completeness_required(self):
+        self.write_cell_results("1")
+        self.write_cell_results("2", export_complete=False)
+
+        with self.assertRaises(RuntimeError):
+            self.import_results(
+                two_subproblem_structure(), require_results_export_complete=True
+            )
+
+        # A fully complete tree imports fine under the strict setting
+        # (clear the partial rows the refused attempt left behind first, as
+        # the real per-draw import's delete-first step would)
+        self.conn.execute("DELETE FROM results_scenario;")
+        self.write_cell_results("2")
+        import_statuses = self.import_results(
+            two_subproblem_structure(), require_results_export_complete=True
+        )
+        self.assertEqual(set(import_statuses.values()), {IMPORT_STATUS_IMPORTED})
 
     def test_skipped_by_import_rule(self):
         self.write_cell_results("1")

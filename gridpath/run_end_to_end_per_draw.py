@@ -258,6 +258,10 @@ def import_draws_worker(
                     scenario_directory=scenario_directory,
                     ignore_incomplete=False,
                     quiet=quiet,
+                    # Draws are solved fresh in this run, so a missing
+                    # export-complete file is a real interrupted export,
+                    # never a legacy directory
+                    require_results_export_complete=True,
                 )
                 conn.commit()
                 if cleanup_after_import or archive_format is not None:

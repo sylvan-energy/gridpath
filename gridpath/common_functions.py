@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import os.path
 import sys
 import warnings
@@ -323,9 +324,10 @@ def get_run_scenario_parser():
         "--incomplete_only",
         default=False,
         action="store_true",
-        help="Solve only incomplete subproblems, i.e. do no re-solve if "
-        "results are found. The subproblem is assumed complete if the"
-        "termination_condition.txt file is found.",
+        help="Solve only incomplete subproblems, i.e. do not re-solve if "
+        "complete results are found. The subproblem counts as complete if "
+        "its results-export-complete file is found, which the results "
+        "export writes last -- an interrupted export therefore re-solves.",
     )
 
     # Results export rule name
@@ -372,6 +374,84 @@ def ensure_empty_string(string):
     empty_string_ensured = "" if string == "empty_string" else string
 
     return empty_string_ensured
+
+
+# Written as the very last step of saving a subproblem/stage's results, so
+# its presence guarantees the results files on disk are complete; a crash or
+# kill during results export leaves the termination/status files behind but
+# not this file
+RESULTS_EXPORT_COMPLETE_FILENAME = "results_export_complete.txt"
+
+
+def get_results_export_complete_file_path(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    return os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "results",
+        RESULTS_EXPORT_COMPLETE_FILENAME,
+    )
+
+
+def write_results_export_complete_file(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    """
+    Mark the subproblem/stage's results as completely written. Must be
+    called only after ALL results files have been written. Written via a
+    temporary name and an atomic rename, so a partially written marker
+    can't exist.
+    """
+    complete_file_path = get_results_export_complete_file_path(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
+    with open(complete_file_path + ".part", "w", newline="") as f:
+        f.write(datetime.datetime.now().isoformat(sep=" "))
+    os.replace(complete_file_path + ".part", complete_file_path)
+
+
+def results_export_complete(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    """
+    Whether the subproblem/stage's results were completely written (its
+    results-export-complete file is present).
+    """
+    return os.path.isfile(
+        get_results_export_complete_file_path(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
+        )
+    )
 
 
 def create_logs_directory_if_not_exists(

@@ -27,6 +27,7 @@ import unittest
 
 from gridpath import import_scenario_results, run_scenario
 from gridpath.auxiliary.scenario_chars import ScenarioStructure
+from gridpath.common_functions import RESULTS_EXPORT_COMPLETE_FILENAME
 from gridpath.import_scenario_results import (
     IMPORT_STATUS_IMPORTED,
     IMPORT_STATUS_SKIPPED_NOT_SOLVED,
@@ -62,20 +63,24 @@ def write_scenario_root_files(scenario_directory):
         f.write("log")
 
 
-def write_subproblem_tree(scenario_directory, cell_directory):
+def write_subproblem_tree(scenario_directory, cell_directory, export_complete=True):
     """
     Write a subproblem/stage directory with inputs, results, and logs files,
-    the way a solved subproblem leaves it.
+    the way a solved subproblem leaves it. Pass export_complete=False to
+    simulate an interrupted results export (no export-complete file).
     """
     cell_path = os.path.join(scenario_directory, cell_directory)
-    for subdirectory, fname, contents in [
+    files = [
         ("inputs", "load_mw.tab", "load"),
         ("results", "termination_condition.txt", "optimal"),
         ("results", "solver_status.txt", "ok"),
         ("results", "objective_function_value.txt", "42.0"),
         ("results", "system_load_zone_timepoint.csv", "results"),
         ("logs", "opt_test.log", "log"),
-    ]:
+    ]
+    if export_complete:
+        files.append(("results", RESULTS_EXPORT_COMPLETE_FILENAME, "test"))
+    for subdirectory, fname, contents in files:
         os.makedirs(os.path.join(cell_path, subdirectory), exist_ok=True)
         with open(os.path.join(cell_path, subdirectory, fname), "w") as f:
             f.write(contents)

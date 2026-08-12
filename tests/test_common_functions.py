@@ -12,13 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
 import unittest
 import warnings
 
 import numpy as np
 import pandas as pd
 
-from gridpath.common_functions import create_results_df, update_results_df
+from gridpath.common_functions import (
+    create_results_df,
+    get_results_export_complete_file_path,
+    results_export_complete,
+    update_results_df,
+    write_results_export_complete_file,
+)
 
 
 class TestUpdateResultsDf(unittest.TestCase):
@@ -86,6 +94,32 @@ class TestUpdateResultsDf(unittest.TestCase):
         self.assertEqual(self.target["committed_mw"].iloc[0], 5.0)
         self.assertTrue(np.isnan(self.target["committed_mw"].iloc[1]))
         self.assertEqual(self.target["committed_mw"].iloc[2], 7.0)
+
+
+class TestResultsExportCompleteFile(unittest.TestCase):
+    def test_write_and_check(self):
+        with tempfile.TemporaryDirectory() as scenario_directory:
+            cell_args = {
+                "scenario_directory": scenario_directory,
+                "weather_iteration": "weather_iteration_1",
+                "hydro_iteration": "",
+                "availability_iteration": "",
+                "subproblem": "1",
+                "stage": "",
+            }
+            os.makedirs(
+                os.path.dirname(get_results_export_complete_file_path(**cell_args))
+            )
+
+            self.assertFalse(results_export_complete(**cell_args))
+            write_results_export_complete_file(**cell_args)
+            self.assertTrue(results_export_complete(**cell_args))
+            # Written atomically: no temporary file left behind
+            self.assertFalse(
+                os.path.exists(
+                    get_results_export_complete_file_path(**cell_args) + ".part"
+                )
+            )
 
 
 if __name__ == "__main__":
