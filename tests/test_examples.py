@@ -21,6 +21,8 @@ import pandas as pd
 import platform
 import shutil
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -665,6 +667,82 @@ class TestExamples(unittest.TestCase):
                     "--testing",
                 ]
             )
+
+    def test_example_multi_stage_prod_cost_parallel_cli_subprocess(self):
+        """
+        Check the parallel flags through the installed gridpath_run_e2e
+        console script in a subprocess (falling back to
+        `python -m gridpath.run_end_to_end` if the script isn't installed).
+
+        The in-process parallel test above can't catch entry-point-specific
+        multiprocessing problems: spawn pool workers re-import the parent
+        process's __main__ module, so whether the parallel flags are safe
+        depends on what that module is — here it is the real CLI entry
+        point rather than the test runner. On Windows (no fork), a broken
+        entry point fails with "An attempt has been made to start a new
+        process before the current process has finished its bootstrapping
+        phase".
+
+        Run in a temporary copy of the scenario directory so this test
+        doesn't write into the examples/ directory that other tests may be
+        using concurrently. No --testing flag: main() must return None so
+        that the console script's sys.exit(main()) exits 0 on success.
+        """
+        exe_name = "gridpath_run_e2e" + (".exe" if WINDOWS else "")
+        exe_path = os.path.join(os.path.dirname(sys.executable), exe_name)
+        if os.path.exists(exe_path):
+            base_cmd = [exe_path]
+        else:
+            base_cmd = [sys.executable, "-m", "gridpath.run_end_to_end"]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
+                os.path.join(tmp_dir, "multi_stage_prod_cost"),
+            )
+            result = subprocess.run(
+                base_cmd
+                + [
+                    "--database",
+                    os.path.abspath(DB_PATH),
+                    "--scenario",
+                    "multi_stage_prod_cost",
+                    "--scenario_location",
+                    tmp_dir,
+                    "--n_parallel_get_inputs",
+                    "3",
+                    "--n_parallel_solve",
+                    "3",
+                    "--quiet",
+                    "--mute_solver_output",
+                ],
+                capture_output=True,
+                text=True,
+                # Bound the run: a spawn-bootstrapping failure can manifest
+                # as a hang (the pool keeps respawning dying workers)
+                timeout=1200,
+            )
+
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg="CLI subprocess {} failed.\nSTDOUT:\n{}\nSTDERR:\n{}".format(
+                base_cmd, result.stdout, result.stderr
+            ),
+        )
+        self.assertNotIn("bootstrapping phase", result.stdout + result.stderr)
+
+        # Confirm the run was marked as finished (run_status_id = 2) in the
+        # database, i.e. all e2e steps actually completed
+        conn = sqlite3.connect(os.path.abspath(DB_PATH))
+        try:
+            run_status_id = conn.execute(
+                "SELECT run_status_id FROM scenarios WHERE scenario_name = ?;",
+                ("multi_stage_prod_cost",),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(run_status_id, 2)
 
     def run_e2e_in(self, scenario_name, scenario_location, additional_args):
         run_end_to_end.main(
