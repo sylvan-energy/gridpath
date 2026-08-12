@@ -541,84 +541,87 @@ def main(args=None):
             f"{temporal_structure_csv_path}."
         )
 
+    # Close the connection on any raise: a connection left open by an error
+    # keeps the database file locked on Windows
     conn = connect_to_database(db_path=db_path)
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    if not parsed_arguments.quiet:
-        print(
-            "Getting inputs, started on {}... (connected to database {})".format(
-                datetime.datetime.now(), db_path
+        if not parsed_arguments.quiet:
+            print(
+                "Getting inputs, started on {}... (connected to database {})".format(
+                    datetime.datetime.now(), db_path
+                )
             )
+
+        scenario_id, scenario_name = get_scenario_id_and_name(
+            scenario_id_arg=scenario_id_arg,
+            scenario_name_arg=scenario_name_arg,
+            c=c,
+            script="get_scenario_inputs",
         )
 
-    scenario_id, scenario_name = get_scenario_id_and_name(
-        scenario_id_arg=scenario_id_arg,
-        scenario_name_arg=scenario_name_arg,
-        c=c,
-        script="get_scenario_inputs",
-    )
-
-    # Determine scenario directory and create it if needed
-    scenario_directory = determine_scenario_directory(
-        scenario_location=scenario_location, scenario_name=scenario_name
-    )
-    create_directory_if_not_exists(directory=scenario_directory)
-
-    # Get scenario characteristics (features, scenario_id, subscenarios, subproblems)
-    # TODO: it seems these fail silently if empty; we may want to implement
-    #  some validation
-    optional_features = OptionalFeatures(conn=conn, scenario_id=scenario_id)
-    subscenarios = SubScenarios(conn=conn, scenario_id=scenario_id)
-    if temporal_structure_csv_overwrite:
-        scenario_structure = get_scenario_structure_from_csv(
-            temporal_structure_csv_path
+        # Determine scenario directory and create it if needed
+        scenario_directory = determine_scenario_directory(
+            scenario_location=scenario_location, scenario_name=scenario_name
         )
-    else:
-        scenario_structure = get_scenario_structure_from_db(
-            conn=conn, scenario_id=scenario_id
+        create_directory_if_not_exists(directory=scenario_directory)
+
+        # Get scenario characteristics (features, scenario_id, subscenarios, subproblems)
+        # TODO: it seems these fail silently if empty; we may want to implement
+        #  some validation
+        optional_features = OptionalFeatures(conn=conn, scenario_id=scenario_id)
+        subscenarios = SubScenarios(conn=conn, scenario_id=scenario_id)
+        if temporal_structure_csv_overwrite:
+            scenario_structure = get_scenario_structure_from_csv(
+                temporal_structure_csv_path
+            )
+        else:
+            scenario_structure = get_scenario_structure_from_db(
+                conn=conn, scenario_id=scenario_id
+            )
+        solver_options = SolverOptions(conn=conn, scenario_id=scenario_id)
+
+        # Determine requested features and use this to determine what modules
+        # to load for GridPath
+        feature_list = optional_features.get_active_features()
+
+        # Figure out which modules to use and load the modules
+        modules_to_use = determine_modules(
+            features=feature_list, multi_stage=scenario_structure.STAGE_FLAG
         )
-    solver_options = SolverOptions(conn=conn, scenario_id=scenario_id)
 
-    # Determine requested features and use this to determine what modules to
-    # load for Gridpath
-    feature_list = optional_features.get_active_features()
+        # Get appropriate inputs from database and write the .tab file model
+        # inputs
+        write_model_inputs(
+            scenario_directory=scenario_directory,
+            scenario_structure=scenario_structure,
+            modules_to_use=modules_to_use,
+            scenario_id=scenario_id,
+            subscenarios=subscenarios,
+            db_path=db_path,
+            n_parallel_subproblems=int(parsed_arguments.n_parallel_get_inputs),
+        )
 
-    # Figure out which modules to use and load the modules
-    modules_to_use = determine_modules(
-        features=feature_list, multi_stage=scenario_structure.STAGE_FLAG
-    )
+        write_scenario_level_files(
+            scenario_directory=scenario_directory,
+            conn=conn,
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            scenario_structure=scenario_structure,
+            optional_features=optional_features,
+            subscenarios=subscenarios,
+            solver_options=solver_options,
+            feature_list=feature_list,
+        )
 
-    # Get appropriate inputs from database and write the .tab file model inputs
-    write_model_inputs(
-        scenario_directory=scenario_directory,
-        scenario_structure=scenario_structure,
-        modules_to_use=modules_to_use,
-        scenario_id=scenario_id,
-        subscenarios=subscenarios,
-        db_path=db_path,
-        n_parallel_subproblems=int(parsed_arguments.n_parallel_get_inputs),
-    )
-
-    write_scenario_level_files(
-        scenario_directory=scenario_directory,
-        conn=conn,
-        scenario_id=scenario_id,
-        scenario_name=scenario_name,
-        scenario_structure=scenario_structure,
-        optional_features=optional_features,
-        subscenarios=subscenarios,
-        solver_options=solver_options,
-        feature_list=feature_list,
-    )
-
-    # The scenario directory contents have been regenerated, so remove the
-    # post-import cleanup marker if one was present (it blocks run_scenario
-    # and import_scenario_results while the directory is in a cleaned state)
-    clear_cleanup_marker(scenario_directory=scenario_directory)
-
-    # Close the database connection
-    # conn.commit()
-    conn.close()
+        # The scenario directory contents have been regenerated, so remove
+        # the post-import cleanup marker if one was present (it blocks
+        # run_scenario and import_scenario_results while the directory is in
+        # a cleaned state)
+        clear_cleanup_marker(scenario_directory=scenario_directory)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
