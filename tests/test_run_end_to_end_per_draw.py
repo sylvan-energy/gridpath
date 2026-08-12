@@ -163,10 +163,8 @@ class TestDeleteScenarioResultsForDraw(unittest.TestCase):
                 (f"weather_iteration_{w}",),
             )
         # A cross-iteration summary table without the iteration columns
-        conn.execute(
-            """INSERT INTO results_system_loss_of_load_metrics_summary
-            (scenario_id, LOLH_hrs_per_year) VALUES (1, 0.5);"""
-        )
+        conn.execute("""INSERT INTO results_system_loss_of_load_metrics_summary
+            (scenario_id, LOLH_hrs_per_year) VALUES (1, 0.5);""")
         conn.commit()
 
         delete_scenario_results_for_draw(
