@@ -733,6 +733,16 @@ class TestExamples(unittest.TestCase):
                 os.path.join(EXAMPLES_DIRECTORY, scenario_name),
                 scenario_directory,
             )
+            # Strip the results CSVs (keeping the termination/status files),
+            # mimicking the committed example state a fresh checkout has:
+            # the per-draw mode must re-solve rather than trust and import
+            # pre-existing results files, which may be incomplete
+            for dirpath, dirnames, filenames in os.walk(scenario_directory):
+                if os.path.basename(dirpath) == "results":
+                    for fname in filenames:
+                        if fname.endswith(".csv"):
+                            os.remove(os.path.join(dirpath, fname))
+
             per_draw_args = ["--per_draw_lifecycle", "--cleanup_after_import"]
             self.run_e2e_in(scenario_name, tmp_dir, per_draw_args)
 

@@ -35,7 +35,6 @@ from gridpath.auxiliary.scenario_chars import (
 from gridpath.import_scenario_results import IMPORT_STATUS_IMPORTED
 from gridpath.run_end_to_end_per_draw import (
     _ImportState,
-    draw_solved_on_disk,
     get_completed_draw_units,
     get_draw_unit,
     import_draws_worker,
@@ -364,27 +363,6 @@ class TestResumeHelpers(unittest.TestCase):
 
     def test_get_completed_draw_units_no_marker(self):
         self.assertEqual(get_completed_draw_units(self.scenario_directory), set())
-
-    def test_draw_solved_on_disk(self):
-        structure = ScenarioStructure(
-            weather_hydro_avail_subproblem_stage_dict={1: {0: {0: {1: [1], 2: [1]}}}},
-            weather_iteration_flag=True,
-            hydro_iteration_flag=False,
-            availability_iteration_flag=False,
-            subproblem_flag=True,
-            stage_flag=False,
-        )
-        draw_structure = build_single_draw_structure(structure, 1, 0, 0)
-        self.assertFalse(draw_solved_on_disk(self.scenario_directory, draw_structure))
-        write_subproblem_tree(
-            self.scenario_directory, os.path.join("weather_iteration_1", "1")
-        )
-        # Only one of two subproblems solved
-        self.assertFalse(draw_solved_on_disk(self.scenario_directory, draw_structure))
-        write_subproblem_tree(
-            self.scenario_directory, os.path.join("weather_iteration_1", "2")
-        )
-        self.assertTrue(draw_solved_on_disk(self.scenario_directory, draw_structure))
 
 
 class TestJournalModeLifecycle(unittest.TestCase):

@@ -38,8 +38,10 @@ iteration, availability iteration) at a time:
 Each draw's import is idempotent: the importer first deletes the draw's
 prior database rows, so a crashed or killed run can simply be re-run.
 Completed draws are recognized on re-run by their rows in the cleanup
-marker file (with cleanup/archiving on) or by their solved results on disk
-(without), and are not re-solved.
+marker file (with cleanup/archiving on) and are skipped entirely; all other
+draws are re-solved by default, exactly like the classic whole-scenario
+mode -- pass ``--incomplete_only`` to skip re-solving subproblems whose
+results are already on disk.
 
 Linked-subproblem scenarios are refused: subproblems then depend on each
 other's inputs and the draws cannot be processed independently.
@@ -147,32 +149,6 @@ def get_completed_draw_units(scenario_directory):
                 completed_units.add("" if unit == SCENARIO_ROOT_UNIT_NAME else unit)
 
     return completed_units
-
-
-def draw_solved_on_disk(scenario_directory, draw_structure):
-    """
-    Whether every subproblem/stage of the draw has a termination condition
-    file on disk (the same completion signal run_scenario's
-    --incomplete_only uses).
-    """
-    directory_structure = ScenarioDirectoryStructure(
-        draw_structure
-    ).SCENARIO_DIRECTORY_STRUCTURE
-    for cell in iterate_directory_structure(directory_structure):
-        termination_file = os.path.join(
-            scenario_directory,
-            cell.weather_iteration_str,
-            cell.hydro_iteration_str,
-            cell.availability_iteration_str,
-            cell.subproblem_str,
-            cell.stage_str,
-            "results",
-            "termination_condition.txt",
-        )
-        if not os.path.exists(termination_file):
-            return False
-
-    return True
 
 
 def refuse_linked_subproblems(conn, subscenarios):
@@ -423,22 +399,28 @@ def run_end_to_end_per_draw(args, parsed_args):
             if import_state.get_error() is not None:
                 break
 
-            if not draw_solved_on_disk(scenario_directory, draw_structure):
-                write_model_inputs(
-                    scenario_directory=scenario_directory,
-                    scenario_structure=draw_structure,
-                    modules_to_use=modules_to_use,
-                    scenario_id=scenario_id,
-                    subscenarios=subscenarios,
-                    db_path=db_path,
-                    n_parallel_subproblems=int(parsed_args.n_parallel_get_inputs),
-                    delete_prior_aux=False,
-                )
-                run_scenario.run_scenario(
-                    scenario_directory=scenario_directory,
-                    scenario_structure=draw_structure,
-                    parsed_arguments=run_scenario_parsed_args,
-                )
+            # Draws not recorded as completed are always re-solved (the same
+            # default as the classic whole-scenario mode); run_scenario
+            # itself skips already-solved subproblems if the user passed
+            # --incomplete_only. Files left by other runs must not skip the
+            # solve here: their presence doesn't mean they are complete
+            # (e.g. the committed example directories carry only the
+            # termination/status files, not the results CSVs)
+            write_model_inputs(
+                scenario_directory=scenario_directory,
+                scenario_structure=draw_structure,
+                modules_to_use=modules_to_use,
+                scenario_id=scenario_id,
+                subscenarios=subscenarios,
+                db_path=db_path,
+                n_parallel_subproblems=int(parsed_args.n_parallel_get_inputs),
+                delete_prior_aux=False,
+            )
+            run_scenario.run_scenario(
+                scenario_directory=scenario_directory,
+                scenario_structure=draw_structure,
+                parsed_arguments=run_scenario_parsed_args,
+            )
 
             if not quiet:
                 unit_name = unit if unit else SCENARIO_ROOT_UNIT_NAME
