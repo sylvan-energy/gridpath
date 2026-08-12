@@ -277,6 +277,81 @@ def delete_scenario_results(conn, scenario_id):
         )
 
 
+def delete_scenario_results_for_draw(
+    conn,
+    scenario_id,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    weather_iteration_str,
+    hydro_iteration_str,
+    availability_iteration_str,
+):
+    """
+    :param conn:
+    :param scenario_id:
+    :param weather_iteration: integer iteration values (0 for levels the
+        scenario doesn't use)
+    :param hydro_iteration:
+    :param availability_iteration:
+    :param weather_iteration_str: directory-name-string iteration values
+        (e.g. "weather_iteration_1"; "" for levels the scenario doesn't use)
+    :param hydro_iteration_str:
+    :param availability_iteration_str:
+    :return:
+
+    Delete prior results for a single iteration draw of this scenario from
+    all results tables. Tables without the iteration columns (the
+    cross-iteration summary tables written by process_results) are skipped:
+    they are whole-scenario aggregates, not per-draw imports.
+
+    The results tables key the iteration columns inconsistently:
+    results_scenario stores the integer iteration values (0 for absent
+    levels) while the module results tables store the directory-name
+    strings (NULL/'' for absent levels) -- so both representations are
+    matched here.
+    """
+    c = conn.cursor()
+    all_tables = c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table';"
+    ).fetchall()
+
+    results_tables = [tbl[0] for tbl in all_tables if tbl[0].startswith("results")]
+
+    iteration_columns = (
+        "weather_iteration",
+        "hydro_iteration",
+        "availability_iteration",
+    )
+    for tbl in results_tables:
+        table_columns = {
+            column_row[1] for column_row in c.execute(f"PRAGMA table_info({tbl});")
+        }
+        if not all(column in table_columns for column in iteration_columns):
+            continue
+        sql = """
+            DELETE FROM {} WHERE scenario_id = ?
+            AND COALESCE(CAST(weather_iteration AS TEXT), '') IN (?, ?)
+            AND COALESCE(CAST(hydro_iteration AS TEXT), '') IN (?, ?)
+            AND COALESCE(CAST(availability_iteration AS TEXT), '') IN (?, ?);
+            """.format(tbl)
+        spin_on_database_lock(
+            conn=conn,
+            cursor=c,
+            sql=sql,
+            data=(
+                scenario_id,
+                str(weather_iteration),
+                weather_iteration_str,
+                str(hydro_iteration),
+                hydro_iteration_str,
+                str(availability_iteration),
+                availability_iteration_str,
+            ),
+            many=False,
+        )
+
+
 def check_if_scenario_name_exists(conn, scenario_name):
     """
     :param conn: the database connection

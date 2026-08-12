@@ -234,6 +234,55 @@ def determine_directory_structure_from_scenario_structure(scenario_structure):
     return iteration_directory_strings_dict
 
 
+def iterate_draws(scenario_structure):
+    """
+    :param scenario_structure: ScenarioStructure
+    :return: generator of (weather_iteration, hydro_iteration,
+        availability_iteration) keys, one per iteration "draw" of the
+        scenario (a single (0, 0, 0) key when the scenario has no iteration
+        levels)
+    """
+    for w in scenario_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT.keys():
+        for h in scenario_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[w].keys():
+            for a in scenario_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[w][
+                h
+            ].keys():
+                yield w, h, a
+
+
+def build_single_draw_structure(
+    scenario_structure, weather_iteration, hydro_iteration, availability_iteration
+):
+    """
+    :param scenario_structure: ScenarioStructure
+    :return: a new ScenarioStructure containing only the requested draw,
+        with the same iteration/subproblem/stage flags
+
+    The stage functions (write_model_inputs, run_scenario,
+    import_scenario_results_into_database, cleanup_scenario_directory) all
+    take their work specification from a ScenarioStructure, so a
+    single-draw slice makes them operate on one draw at a time.
+    """
+    subproblem_stage_dict = (
+        scenario_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[weather_iteration][
+            hydro_iteration
+        ][availability_iteration]
+    )
+
+    return ScenarioStructure(
+        weather_hydro_avail_subproblem_stage_dict={
+            weather_iteration: {
+                hydro_iteration: {availability_iteration: subproblem_stage_dict}
+            }
+        },
+        weather_iteration_flag=scenario_structure.WEATHER_ITERATION_FLAG,
+        hydro_iteration_flag=scenario_structure.HYDRO_ITERATION_FLAG,
+        availability_iteration_flag=scenario_structure.AVAILABILITY_ITERATION_FLAG,
+        subproblem_flag=scenario_structure.SUBPROBLEM_FLAG,
+        stage_flag=scenario_structure.STAGE_FLAG,
+    )
+
+
 # A single (weather iteration, hydro iteration, availability iteration,
 # subproblem, stage) of the scenario directory structure: the directory-name
 # strings ("" for levels not in use) and the corresponding integer values (0

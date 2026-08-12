@@ -62,6 +62,7 @@ def write_model_inputs(
     subscenarios,
     db_path,
     n_parallel_subproblems,
+    delete_prior_aux=True,
 ):
     """
     For each module, load the inputs from the database and write out the inputs
@@ -76,7 +77,10 @@ def write_model_inputs(
     :param subscenarios: SubScenarios object with all subscenario info
     :param db_path: database connection
     :param n_parallel_subproblems: int; get inputs for subproblems in parallel
-
+    :param delete_prior_aux: boolean; whether to delete the scenario-level
+        auxiliary files first. Set to False when writing inputs for one
+        iteration draw at a time (the per-draw E2E mode), where the
+        scenario-level files are managed once for the whole run.
 
     :return:
     """
@@ -85,7 +89,8 @@ def write_model_inputs(
     #  subproblem-stage structure
     # Delete auxiliary files that may have existed before to avoid phantom
     # files
-    delete_prior_aux_files(scenario_directory=scenario_directory)
+    if delete_prior_aux:
+        delete_prior_aux_files(scenario_directory=scenario_directory)
 
     # Get the directory structure from the scenario structure
     scenario_directory_structure = ScenarioDirectoryStructure(
@@ -283,6 +288,44 @@ def get_inputs_for_subproblem_pool(pool_datum):
         subscenarios=subscenarios,
         db_path=db_path,
     )
+
+
+def write_scenario_level_files(
+    scenario_directory,
+    conn,
+    scenario_id,
+    scenario_name,
+    scenario_structure,
+    optional_features,
+    subscenarios,
+    solver_options,
+    feature_list,
+):
+    """
+    Write the scenario-level (draw-independent) files: the multi-stage flag,
+    the features list, the scenario description, the units file, the solver
+    options file, and the linked-subproblems map.
+    """
+    write_multi_stage_flag(scenario_directory, scenario_structure.STAGE_FLAG)
+    # Save the list of optional features to a file (will be used to
+    # determine modules without database connection)
+    write_features_csv(scenario_directory=scenario_directory, feature_list=feature_list)
+    # Write full scenario description
+    write_scenario_description(
+        scenario_directory=scenario_directory,
+        scenario_id=scenario_id,
+        scenario_name=scenario_name,
+        optional_features=optional_features,
+        subscenarios=subscenarios,
+    )
+    # Write the units used for all metrics
+    write_units_csv(scenario_directory, conn)
+    # Write the solver options file if needed
+    write_solver_options(
+        scenario_directory=scenario_directory, solver_options=solver_options
+    )
+    # Write the subproblem linked timepoints map file if needed
+    write_linked_subproblems_map(scenario_directory, conn, subscenarios)
 
 
 def delete_prior_aux_files(scenario_directory):
@@ -534,7 +577,6 @@ def main(args=None):
         scenario_structure = get_scenario_structure_from_db(
             conn=conn, scenario_id=scenario_id
         )
-    write_multi_stage_flag(scenario_directory, scenario_structure.STAGE_FLAG)
     solver_options = SolverOptions(conn=conn, scenario_id=scenario_id)
 
     # Determine requested features and use this to determine what modules to
@@ -557,28 +599,17 @@ def main(args=None):
         n_parallel_subproblems=int(parsed_arguments.n_parallel_get_inputs),
     )
 
-    # Save the list of optional features to a file (will be used to determine
-    # modules without database connection)
-    write_features_csv(scenario_directory=scenario_directory, feature_list=feature_list)
-    # Write full scenario description
-    write_scenario_description(
+    write_scenario_level_files(
         scenario_directory=scenario_directory,
+        conn=conn,
         scenario_id=scenario_id,
         scenario_name=scenario_name,
+        scenario_structure=scenario_structure,
         optional_features=optional_features,
         subscenarios=subscenarios,
+        solver_options=solver_options,
+        feature_list=feature_list,
     )
-
-    # Write the units used for all metrics
-    write_units_csv(scenario_directory, conn)
-
-    # Write the solver options file if needed
-    write_solver_options(
-        scenario_directory=scenario_directory, solver_options=solver_options
-    )
-
-    # Write the subproblem linked timepoints map file if needed
-    write_linked_subproblems_map(scenario_directory, conn, subscenarios)
 
     # The scenario directory contents have been regenerated, so remove the
     # post-import cleanup marker if one was present (it blocks run_scenario

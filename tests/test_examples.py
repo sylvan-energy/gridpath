@@ -666,6 +666,97 @@ class TestExamples(unittest.TestCase):
                 ]
             )
 
+    def run_e2e_in(self, scenario_name, scenario_location, additional_args):
+        run_end_to_end.main(
+            [
+                "--database",
+                DB_PATH,
+                "--scenario",
+                scenario_name,
+                "--scenario_location",
+                scenario_location,
+                "--quiet",
+                "--mute_solver_output",
+                "--testing",
+            ]
+            + additional_args
+        )
+
+    def get_scenario_results_rows(self, scenario_name):
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            scenario_id = conn.execute(
+                "SELECT scenario_id FROM scenarios WHERE scenario_name = ?;",
+                (scenario_name,),
+            ).fetchone()[0]
+            results_scenario_rows = conn.execute(
+                "SELECT * FROM results_scenario WHERE scenario_id = ?;",
+                (scenario_id,),
+            ).fetchall()
+            system_costs_rows = conn.execute(
+                "SELECT * FROM results_system_costs WHERE scenario_id = ?;",
+                (scenario_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        return (
+            sorted(results_scenario_rows, key=str),
+            sorted(system_costs_rows, key=str),
+        )
+
+    def test_per_draw_lifecycle_differential(self):
+        """
+        A --per_draw_lifecycle run with per-draw cleanup must import
+        identical rows to a classic whole-scenario run, end with a cleaned
+        directory, and a re-run must recognize the completed draws (from
+        the cleanup marker) and finish without re-solving or altering the
+        database results. Run in temporary copies of the scenario
+        directory, so this test doesn't write into the examples/ directory
+        that test_example_ra_toolkit_monte_carlo may be using concurrently.
+        """
+        scenario_name = "ra_toolkit_monte_carlo"
+
+        # Classic whole-scenario baseline
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                os.path.join(tmp_dir, scenario_name),
+            )
+            self.run_e2e_in(scenario_name, tmp_dir, [])
+            baseline_rows = self.get_scenario_results_rows(scenario_name)
+        self.assertTrue(len(baseline_rows[0]) > 0)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            scenario_directory = os.path.join(tmp_dir, scenario_name)
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                scenario_directory,
+            )
+            per_draw_args = ["--per_draw_lifecycle", "--cleanup_after_import"]
+            self.run_e2e_in(scenario_name, tmp_dir, per_draw_args)
+
+            # Identical database rows to the classic run
+            self.assertEqual(
+                baseline_rows, self.get_scenario_results_rows(scenario_name)
+            )
+            # The draws' directories were cleaned as they were imported
+            remaining = sorted(os.listdir(scenario_directory))
+            self.assertNotIn("weather_iteration_1", remaining)
+            self.assertNotIn("weather_iteration_2", remaining)
+            self.assertIn(CLEANUP_MARKER_FILENAME, remaining)
+            self.assertIn("features.csv", remaining)
+
+            # Re-run: completed draws are recognized from the marker; the
+            # run finishes without re-solving and the results are unchanged
+            self.run_e2e_in(scenario_name, tmp_dir, per_draw_args)
+            self.assertEqual(
+                baseline_rows, self.get_scenario_results_rows(scenario_name)
+            )
+            self.assertNotIn(
+                "weather_iteration_1", sorted(os.listdir(scenario_directory))
+            )
+
     def test_cleanup_after_import_differential(self):
         """
         An E2E run with --cleanup_after_import must import the same rows into
@@ -680,43 +771,10 @@ class TestExamples(unittest.TestCase):
         scenario_name = "ra_toolkit_monte_carlo"
 
         def run_e2e(scenario_location, additional_args):
-            run_end_to_end.main(
-                [
-                    "--database",
-                    DB_PATH,
-                    "--scenario",
-                    scenario_name,
-                    "--scenario_location",
-                    scenario_location,
-                    "--quiet",
-                    "--mute_solver_output",
-                    "--testing",
-                ]
-                + additional_args
-            )
+            self.run_e2e_in(scenario_name, scenario_location, additional_args)
 
         def get_results_rows():
-            conn = sqlite3.connect(DB_PATH)
-            try:
-                scenario_id = conn.execute(
-                    "SELECT scenario_id FROM scenarios WHERE scenario_name = ?;",
-                    (scenario_name,),
-                ).fetchone()[0]
-                results_scenario_rows = conn.execute(
-                    "SELECT * FROM results_scenario WHERE scenario_id = ?;",
-                    (scenario_id,),
-                ).fetchall()
-                system_costs_rows = conn.execute(
-                    "SELECT * FROM results_system_costs WHERE scenario_id = ?;",
-                    (scenario_id,),
-                ).fetchall()
-            finally:
-                conn.close()
-
-            return (
-                sorted(results_scenario_rows, key=str),
-                sorted(system_costs_rows, key=str),
-            )
+            return self.get_scenario_results_rows(scenario_name)
 
         # Baseline run without cleanup
         with tempfile.TemporaryDirectory() as tmp_dir:
