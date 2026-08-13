@@ -75,6 +75,8 @@ draws are re-solved by default, exactly like the classic whole-scenario
 mode -- pass ``--incomplete_only`` to skip re-solving subproblems whose
 results are already on disk.
 
+Some more notes:
+
 Linked-subproblem scenarios are refused: subproblems then depend on each
 other's inputs and the draws cannot be processed independently.
 
