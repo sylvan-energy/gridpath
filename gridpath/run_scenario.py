@@ -53,6 +53,7 @@ import warnings
 from gridpath.auxiliary.import_export_rules import import_export_rules
 from gridpath.auxiliary.scenario_chars import (
     get_scenario_structure_from_disk,
+    iterate_directory_structure,
     ScenarioDirectoryStructure,
 )
 from gridpath.common_functions import (
@@ -64,11 +65,14 @@ from gridpath.common_functions import (
     create_logs_directory_if_not_exists,
     Logging,
     ensure_empty_string,
+    results_export_complete,
     string_from_time,
     append_to_timing_summary_file,
+    write_results_export_complete_file,
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.scenario_directory_cleanup import check_scenario_directory_not_cleaned
 
 
 def start_step(step, quiet):
@@ -293,17 +297,29 @@ def run_optimization_for_subproblem_stage(
     # simulations
     skip_solve = False
     if parsed_arguments.incomplete_only:
-        termination_condition_file = os.path.join(
-            scenario_directory,
-            weather_iteration_directory,
-            hydro_iteration_directory,
-            availability_iteration_directory,
-            subproblem_directory,
-            stage_directory,
-            "results",
-            "termination_condition.txt",
-        )
-        if os.path.isfile(termination_condition_file):
+        # A subproblem/stage only counts as complete if its results were
+        # COMPLETELY written (the export-complete file is the last file the
+        # export writes); the termination condition file alone is written
+        # before the results files, so its presence doesn't guarantee an
+        # uninterrupted export
+        if results_export_complete(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration_directory,
+            hydro_iteration=hydro_iteration_directory,
+            availability_iteration=availability_iteration_directory,
+            subproblem=subproblem_directory,
+            stage=stage_directory,
+        ):
+            termination_condition_file = os.path.join(
+                scenario_directory,
+                weather_iteration_directory,
+                hydro_iteration_directory,
+                availability_iteration_directory,
+                subproblem_directory,
+                stage_directory,
+                "results",
+                "termination_condition.txt",
+            )
             with open(termination_condition_file, "r") as f:
                 termination_condition = f.read()
             if not parsed_arguments.quiet:
@@ -514,6 +530,8 @@ def run_optimization_for_subproblem_stage(
         # Return the objective function value (in the testing suite, the value
         # gets checked against the expected value, but this is the only place
         # this is actually used)
+        # An infeasible or otherwise non-optimal solve was already flagged
+        # loudly by save_results
         if results.solver.termination_condition != "infeasible":
             if parsed_arguments.testing:
                 if len(results.solution) > 0:
@@ -524,8 +542,6 @@ def run_optimization_for_subproblem_stage(
                         f"termination condition: "
                         f"{results.solver.termination_condition})!"
                     )
-        else:
-            warnings.warn("WARNING: the problem was infeasible!")
 
 
 def run_optimization_for_subproblem(
@@ -586,18 +602,20 @@ def is_subproblem_stage_complete(
     :param subproblem_directory: subproblem directory
     :param stage_directory: stage directory
     :return: True if the subproblem stage is complete, False otherwise
+
+    Complete means the results were COMPLETELY written: the check is for
+    the export-complete file, which the export writes last (the
+    termination condition file alone is written before the results files,
+    so its presence doesn't guarantee an uninterrupted export).
     """
-    termination_condition_file = os.path.join(
-        scenario_directory,
-        weather_iteration_directory,
-        hydro_iteration_directory,
-        availability_iteration_directory,
-        subproblem_directory,
-        stage_directory,
-        "results",
-        "termination_condition.txt",
+    return results_export_complete(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration_directory,
+        hydro_iteration=hydro_iteration_directory,
+        availability_iteration=availability_iteration_directory,
+        subproblem=subproblem_directory,
+        stage=stage_directory,
     )
-    return os.path.isfile(termination_condition_file)
 
 
 def run_optimization_for_subproblem_pool(pool_datum):
@@ -977,6 +995,75 @@ def create_pass_through_inputs(
             )
 
 
+def describe_solve_cell(
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    """
+    Human-readable name for a subproblem/stage from its directory strings
+    (empty strings for levels the scenario doesn't have). The iteration
+    directory names are self-describing (e.g. 'weather_iteration_1');
+    subproblem/stage directories are bare numbers, so they get a label.
+    """
+    parts = [
+        level
+        for level in (weather_iteration, hydro_iteration, availability_iteration)
+        if level
+    ]
+    if subproblem:
+        parts.append(f"subproblem {subproblem}")
+    if stage:
+        parts.append(f"stage {stage}")
+
+    return ", ".join(parts) if parts else "the scenario's single subproblem"
+
+
+def print_solve_status_warning(
+    solver_status,
+    termination_condition,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    """
+    Print a warning -- deliberately regardless of the --quiet setting -- if
+    the solve did not end in an optimal solution. Non-optimal subproblems
+    are otherwise easy to miss: when the solver status is not 'ok', no
+    results CSVs are exported or imported, so the only durable record is
+    the termination condition in the results_scenario table. (A Python
+    warning would not do here: the default warnings filter deduplicates by
+    message and location, so in a run with many draws only the first
+    non-optimal solve would be flagged -- once per process.)
+    """
+    cell = describe_solve_cell(
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
+    if str(solver_status) == "ok":
+        if str(termination_condition) != "optimal":
+            print(
+                f"WARNING: the solution for {cell} is NOT OPTIMAL (solver "
+                f"termination condition: {termination_condition}). Results "
+                f"will still be exported and imported."
+            )
+    else:
+        print(
+            f"WARNING: no valid solution for {cell} (solver status: "
+            f"{solver_status}, termination condition: "
+            f"{termination_condition}). No results will be exported or "
+            f"imported for it; its termination condition is still recorded "
+            f"in the results_scenario table on import."
+        )
+
+
 def save_results(
     scenario_directory,
     weather_iteration,
@@ -1035,6 +1122,17 @@ def save_results(
     ) as f:
         f.write(str(results.solver.termination_condition))
 
+    # Flag any non-optimal solve loudly (regardless of the --quiet setting)
+    print_solve_status_warning(
+        solver_status=results.solver.status,
+        termination_condition=results.solver.termination_condition,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
+
     if results.solver.status == SolverStatus.ok:
         if not parsed_arguments.quiet:
             print(
@@ -1042,8 +1140,6 @@ def save_results(
                     results.solver.termination_condition
                 )
             )
-        if results.solver.termination_condition != TerminationCondition.optimal:
-            warnings.warn("   ...solution is not optimal!")
         # Continue with results export
         # Parse arguments to see if we're following a special rule for whether to
         # export results
@@ -1141,15 +1237,10 @@ def save_results(
             quiet=parsed_arguments.quiet,
             timing_summary_file_path=timing_summary_file_path,
         )
-    # If solver status is not ok, don't export results and print some
-    # messages for the user
+    # If solver status is not ok, don't export results (the warning was
+    # already printed above)
     else:
         if results.solver.termination_condition == TerminationCondition.infeasible:
-            if not parsed_arguments.quiet:
-                print(
-                    "Problem was infeasible. Results not exported for "
-                    "subproblem {}, stage {}.".format(subproblem, stage)
-                )
             # If subproblems are linked, exit since we don't have linked inputs
             # for the next subproblem; otherwise, move on to the next
             # subproblem
@@ -1160,6 +1251,19 @@ def save_results(
                     "Subproblem {}, stage {} was infeasible. "
                     "Exiting linked subproblem run.".format(subproblem, stage)
                 )
+
+    # Mark the subproblem/stage's results as completely written; this must
+    # be the LAST file written, so that its presence (checked by
+    # --incomplete_only and by the results import) guarantees the export
+    # was not interrupted partway
+    write_results_export_complete_file(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
 
 
 def create_abstract_model(
@@ -1755,6 +1859,19 @@ def parse_arguments(args):
         ],
     )
 
+    parser.add_argument(
+        "--ignore_cleanup_marker",
+        default=False,
+        action="store_true",
+        help="Run even if the scenario directory was cleaned after its "
+        "results were imported (the cleanup marker file is present). The "
+        "scenario structure is inferred from whatever is on disk, so use "
+        "this to solve a subset re-materialized with gridpath_get_inputs -- "
+        "a single draw (its --single_draw option) or an arbitrary subset "
+        "(its --temporal_structure_csv_overwrite option); do NOT use it on "
+        "a tree you expect to be complete.",
+    )
+
     # Flip order of argument groups so "required arguments" show first
     # https://stackoverflow.com/questions/39047075/reorder-python-argparse-argument-groups
     # Note: hacky fix; preferred answer of creating an explicit optional group
@@ -1768,6 +1885,82 @@ def parse_arguments(args):
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
     return parsed_arguments
+
+
+def warn_on_non_optimal_solves(scenario_directory, scenario_structure):
+    """
+    :param scenario_directory: the scenario directory path
+    :param scenario_structure: the ScenarioStructure object describing which
+        subproblems/stages to check
+    :return: dictionary of {(weather_iteration, hydro_iteration,
+        availability_iteration, subproblem, stage): termination_condition}
+        for the cells that did not solve to optimality (empty if all did)
+
+    Scan the termination conditions the solves wrote to disk and print a
+    summary warning -- deliberately regardless of the --quiet setting -- if
+    any subproblem/stage did not solve to optimality. The per-cell warnings
+    printed at solve time interleave with other output and scroll away in
+    runs with many subproblems (especially with parallel solves), and no
+    results CSVs are exported/imported for cells whose solver status was
+    not 'ok', so without this summary a non-optimal subproblem is easy to
+    miss: the only durable record is the termination condition in the
+    results_scenario table. Reading the termination-condition files rather
+    than collecting in-memory state keeps this correct across the
+    sequential and parallel solve paths.
+    """
+    n_total = 0
+    non_optimal_cells = {}
+    for structure_cell in iterate_directory_structure(
+        ScenarioDirectoryStructure(scenario_structure).SCENARIO_DIRECTORY_STRUCTURE
+    ):
+        n_total += 1
+        termination_condition_file = os.path.join(
+            scenario_directory,
+            structure_cell.weather_iteration_str,
+            structure_cell.hydro_iteration_str,
+            structure_cell.availability_iteration_str,
+            structure_cell.subproblem_str,
+            structure_cell.stage_str,
+            "results",
+            "termination_condition.txt",
+        )
+        try:
+            with open(termination_condition_file, "r") as f:
+                termination_condition = f.read()
+        except FileNotFoundError:
+            termination_condition = "not solved (no termination condition file)"
+        if termination_condition != "optimal":
+            cell = (
+                structure_cell.weather_iteration,
+                structure_cell.hydro_iteration,
+                structure_cell.availability_iteration,
+                structure_cell.subproblem,
+                structure_cell.stage,
+            )
+            non_optimal_cells[cell] = termination_condition
+
+    if non_optimal_cells:
+        cells_by_condition = {}
+        for cell, condition in non_optimal_cells.items():
+            cells_by_condition.setdefault(condition, []).append(cell)
+
+        lines = [
+            f"WARNING: {len(non_optimal_cells)} of {n_total} "
+            f"subproblems/stages did not solve to optimality."
+        ]
+        max_examples = 10
+        for condition, cells in cells_by_condition.items():
+            examples = ", ".join(str(cell) for cell in cells[:max_examples])
+            if len(cells) > max_examples:
+                examples += f", ... and {len(cells) - max_examples} more"
+            lines.append(
+                f"  {condition}: {len(cells)} subproblem/stage(s) "
+                f"(weather_iteration, hydro_iteration, availability_iteration, "
+                f"subproblem, stage): {examples}"
+            )
+        print("\n".join(lines))
+
+    return non_optimal_cells
 
 
 def main(args=None):
@@ -1797,6 +1990,23 @@ def main(args=None):
             )
         )
 
+    # Refuse to run from a cleaned scenario directory: the scenario
+    # structure is inferred from the directory tree below, so a partially
+    # cleaned tree would yield a silently wrong structure (and the inputs
+    # are gone). --ignore_cleanup_marker overrides this, for deliberately
+    # solving a subset of the tree (e.g. a single re-materialized draw)
+    if not parsed_args.ignore_cleanup_marker:
+        check_scenario_directory_not_cleaned(
+            scenario_directory=scenario_directory,
+            attempted_action=(
+                "Running the scenario would infer a wrong scenario structure "
+                "from the cleaned directory tree. (If you deliberately want "
+                "to solve just what is on disk -- e.g. a single draw "
+                "re-materialized with gridpath_get_inputs -- pass "
+                "--ignore_cleanup_marker.)"
+            ),
+        )
+
     scenario_structure = get_scenario_structure_from_disk(
         scenario_directory=scenario_directory
     )
@@ -1813,6 +2023,14 @@ def main(args=None):
         scenario_directory=scenario_directory,
         scenario_structure=scenario_structure,
         parsed_arguments=parsed_args,
+    )
+
+    # End-of-run summary of any subproblems that did not solve to
+    # optimality (the per-cell warnings printed at solve time scroll away
+    # in runs with many subproblems)
+    warn_on_non_optimal_solves(
+        scenario_directory=scenario_directory,
+        scenario_structure=scenario_structure,
     )
 
     # Return the objective function values (used in testing)

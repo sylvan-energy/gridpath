@@ -38,6 +38,9 @@ from gridpath.common_functions import (
     get_run_scenario_parser,
     get_required_e2e_arguments_parser,
     get_get_inputs_parser,
+    get_per_draw_parser,
+    get_scenario_directory_cleanup_parser,
+    get_single_draw_parser,
     get_version_parser,
     create_logs_directory_if_not_exists,
     Logging,
@@ -54,6 +57,8 @@ from gridpath import (
 )
 from gridpath.run_scenario import _export_rule, _summarize_rule
 from gridpath.import_scenario_results import _import_rule
+from gridpath.run_end_to_end_per_draw import run_end_to_end_per_draw
+from gridpath.scenario_directory_cleanup import cleanup_scenario_directory_for_run
 from gridpath.auxiliary.db_interface import get_scenario_id_and_name
 
 
@@ -75,6 +80,18 @@ def parse_arguments(args):
             get_run_scenario_parser(),
             get_get_inputs_parser(),
             get_import_results_parser(),
+            get_per_draw_parser(),
+            get_single_draw_parser(
+                context_help="Must be passed together with "
+                "--per_draw_lifecycle (it selects the draw for that mode). "
+                "Only this draw's database results are deleted and "
+                "re-imported -- safe on a scenario whose other draws' "
+                "results must be kept -- and it works on a scenario "
+                "directory that was cleaned after import (the draw is "
+                "re-materialized; a cleanup marker row for the draw does "
+                "not skip it, since the draw was requested explicitly)."
+            ),
+            get_scenario_directory_cleanup_parser(),
             get_version_parser(),
         ],
     )
@@ -113,6 +130,64 @@ def parse_arguments(args):
     )
 
     parsed_arguments = parser.parse_args(args=args)
+
+    # The cleanup/archive steps are gated on the import statuses from a
+    # results import in the same run
+    if parsed_arguments.cleanup_after_import or (
+        parsed_arguments.archive_after_import is not None
+    ):
+        if parsed_arguments.cleanup_after_import and (
+            parsed_arguments.archive_after_import is not None
+        ):
+            parser.error(
+                "--cleanup_after_import and --archive_after_import are "
+                "mutually exclusive."
+            )
+        if parsed_arguments.skip_import_results:
+            parser.error(
+                "--cleanup_after_import/--archive_after_import cannot be "
+                "combined with --skip_import_results: cleanup requires the "
+                "import statuses from a results import in the same run."
+            )
+        if parsed_arguments.single_e2e_step_only is not None:
+            parser.error(
+                "--cleanup_after_import/--archive_after_import cannot be "
+                "combined with --single_e2e_step_only: cleanup requires the "
+                "import statuses from a results import in the same run."
+            )
+
+    if parsed_arguments.n_draws_per_solve_batch < 1:
+        parser.error("--n_draws_per_solve_batch must be at least 1.")
+
+    # --single_draw is a selector for per-draw mode, not a mode of its own:
+    # requiring the pairing keeps it explicit which machinery runs
+    if parsed_arguments.single_draw is not None and (
+        not parsed_arguments.per_draw_lifecycle
+    ):
+        parser.error(
+            "--single_draw selects the draw for --per_draw_lifecycle and "
+            "must be passed together with it."
+        )
+
+    # Per-draw mode fuses the get_inputs/run_scenario/import_results steps,
+    # so they cannot be individually skipped or isolated
+    if parsed_arguments.per_draw_lifecycle:
+        if (
+            parsed_arguments.skip_get_inputs
+            or parsed_arguments.skip_run_scenario
+            or parsed_arguments.skip_import_results
+        ):
+            parser.error(
+                "--per_draw_lifecycle fuses the get_inputs, run_scenario, "
+                "and import_results steps per draw; it cannot be combined "
+                "with --skip_get_inputs, --skip_run_scenario, or "
+                "--skip_import_results (--skip_process_results is allowed)."
+            )
+        if parsed_arguments.single_e2e_step_only is not None:
+            parser.error(
+                "--per_draw_lifecycle cannot be combined with "
+                "--single_e2e_step_only."
+            )
 
     return parsed_arguments
 
@@ -533,6 +608,52 @@ def main(args=None):
         skip_import_results = False
         skip_process_results = False
 
+    import_statuses = None
+
+    # Per-draw mode fuses the get_inputs/run_scenario/import_results steps
+    # (and any per-draw cleanup) into a single step; process_results still
+    # runs separately below. --single_draw narrows the same machinery to
+    # one requested draw (the parser requires it to be paired with
+    # --per_draw_lifecycle)
+    per_draw_mode = parsed_args.per_draw_lifecycle
+    if per_draw_mode:
+        skip_get_inputs = True
+        skip_run_scenario = True
+        skip_import_results = True
+
+        step_start_time = datetime.datetime.now()
+        try:
+            import_statuses = run_end_to_end_per_draw(
+                args=args, parsed_args=parsed_args
+            )
+        except Exception as e:
+            logging.exception(e)
+            end_time = update_db_for_run_end(
+                db_path=db_path,
+                scenario=scenario,
+                queue_order_id=queue_order_id,
+                process_id=process_id,
+                run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
+            )
+            print(
+                "Error encountered in the per-draw run of "
+                "scenario {}. End time: {}. Total run time: {}.".format(
+                    scenario, end_time, end_time - start_time
+                )
+            )
+            sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="run_e2e_per_draw",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
+
     # Go through the steps if user has not requested to skip them
     if not skip_get_inputs and not parsed_args.skip_get_inputs:
         step_start_time = datetime.datetime.now()
@@ -605,7 +726,7 @@ def main(args=None):
     if not skip_import_results and not parsed_args.skip_import_results:
         step_start_time = datetime.datetime.now()
         try:
-            import_scenario_results.main(args=args)
+            import_statuses = import_scenario_results.main(args=args)
         except Exception as e:
             logging.exception(e)
             end_time = update_db_for_run_end(
@@ -661,6 +782,52 @@ def main(args=None):
             scenario_id=scenario_id,
             process_id=process_id,
             step="process_results",
+            step_start_time=step_start_time,
+            timing_summary_file_path=timing_summary_file_path,
+            quiet=parsed_args.quiet,
+        )
+
+    # In per-draw mode, cleanup/archiving already happened per draw
+    if not per_draw_mode and (
+        parsed_args.cleanup_after_import or parsed_args.archive_after_import is not None
+    ):
+        step_start_time = datetime.datetime.now()
+        try:
+            cleanup_scenario_directory_for_run(
+                db_path=db_path,
+                scenario_id_arg=parsed_args.scenario_id,
+                scenario_name_arg=scenario,
+                scenario_location=parsed_args.scenario_location,
+                import_statuses=import_statuses,
+                archive_format=parsed_args.archive_after_import,
+                quiet=parsed_args.quiet,
+                temporal_structure_csv_overwrite=parsed_args.temporal_structure_csv_overwrite,
+                temporal_structure_csv_path=parsed_args.temporal_structure_csv_path,
+                granularity=parsed_args.cleanup_granularity,
+            )
+        except Exception as e:
+            logging.exception(e)
+            end_time = update_db_for_run_end(
+                db_path=db_path,
+                scenario=scenario,
+                queue_order_id=queue_order_id,
+                process_id=process_id,
+                run_status_id=3,
+                start_time=start_time,
+                timing_summary_file_path=timing_summary_file_path,
+            )
+            print(
+                "Error encountered when cleaning up the scenario directory "
+                "for scenario {}. End time: {}. Total run time: {}.".format(
+                    scenario, end_time, end_time - start_time
+                )
+            )
+            sys.exit(1)
+        record_step_timing(
+            db_path=db_path,
+            scenario_id=scenario_id,
+            process_id=process_id,
+            step="cleanup_after_import",
             step_start_time=step_start_time,
             timing_summary_file_path=timing_summary_file_path,
             quiet=parsed_args.quiet,

@@ -112,6 +112,35 @@ def get_scenario_id_and_name(scenario_id_arg, scenario_name_arg, c, script):
             return scenario_id_arg, scenario_name_arg
 
 
+def get_results_table_iteration_keys(
+    weather_iteration, hydro_iteration, availability_iteration, subproblem, stage
+):
+    """
+    Convert the directory-name strings for a subproblem/stage to the integer
+    keys used in the results tables: 0 for iteration levels the scenario
+    doesn't use, 1 for an absent subproblem/stage.
+    """
+    return (
+        (
+            0
+            if weather_iteration == ""
+            else int(str(weather_iteration).replace("weather_iteration_", ""))
+        ),
+        (
+            0
+            if hydro_iteration == ""
+            else int(str(hydro_iteration).replace("hydro_iteration_", ""))
+        ),
+        (
+            0
+            if availability_iteration == ""
+            else int(str(availability_iteration).replace("availability_iteration_", ""))
+        ),
+        1 if subproblem == "" else int(subproblem),
+        1 if stage == "" else int(stage),
+    )
+
+
 def import_csv(
     conn,
     cursor,
@@ -141,23 +170,19 @@ def import_csv(
         df["scenario_id"] = scenario_id
 
         # TODO: DB defaults need to be specified somewhere
-        df["weather_iteration"] = (
-            0
-            if weather_iteration == ""
-            else int(weather_iteration.replace("weather_iteration_", ""))
+        (
+            df["weather_iteration"],
+            df["hydro_iteration"],
+            df["availability_iteration"],
+            df["subproblem_id"],
+            df["stage_id"],
+        ) = get_results_table_iteration_keys(
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
         )
-        df["hydro_iteration"] = (
-            0
-            if hydro_iteration == ""
-            else int(hydro_iteration.replace("hydro_iteration_", ""))
-        )
-        df["availability_iteration"] = (
-            0
-            if availability_iteration == ""
-            else int(availability_iteration.replace("availability_iteration_", ""))
-        )
-        df["subproblem_id"] = 1 if subproblem == "" else int(subproblem)
-        df["stage_id"] = 1 if stage == "" else int(stage)
 
         spin_on_database_lock_generic(
             command=df.to_sql(

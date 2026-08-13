@@ -54,6 +54,7 @@ import os
 from pyomo.environ import Expression, Objective, maximize, value
 
 from db.common_functions import spin_on_database_lock
+from gridpath.auxiliary.db_interface import get_results_table_iteration_keys
 from gridpath.auxiliary.dynamic_components import cost_components, revenue_components
 
 
@@ -178,10 +179,19 @@ def import_results_into_database(
 
     df = pd.read_csv(os.path.join(results_directory, "npv.csv"))
     df["scenario_id"] = scenario_id
-    df["weather_iteration"] = weather_iteration
-    df["hydro_iteration"] = hydro_iteration
-    df["subproblem_id"] = subproblem
-    df["stage_id"] = stage
+    (
+        df["weather_iteration"],
+        df["hydro_iteration"],
+        df["availability_iteration"],
+        df["subproblem_id"],
+        df["stage_id"],
+    ) = get_results_table_iteration_keys(
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
     results = df.to_records(index=False)
 
     # Register numpy types with sqlite, so that they are properly inserted

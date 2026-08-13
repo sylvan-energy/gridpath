@@ -19,6 +19,30 @@ database and writes the .tab input files to the scenario directory.
 
 The main() function of this script can also be called with the
 *gridpath_get_inputs* command when GridPath is installed.
+
+Two mechanisms can restrict the run to part of the scenario's structure:
+
+* ``--temporal_structure_csv_overwrite`` with
+  ``--temporal_structure_csv_path`` REPLACES the database-derived
+  scenario structure with the CSV's (columns: weather_iteration,
+  hydro_iteration, availability_iteration, subproblem, stage; one row per
+  subproblem/stage). Fully general -- any subset of cells, down to
+  individual subproblems/stages. Every listed combination is validated to
+  exist in the scenario's database-derived structure (combinations outside
+  it have no input data and would otherwise fail late); the
+  directory-layout flags are derived from the CSV's values (see
+  get_scenario_structure_from_csv).
+* The ``--single_draw WEATHER HYDRO AVAILABILITY`` option (0 for iteration
+  levels the scenario doesn't use) SLICES the resolved structure to a
+  single iteration draw. Use, for example, for re-materializing one draw of a
+  scenario directory that was cleaned after import. The draw is checked to
+  exist, and the scenario's directory-layout flags are preserved. The slice
+  applies to whatever structure was resolved.
+
+With either mechanism, the post-import cleanup marker (if present) is left
+in place, since the rest of the tree is still in its cleaned state; solve
+the regenerated part with run_scenario's ``--ignore_cleanup_marker``. Only
+a full regeneration of the database-derived structure removes the marker.
 """
 
 from argparse import ArgumentParser
@@ -39,17 +63,26 @@ from gridpath.common_functions import (
     get_required_e2e_arguments_parser,
     get_temporal_structure_csv_overwrite_parser,
     get_get_inputs_parser,
+    get_single_draw_parser,
     get_version_parser,
     ensure_empty_string,
 )
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.scenario_directory_cleanup import (
+    clear_cleanup_marker,
+    CLEANUP_MARKER_FILENAME,
+)
 from gridpath.auxiliary.scenario_chars import (
+    build_single_draw_structure,
+    get_diverging_layout_flags,
     OptionalFeatures,
+    resolve_requested_draw,
     SubScenarios,
     get_scenario_structure_from_db,
     get_scenario_structure_from_csv,
     SolverOptions,
     ScenarioDirectoryStructure,
+    validate_csv_structure_against_db,
 )
 
 
@@ -61,6 +94,7 @@ def write_model_inputs(
     subscenarios,
     db_path,
     n_parallel_subproblems,
+    delete_prior_aux=True,
 ):
     """
     For each module, load the inputs from the database and write out the inputs
@@ -75,7 +109,10 @@ def write_model_inputs(
     :param subscenarios: SubScenarios object with all subscenario info
     :param db_path: database connection
     :param n_parallel_subproblems: int; get inputs for subproblems in parallel
-
+    :param delete_prior_aux: boolean; whether to delete the scenario-level
+        auxiliary files first. Set to False when writing inputs for one
+        iteration draw at a time (the per-draw E2E mode), where the
+        scenario-level files are managed once for the whole run.
 
     :return:
     """
@@ -84,7 +121,8 @@ def write_model_inputs(
     #  subproblem-stage structure
     # Delete auxiliary files that may have existed before to avoid phantom
     # files
-    delete_prior_aux_files(scenario_directory=scenario_directory)
+    if delete_prior_aux:
+        delete_prior_aux_files(scenario_directory=scenario_directory)
 
     # Get the directory structure from the scenario structure
     scenario_directory_structure = ScenarioDirectoryStructure(
@@ -284,6 +322,44 @@ def get_inputs_for_subproblem_pool(pool_datum):
     )
 
 
+def write_scenario_level_files(
+    scenario_directory,
+    conn,
+    scenario_id,
+    scenario_name,
+    scenario_structure,
+    optional_features,
+    subscenarios,
+    solver_options,
+    feature_list,
+):
+    """
+    Write the scenario-level (draw-independent) files: the multi-stage flag,
+    the features list, the scenario description, the units file, the solver
+    options file, and the linked-subproblems map.
+    """
+    write_multi_stage_flag(scenario_directory, scenario_structure.STAGE_FLAG)
+    # Save the list of optional features to a file (will be used to
+    # determine modules without database connection)
+    write_features_csv(scenario_directory=scenario_directory, feature_list=feature_list)
+    # Write full scenario description
+    write_scenario_description(
+        scenario_directory=scenario_directory,
+        scenario_id=scenario_id,
+        scenario_name=scenario_name,
+        optional_features=optional_features,
+        subscenarios=subscenarios,
+    )
+    # Write the units used for all metrics
+    write_units_csv(scenario_directory, conn)
+    # Write the solver options file if needed
+    write_solver_options(
+        scenario_directory=scenario_directory, solver_options=solver_options
+    )
+    # Write the subproblem linked timepoints map file if needed
+    write_linked_subproblems_map(scenario_directory, conn, subscenarios)
+
+
 def delete_prior_aux_files(scenario_directory):
     """
     Delete all auxiliary files that may exist in the scenario directory
@@ -331,6 +407,14 @@ def parse_arguments(args):
             get_required_e2e_arguments_parser(),
             get_temporal_structure_csv_overwrite_parser(),
             get_get_inputs_parser(),
+            get_single_draw_parser(
+                context_help="Only this draw's inputs are written -- e.g. "
+                "to re-materialize one draw of a scenario whose directory "
+                "was cleaned after import, without regenerating the whole "
+                "tree. The cleanup marker is left in place; solve the "
+                "regenerated draw with run_scenario's "
+                "--ignore_cleanup_marker."
+            ),
             get_version_parser(),
         ],
     )
@@ -497,91 +581,167 @@ def main(args=None):
             f"{temporal_structure_csv_path}."
         )
 
+    # Close the connection on any raise: a connection left open by an error
+    # keeps the database file locked on Windows
     conn = connect_to_database(db_path=db_path)
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    if not parsed_arguments.quiet:
-        print(
-            "Getting inputs, started on {}... (connected to database {})".format(
-                datetime.datetime.now(), db_path
+        if not parsed_arguments.quiet:
+            print(
+                "Getting inputs, started on {}... (connected to database {})".format(
+                    datetime.datetime.now(), db_path
+                )
             )
+
+        scenario_id, scenario_name = get_scenario_id_and_name(
+            scenario_id_arg=scenario_id_arg,
+            scenario_name_arg=scenario_name_arg,
+            c=c,
+            script="get_scenario_inputs",
         )
 
-    scenario_id, scenario_name = get_scenario_id_and_name(
-        scenario_id_arg=scenario_id_arg,
-        scenario_name_arg=scenario_name_arg,
-        c=c,
-        script="get_scenario_inputs",
-    )
-
-    # Determine scenario directory and create it if needed
-    scenario_directory = determine_scenario_directory(
-        scenario_location=scenario_location, scenario_name=scenario_name
-    )
-    create_directory_if_not_exists(directory=scenario_directory)
-
-    # Get scenario characteristics (features, scenario_id, subscenarios, subproblems)
-    # TODO: it seems these fail silently if empty; we may want to implement
-    #  some validation
-    optional_features = OptionalFeatures(conn=conn, scenario_id=scenario_id)
-    subscenarios = SubScenarios(conn=conn, scenario_id=scenario_id)
-    if temporal_structure_csv_overwrite:
-        scenario_structure = get_scenario_structure_from_csv(
-            temporal_structure_csv_path
+        # Determine scenario directory and create it if needed
+        scenario_directory = determine_scenario_directory(
+            scenario_location=scenario_location, scenario_name=scenario_name
         )
-    else:
-        scenario_structure = get_scenario_structure_from_db(
-            conn=conn, scenario_id=scenario_id
+        create_directory_if_not_exists(directory=scenario_directory)
+
+        # Get scenario characteristics (features, scenario_id, subscenarios, subproblems)
+        # TODO: it seems these fail silently if empty; we may want to implement
+        #  some validation
+        optional_features = OptionalFeatures(conn=conn, scenario_id=scenario_id)
+        subscenarios = SubScenarios(conn=conn, scenario_id=scenario_id)
+        if temporal_structure_csv_overwrite:
+            scenario_structure = get_scenario_structure_from_csv(
+                temporal_structure_csv_path
+            )
+            db_structure = get_scenario_structure_from_db(
+                conn=conn, scenario_id=scenario_id
+            )
+            validate_csv_structure_against_db(
+                csv_structure=scenario_structure, db_structure=db_structure
+            )
+            # If the CSV implies a different directory layout than the
+            # scenario's own structure, the regenerated files won't line up
+            # with a tree (or archive tarballs) generated from the full
+            # structure: refuse on a cleaned/archived directory, where such
+            # mixing is exactly what the user would be setting up, and warn
+            # loudly otherwise (a stand-alone run in a fresh directory is
+            # self-consistent at either layout)
+            diverging_layout_flags = get_diverging_layout_flags(
+                csv_structure=scenario_structure, db_structure=db_structure
+            )
+            if diverging_layout_flags:
+                divergence_str = "; ".join(diverging_layout_flags)
+                if os.path.exists(
+                    os.path.join(scenario_directory, CLEANUP_MARKER_FILENAME)
+                ):
+                    raise ValueError(
+                        f"The temporal structure CSV implies a different "
+                        f"directory layout than the scenario's own "
+                        f"structure: {divergence_str}. The regenerated "
+                        f"files would not line up with this "
+                        f"cleaned/archived scenario directory's original "
+                        f"layout or its archive tarballs. Use whole "
+                        f"subproblem/stage sets in the CSV, or "
+                        f"--single_draw for one draw."
+                    )
+                else:
+                    print(
+                        f"WARNING: the temporal structure CSV implies a "
+                        f"different directory layout than the scenario's "
+                        f"own structure: {divergence_str}. This is "
+                        f"self-consistent for a stand-alone run in this "
+                        f"directory, but do not mix it with files "
+                        f"generated from the scenario's full structure "
+                        f"(including archive tarballs)."
+                    )
+        else:
+            scenario_structure = get_scenario_structure_from_db(
+                conn=conn, scenario_id=scenario_id
+            )
+        solver_options = SolverOptions(conn=conn, scenario_id=scenario_id)
+
+        # If a single iteration draw was requested, narrow the structure to
+        # that draw (e.g. to re-materialize one draw of a cleaned scenario
+        # directory for debugging)
+        single_draw_requested = parsed_arguments.single_draw is not None
+        if single_draw_requested:
+            draw = resolve_requested_draw(
+                scenario_structure=scenario_structure,
+                weather_iteration=parsed_arguments.single_draw[0],
+                hydro_iteration=parsed_arguments.single_draw[1],
+                availability_iteration=parsed_arguments.single_draw[2],
+            )
+            scenario_structure = build_single_draw_structure(scenario_structure, *draw)
+            if not parsed_arguments.quiet:
+                print(
+                    f"Writing inputs for the single draw with weather "
+                    f"iteration {draw[0]}, hydro iteration {draw[1]}, "
+                    f"availability iteration {draw[2]} (0 = level not used)."
+                )
+
+        # Determine requested features and use this to determine what modules
+        # to load for GridPath
+        feature_list = optional_features.get_active_features()
+
+        # Figure out which modules to use and load the modules
+        modules_to_use = determine_modules(
+            features=feature_list, multi_stage=scenario_structure.STAGE_FLAG
         )
-    write_multi_stage_flag(scenario_directory, scenario_structure.STAGE_FLAG)
-    solver_options = SolverOptions(conn=conn, scenario_id=scenario_id)
 
-    # Determine requested features and use this to determine what modules to
-    # load for Gridpath
-    feature_list = optional_features.get_active_features()
+        # Get appropriate inputs from database and write the .tab file model
+        # inputs
+        write_model_inputs(
+            scenario_directory=scenario_directory,
+            scenario_structure=scenario_structure,
+            modules_to_use=modules_to_use,
+            scenario_id=scenario_id,
+            subscenarios=subscenarios,
+            db_path=db_path,
+            n_parallel_subproblems=int(parsed_arguments.n_parallel_get_inputs),
+            delete_prior_aux=not single_draw_requested,
+        )
 
-    # Figure out which modules to use and load the modules
-    modules_to_use = determine_modules(
-        features=feature_list, multi_stage=scenario_structure.STAGE_FLAG
-    )
+        write_scenario_level_files(
+            scenario_directory=scenario_directory,
+            conn=conn,
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            scenario_structure=scenario_structure,
+            optional_features=optional_features,
+            subscenarios=subscenarios,
+            solver_options=solver_options,
+            feature_list=feature_list,
+        )
 
-    # Get appropriate inputs from database and write the .tab file model inputs
-    write_model_inputs(
-        scenario_directory=scenario_directory,
-        scenario_structure=scenario_structure,
-        modules_to_use=modules_to_use,
-        scenario_id=scenario_id,
-        subscenarios=subscenarios,
-        db_path=db_path,
-        n_parallel_subproblems=int(parsed_arguments.n_parallel_get_inputs),
-    )
-
-    # Save the list of optional features to a file (will be used to determine
-    # modules without database connection)
-    write_features_csv(scenario_directory=scenario_directory, feature_list=feature_list)
-    # Write full scenario description
-    write_scenario_description(
-        scenario_directory=scenario_directory,
-        scenario_id=scenario_id,
-        scenario_name=scenario_name,
-        optional_features=optional_features,
-        subscenarios=subscenarios,
-    )
-
-    # Write the units used for all metrics
-    write_units_csv(scenario_directory, conn)
-
-    # Write the solver options file if needed
-    write_solver_options(
-        scenario_directory=scenario_directory, solver_options=solver_options
-    )
-
-    # Write the subproblem linked timepoints map file if needed
-    write_linked_subproblems_map(scenario_directory, conn, subscenarios)
-
-    # Close the database connection
-    # conn.commit()
-    conn.close()
+        # The scenario directory contents have been regenerated, so remove
+        # the post-import cleanup marker if one was present (it blocks
+        # run_scenario and import_scenario_results while the directory is in
+        # a cleaned state). NOT done when only part of the structure was
+        # regenerated -- a single draw or a temporal-structure-CSV subset --
+        # since the rest of the tree is still in its cleaned state and the
+        # marker must keep guarding it (run_scenario can solve the
+        # regenerated subset with --ignore_cleanup_marker)
+        full_structure_regenerated = not (
+            single_draw_requested or temporal_structure_csv_overwrite
+        )
+        if full_structure_regenerated:
+            clear_cleanup_marker(scenario_directory=scenario_directory)
+        elif (
+            os.path.exists(os.path.join(scenario_directory, CLEANUP_MARKER_FILENAME))
+            and not parsed_arguments.quiet
+        ):
+            print(
+                "The cleanup marker was left in place: only part of the "
+                "scenario's structure was regenerated and the rest of the "
+                "scenario directory is still cleaned. To solve the "
+                "regenerated part, pass --ignore_cleanup_marker to "
+                "run_scenario."
+            )
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
