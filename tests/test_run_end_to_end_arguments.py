@@ -45,6 +45,13 @@ class TestRunEndToEndArgumentValidation(unittest.TestCase):
                 "subproblem",
             ],
             ["--per_draw_lifecycle", "--skip_process_results"],
+            [
+                "--per_draw_lifecycle",
+                "--n_draws_per_solve_batch",
+                "10",
+                "--n_parallel_solve",
+                "10",
+            ],
             ["--cleanup_after_import"],
             ["--archive_after_import", "tar.gz"],
         ]:
@@ -55,6 +62,9 @@ class TestRunEndToEndArgumentValidation(unittest.TestCase):
     def test_single_draw_requires_per_draw_lifecycle(self):
         # --single_draw is a selector for per-draw mode, not a mode switch
         self.assert_rejected(["--single_draw", "812", "0", "1"])
+
+    def test_batch_size_must_be_positive(self):
+        self.assert_rejected(["--per_draw_lifecycle", "--n_draws_per_solve_batch", "0"])
 
     def test_per_draw_incompatible_with_step_skipping(self):
         for skip_arg in [

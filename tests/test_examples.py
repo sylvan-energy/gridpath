@@ -845,6 +845,35 @@ class TestExamples(unittest.TestCase):
                 "weather_iteration_1", sorted(os.listdir(scenario_directory))
             )
 
+        # Batched per-draw run: both draws solved in ONE run_scenario call
+        # (--n_parallel_solve parallelizes across the batch's draws), with
+        # the same database rows and the same cleaned end-state
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            scenario_directory = os.path.join(tmp_dir, scenario_name)
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                scenario_directory,
+            )
+            self.run_e2e_in(
+                scenario_name,
+                tmp_dir,
+                [
+                    "--per_draw_lifecycle",
+                    "--cleanup_after_import",
+                    "--n_draws_per_solve_batch",
+                    "2",
+                    "--n_parallel_solve",
+                    "2",
+                ],
+            )
+            self.assertEqual(
+                baseline_rows, self.get_scenario_results_rows(scenario_name)
+            )
+            remaining = sorted(os.listdir(scenario_directory))
+            self.assertNotIn("weather_iteration_1", remaining)
+            self.assertNotIn("weather_iteration_2", remaining)
+            self.assertIn(CLEANUP_MARKER_FILENAME, remaining)
+
     def test_single_draw_regeneration_debug_workflow(self):
         """
         The debugging workflow for a cleaned scenario: re-materialize ONE

@@ -22,18 +22,50 @@ small files for large Monte Carlo cases) before any of it can be reclaimed
 -- this mode pipelines the run one iteration draw (weather iteration, hydro
 iteration, availability iteration) at a time:
 
-* The main loop writes one draw's inputs, solves it (subproblems within the
-  draw are parallelized with the usual ``--n_parallel_solve`` machinery),
-  and hands the solved draw to the importer queue.
+* The main loop writes a batch of draws' inputs (``--n_draws_per_solve_batch``
+  draws per batch, default 1), solves the batch with one run_scenario call
+  -- whose ``--n_parallel_solve`` pool parallelizes over the batch's draws
+  x subproblems -- and hands the solved batch to the importer queue.
 * A single importer thread -- the only database writer -- imports queued
-  draws while other draws are still solving, and, with
+  batches while other draws are still solving, and, with
   ``--cleanup_after_import``/``--archive_after_import``, cleans each draw's
-  directory as soon as its import succeeds. The queue is bounded
-  (``--max_draws_pending_import``), so if importing falls behind, solving
-  pauses and the on-disk footprint stays bounded.
+  directory as soon as its batch's import succeeds. The queue is bounded
+  (``--max_draws_pending_import`` batches), so if importing falls behind,
+  solving pauses and the on-disk footprint stays bounded.
 * The database is switched to WAL journal mode for the duration of the run
   so the main loop's input-writing reads can proceed alongside the
   importer's writes; the prior journal mode is restored at the end.
+
+Choosing the parallelization settings (peak on-disk footprint is about
+(1 + --max_draws_pending_import) x --n_draws_per_solve_batch draws):
+
+* ``--n_parallel_solve`` is the CPU (and memory) knob: each in-flight
+  subproblem occupies roughly one core -- assuming single-threaded solver
+  settings; if the solver is configured to use multiple threads, budget
+  cores ~= --n_parallel_solve x solver threads instead -- plus the memory
+  for its model and the solver's workspace. Start at about the machine's
+  core count minus one (the importer thread and the main loop overlap with
+  solving), and lower it if memory binds first: in-flight subproblems x
+  per-subproblem peak memory must fit in RAM.
+* ``--n_draws_per_solve_batch`` is NOT a CPU knob -- it only determines
+  how much work the pool can see at once. Actual concurrency is
+  min(--n_parallel_solve, batch size x subproblems per draw), so make the
+  batch just large enough to feed the pool:
+
+  - Many subproblems per draw (e.g. weekly subproblems over a year): the
+    default batch of 1 already offers a full pool of tasks; leave it.
+  - One subproblem per draw: set the batch to --n_parallel_solve (e.g. on
+    a 10-core budget, both 10) -- with the default batch of 1, the draws
+    solve sequentially no matter how many cores are available.
+  - In-between shapes: the smallest batch with batch size x subproblems
+    per draw >= --n_parallel_solve.
+
+* Batches larger than needed add no speed -- the pool caps concurrency --
+  and only raise the disk footprint and delay each batch's import/cleanup
+  (a batch is imported only once it has fully solved). One exception: if
+  solve times vary a lot across a batch, workers idle while the last
+  tasks finish, so a batch of 2-3x the pool size amortizes that
+  end-of-batch tail at proportionally higher footprint.
 
 Each draw's import is idempotent: the importer first deletes the draw's
 prior database rows, so a crashed or killed run can simply be re-run.
@@ -78,6 +110,7 @@ from db.utilities.scenario import delete_scenario_results_for_draw
 from gridpath.auxiliary.db_interface import get_scenario_id_and_name
 from gridpath.auxiliary.module_list import determine_modules, load_modules
 from gridpath.auxiliary.scenario_chars import (
+    build_draws_structure,
     build_single_draw_structure,
     get_scenario_structure_from_csv,
     get_scenario_structure_from_db,
@@ -282,10 +315,11 @@ def import_draws_worker(
 ):
     """
     The importer thread: the run's only database writer. Imports queued
-    draws one at a time -- deleting the draw's prior rows first, so a
-    re-imported draw can't duplicate -- and cleans up/archives each draw's
-    directory once its import has succeeded. Stops on the first error,
-    leaving all remaining draws' directories untouched.
+    draw batches one at a time -- deleting each of the batch's draws' prior
+    rows first, so a re-imported draw can't duplicate -- and cleans
+    up/archives the batch's directories once its import has succeeded.
+    Stops on the first error, leaving all remaining draws' directories
+    untouched.
     """
     conn = connect_to_database(db_path=db_path)
     try:
@@ -293,34 +327,35 @@ def import_draws_worker(
             item = draw_queue.get()
             if item is _NO_MORE_DRAWS:
                 break
-            draw, draw_structure = item
+            batch_draws, batch_structure = item
             try:
-                # All the draw's cells share the same iteration directory
-                # strings; the delete needs both the integer and the
-                # directory-string iteration keys (the results tables use
-                # both conventions)
-                a_cell = next(
-                    iterate_directory_structure(
-                        ScenarioDirectoryStructure(
-                            draw_structure
-                        ).SCENARIO_DIRECTORY_STRUCTURE
+                for draw in batch_draws:
+                    # All of a draw's cells share the same iteration
+                    # directory strings; the delete needs both the integer
+                    # and the directory-string iteration keys (the results
+                    # tables use both conventions)
+                    a_cell = next(
+                        iterate_directory_structure(
+                            ScenarioDirectoryStructure(
+                                build_single_draw_structure(batch_structure, *draw)
+                            ).SCENARIO_DIRECTORY_STRUCTURE
+                        )
                     )
-                )
-                delete_scenario_results_for_draw(
-                    conn=conn,
-                    scenario_id=scenario_id,
-                    weather_iteration=draw[0],
-                    hydro_iteration=draw[1],
-                    availability_iteration=draw[2],
-                    weather_iteration_str=a_cell.weather_iteration_str,
-                    hydro_iteration_str=a_cell.hydro_iteration_str,
-                    availability_iteration_str=a_cell.availability_iteration_str,
-                )
+                    delete_scenario_results_for_draw(
+                        conn=conn,
+                        scenario_id=scenario_id,
+                        weather_iteration=draw[0],
+                        hydro_iteration=draw[1],
+                        availability_iteration=draw[2],
+                        weather_iteration_str=a_cell.weather_iteration_str,
+                        hydro_iteration_str=a_cell.hydro_iteration_str,
+                        availability_iteration_str=a_cell.availability_iteration_str,
+                    )
                 statuses = import_scenario_results_into_database(
                     import_rule=import_rule,
                     loaded_modules=loaded_modules,
                     scenario_id=scenario_id,
-                    scenario_structure=draw_structure,
+                    scenario_structure=batch_structure,
                     db=conn,
                     scenario_directory=scenario_directory,
                     ignore_incomplete=False,
@@ -334,7 +369,7 @@ def import_draws_worker(
                 if cleanup_after_import or archive_format is not None:
                     cleanup_scenario_directory(
                         scenario_directory=scenario_directory,
-                        scenario_structure=draw_structure,
+                        scenario_structure=batch_structure,
                         import_statuses=statuses,
                         archive_format=archive_format,
                         quiet=quiet,
@@ -481,23 +516,32 @@ def run_end_to_end_per_draw(args, parsed_args):
             else list(iterate_draws(scenario_structure))
         )
 
+        # Filter out draws completed in a previous run (an explicitly
+        # requested draw is never skipped: the user asked for it to be
+        # re-run, whatever the marker says)
         n_draws = 0
         n_skipped_completed = 0
+        pending_draws = []
         for draw in draws_to_run:
             n_draws += 1
-            draw_structure = build_single_draw_structure(scenario_structure, *draw)
             unit, cells = get_draw_unit(scenario_structure, draw)
-
-            # An explicitly requested draw is never skipped: the user asked
-            # for it to be re-run, whatever the marker says
             if requested_draw is None and unit in completed_units:
-                # Completed in a previous run; record its cells as imported
-                # so the end-of-run summary covers the whole scenario
+                # Record its cells as imported so the end-of-run summary
+                # covers the whole scenario
                 import_state.record_statuses(
                     {cell: IMPORT_STATUS_IMPORTED for cell in cells}
                 )
                 n_skipped_completed += 1
-                continue
+            else:
+                pending_draws.append(draw)
+
+        # Solve the remaining draws in batches of --n_draws_per_solve_batch
+        # (default 1): --n_parallel_solve parallelizes over the batch's
+        # draws x subproblems, so batching restores cross-draw parallelism
+        # for draws with few subproblems
+        batch_size = parsed_args.n_draws_per_solve_batch
+        for batch_start in range(0, len(pending_draws), batch_size):
+            batch_draws = pending_draws[batch_start : batch_start + batch_size]
 
             if import_state.get_error() is not None:
                 break
@@ -509,9 +553,10 @@ def run_end_to_end_per_draw(args, parsed_args):
             # solve here: their presence doesn't mean they are complete
             # (e.g. the committed example directories carry only the
             # termination/status files, not the results CSVs)
+            batch_structure = build_draws_structure(scenario_structure, batch_draws)
             write_model_inputs(
                 scenario_directory=scenario_directory,
-                scenario_structure=draw_structure,
+                scenario_structure=batch_structure,
                 modules_to_use=modules_to_use,
                 scenario_id=scenario_id,
                 subscenarios=subscenarios,
@@ -521,13 +566,17 @@ def run_end_to_end_per_draw(args, parsed_args):
             )
             run_scenario.run_scenario(
                 scenario_directory=scenario_directory,
-                scenario_structure=draw_structure,
+                scenario_structure=batch_structure,
                 parsed_arguments=run_scenario_parsed_args,
             )
 
             if not quiet:
-                unit_name = unit if unit else SCENARIO_ROOT_UNIT_NAME
-                print(f"Draw {unit_name} solved; queueing for import.")
+                unit_names = ", ".join(
+                    get_draw_unit(scenario_structure, draw)[0]
+                    or SCENARIO_ROOT_UNIT_NAME
+                    for draw in batch_draws
+                )
+                print(f"Draw(s) {unit_names} solved; queueing for import.")
 
             # Bounded queue: block until the importer catches up, but keep
             # checking for importer errors so we don't block forever
@@ -535,7 +584,7 @@ def run_end_to_end_per_draw(args, parsed_args):
                 if import_state.get_error() is not None:
                     break
                 try:
-                    draw_queue.put((draw, draw_structure), timeout=5)
+                    draw_queue.put((batch_draws, batch_structure), timeout=5)
                     break
                 except queue.Full:
                     continue

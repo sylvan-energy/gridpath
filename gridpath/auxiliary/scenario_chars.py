@@ -402,36 +402,57 @@ def resolve_requested_draw(
     return draw
 
 
-def build_single_draw_structure(
-    scenario_structure, weather_iteration, hydro_iteration, availability_iteration
-):
+def build_draws_structure(scenario_structure, draws):
     """
     :param scenario_structure: ScenarioStructure
-    :return: a new ScenarioStructure containing only the requested draw,
+    :param draws: iterable of (weather_iteration, hydro_iteration,
+        availability_iteration) keys
+    :return: a new ScenarioStructure containing only the requested draws,
         with the same iteration/subproblem/stage flags
 
     The stage functions (write_model_inputs, run_scenario,
     import_scenario_results_into_database, cleanup_scenario_directory) all
-    take their work specification from a ScenarioStructure, so a
-    single-draw slice makes them operate on one draw at a time.
+    take their work specification from a ScenarioStructure, so a slice
+    makes them operate on a subset of draws -- one draw at a time in the
+    per-draw E2E mode's default, or a batch of draws when batching solves
+    for cross-draw parallelization.
     """
-    subproblem_stage_dict = (
-        scenario_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[weather_iteration][
+    weather_hydro_avail_subproblem_stage_dict = {}
+    for weather_iteration, hydro_iteration, availability_iteration in draws:
+        weather_hydro_avail_subproblem_stage_dict.setdefault(
+            weather_iteration, {}
+        ).setdefault(hydro_iteration, {})[
+            availability_iteration
+        ] = scenario_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[
+            weather_iteration
+        ][
             hydro_iteration
-        ][availability_iteration]
-    )
+        ][
+            availability_iteration
+        ]
 
     return ScenarioStructure(
-        weather_hydro_avail_subproblem_stage_dict={
-            weather_iteration: {
-                hydro_iteration: {availability_iteration: subproblem_stage_dict}
-            }
-        },
+        weather_hydro_avail_subproblem_stage_dict=(
+            weather_hydro_avail_subproblem_stage_dict
+        ),
         weather_iteration_flag=scenario_structure.WEATHER_ITERATION_FLAG,
         hydro_iteration_flag=scenario_structure.HYDRO_ITERATION_FLAG,
         availability_iteration_flag=scenario_structure.AVAILABILITY_ITERATION_FLAG,
         subproblem_flag=scenario_structure.SUBPROBLEM_FLAG,
         stage_flag=scenario_structure.STAGE_FLAG,
+    )
+
+
+def build_single_draw_structure(
+    scenario_structure, weather_iteration, hydro_iteration, availability_iteration
+):
+    """
+    :return: a new ScenarioStructure containing only the requested draw --
+        see build_draws_structure
+    """
+    return build_draws_structure(
+        scenario_structure,
+        [(weather_iteration, hydro_iteration, availability_iteration)],
     )
 
 

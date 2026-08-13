@@ -156,6 +156,9 @@ def parse_arguments(args):
                 "import statuses from a results import in the same run."
             )
 
+    if parsed_arguments.n_draws_per_solve_batch < 1:
+        parser.error("--n_draws_per_solve_batch must be at least 1.")
+
     # --single_draw is a selector for per-draw mode, not a mode of its own:
     # requiring the pairing keeps it explicit which machinery runs
     if parsed_arguments.single_draw is not None and (

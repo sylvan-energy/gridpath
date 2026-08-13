@@ -26,6 +26,7 @@ import unittest
 
 from db.utilities.scenario import delete_scenario_results_for_draw
 from gridpath.auxiliary.scenario_chars import (
+    build_draws_structure,
     build_single_draw_structure,
     iterate_directory_structure,
     iterate_draws,
@@ -140,6 +141,34 @@ class TestDrawSlicing(unittest.TestCase):
         unit, cells = get_draw_unit(structure, (0, 0, 0))
         self.assertEqual(unit, "")
         self.assertEqual(cells, [(0, 0, 0, 0, 0)])
+
+    def test_build_draws_structure_batches(self):
+        """
+        A multi-draw batch slice carries exactly the batch's draws with the
+        scenario's flags, and chunking the draws into batches partitions the
+        full structure.
+        """
+        structure = two_by_two_iteration_structure()
+        draws = list(iterate_draws(structure))
+
+        batch_structure = build_draws_structure(structure, draws[:2])
+        self.assertEqual(list(iterate_draws(batch_structure)), [(1, 1, 0), (1, 2, 0)])
+        self.assertTrue(batch_structure.WEATHER_ITERATION_FLAG)
+        self.assertTrue(batch_structure.SUBPROBLEM_FLAG)
+        # The batch's subproblems are available to run_scenario's pool
+        self.assertEqual(batch_structure.N_SUBPROBLEMS, 4)
+
+        all_batch_cells = []
+        for batch_start in range(0, len(draws), 2):
+            all_batch_cells.extend(
+                get_all_cells(
+                    build_draws_structure(
+                        structure, draws[batch_start : batch_start + 2]
+                    )
+                )
+            )
+        self.assertEqual(len(all_batch_cells), len(set(all_batch_cells)))
+        self.assertEqual(set(all_batch_cells), get_all_cells(structure))
 
     def test_resolve_requested_draw(self):
         # Draw values use the scenario-wide convention: 0 = level not used
@@ -428,10 +457,17 @@ class TestImportDrawsWorker(unittest.TestCase):
             stage_flag=False,
         )
 
-    def run_worker(self, draws, cleanup_after_import=True):
+    def run_worker(self, draws, cleanup_after_import=True, batched=False):
+        """
+        Queue the draws as one-draw batches (the default), or as a single
+        batch when batched=True.
+        """
         draw_queue = queue.Queue()
-        for draw in draws:
-            draw_queue.put((draw, build_single_draw_structure(self.structure, *draw)))
+        batches = [draws] if batched else [[draw] for draw in draws]
+        for batch_draws in batches:
+            draw_queue.put(
+                (batch_draws, build_draws_structure(self.structure, batch_draws))
+            )
         draw_queue.put(None)
         import_state = _ImportState()
         import_draws_worker(
@@ -513,6 +549,30 @@ class TestImportDrawsWorker(unittest.TestCase):
         self.assertEqual(
             get_completed_draw_units(self.scenario_directory),
             {"weather_iteration_1"},
+        )
+
+    def test_imports_and_cleans_a_multi_draw_batch(self):
+        for w in (1, 2):
+            for subproblem in (1, 2):
+                write_subproblem_tree(
+                    self.scenario_directory,
+                    os.path.join(f"weather_iteration_{w}", str(subproblem)),
+                )
+
+        import_state = self.run_worker([(1, 0, 0), (2, 0, 0)], batched=True)
+
+        self.assertIsNone(import_state.error)
+        self.assertEqual(self.get_imported_weather_iterations(), [1, 2])
+        for w in (1, 2):
+            self.assertFalse(
+                os.path.exists(
+                    os.path.join(self.scenario_directory, f"weather_iteration_{w}")
+                )
+            )
+        # Cleanup units (and marker rows) stay per draw within the batch
+        self.assertEqual(
+            get_completed_draw_units(self.scenario_directory),
+            {"weather_iteration_1", "weather_iteration_2"},
         )
 
     def test_interrupted_export_stops_import_and_retains_draw(self):

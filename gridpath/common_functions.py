@@ -399,9 +399,24 @@ def get_per_draw_parser():
         "--max_draws_pending_import",
         type=int,
         default=2,
-        help="In --per_draw_lifecycle mode, how many solved draws may await "
-        "import before solving pauses (bounds the on-disk footprint when "
-        "importing falls behind).",
+        help="In --per_draw_lifecycle mode, how many solved draw batches "
+        "may await import before solving pauses (bounds the on-disk "
+        "footprint when importing falls behind).",
+    )
+    parser.add_argument(
+        "--n_draws_per_solve_batch",
+        type=int,
+        default=1,
+        help="In --per_draw_lifecycle mode, solve this many draws per "
+        "run_scenario call, so --n_parallel_solve can parallelize ACROSS "
+        "the batch's draws as well as within them: --n_parallel_solve "
+        "parallelizes over the batch's draws x subproblems. Draws with "
+        "many subproblems don't need this (the default of 1 already "
+        "parallelizes within the draw); for single-subproblem draws, set "
+        "it to about --n_parallel_solve, since with the default there is "
+        "nothing to parallelize over. Import/cleanup and the on-disk "
+        "footprint bound then operate per batch: peak footprint is about "
+        "(1 + --max_draws_pending_import) x this many draws.",
     )
 
     return parser
