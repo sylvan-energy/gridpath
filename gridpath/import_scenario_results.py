@@ -21,6 +21,22 @@ scenario results files into their respective database table.
 The main()_ function of this script can also be called with the
 *gridpath_import_results* command when GridPath is installed.
 
+This script always deletes ALL of the scenario's prior database results
+before importing. Note the implication for
+``--temporal_structure_csv_overwrite``: only the CSV's
+iteration/subproblem/stage cells are then imported, so on a scenario that
+already has results, the import replaces them with the CSV's subset only
+(intended for scenarios with no prior results for other cells, e.g.
+gridpath_iterate's freshly cloned conditions-only re-runs).
+
+There is deliberately no single-draw mode here: ``gridpath_run_e2e
+--per_draw_lifecycle --single_draw`` instead runs the per-draw machinery
+(run_end_to_end_per_draw), whose importer deletes and re-imports ONLY the
+requested draw's results (via delete_scenario_results_for_draw) and never
+calls this script's delete-all step. Passing --single_draw to this script
+is refused rather than silently ignored, since the user would get the
+delete-all behavior they were specifically trying to avoid.
+
 The import assigns each (weather iteration, hydro iteration, availability
 iteration, subproblem, stage) an import status -- see the
 ``IMPORT_STATUS_*`` constants -- and *main()* returns the statuses as a
@@ -62,6 +78,7 @@ from gridpath.auxiliary.scenario_chars import (
     get_scenario_structure_from_csv,
     iterate_directory_structure,
     ScenarioDirectoryStructure,
+    validate_csv_structure_against_db,
 )
 from gridpath.scenario_directory_cleanup import check_scenario_directory_not_cleaned
 
@@ -461,7 +478,20 @@ def parse_arguments(args):
             get_version_parser(),
         ],
     )
-    parsed_arguments = parser.parse_known_args(args=args)[0]
+    parsed_arguments, unknown_args = parser.parse_known_args(args=args)
+
+    # Unknown arguments are otherwise ignored (run_end_to_end passes its
+    # full argument list through), but --single_draw must not be: silently
+    # ignoring it would run the full delete-all import the user was
+    # specifically trying to avoid
+    if "--single_draw" in unknown_args:
+        parser.error(
+            "import_scenario_results cannot be restricted to a single "
+            "draw: it deletes ALL of the scenario's prior database results "
+            "before importing. Use gridpath_run_e2e --per_draw_lifecycle "
+            "--single_draw instead, which deletes and re-imports only that "
+            "draw's results."
+        )
 
     return parsed_arguments
 
@@ -530,6 +560,12 @@ def main(args=None):
         if temporal_structure_csv_overwrite:
             scenario_structure = get_scenario_structure_from_csv(
                 temporal_structure_csv_path
+            )
+            validate_csv_structure_against_db(
+                csv_structure=scenario_structure,
+                db_structure=get_scenario_structure_from_db(
+                    conn=conn, scenario_id=scenario_id
+                ),
             )
         else:
             scenario_structure = get_scenario_structure_from_db(

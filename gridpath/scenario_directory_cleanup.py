@@ -27,8 +27,13 @@ The unit of cleanup is one iteration draw -- a (weather iteration, hydro
 iteration, availability iteration) directory path, or the scenario
 directory's own contents when the scenario has no iteration levels. A draw
 is only cleaned if EVERY one of its subproblems/stages has import status
-"imported" (see *import_scenario_results*); draws with any skipped or failed
-subproblem are left fully intact.
+"imported" (see *import_scenario_results*); by default, draws with any
+skipped or failed subproblem are left fully intact. With
+``--cleanup_granularity subproblem``, the imported subproblems WITHIN such
+partially imported draws are cleaned too, retaining only the not-imported
+subproblems (useful when a single stuck subproblem would otherwise strand a
+large draw on disk); fully imported draws are still cleaned as whole draws,
+so re-run resume bookkeeping is the same at both granularities.
 
 Retained in all cases: the scenario-level files
 (``scenario_description.csv``, ``features.csv``, ``solver_options.csv``,
@@ -37,12 +42,24 @@ the scenario-level ``logs`` directory (small, and the only non-regenerable
 content).
 
 Cleanup writes a marker file (``scenario_directory_cleaned.csv``, one row
-per cleaned draw) to the scenario directory. While the marker is present,
-*import_scenario_results* and *run_scenario* refuse to run on the directory
--- re-importing a cleaned directory would first delete the scenario's
-database results and then find nothing to import, and re-solving would
-infer a wrong structure from the partial tree. Re-running
-*get_scenario_inputs* regenerates the inputs and removes the marker.
+per cleaned draw) to the scenario directory. Each entry point has a
+deliberate, different relationship with the marker:
+
+* *import_scenario_results* refuses to run on a marked directory, with NO
+  override: it deletes all of the scenario's database results before
+  importing, so importing from a cleaned directory would wipe the results
+  and find nothing to re-import. (``gridpath_run_e2e --per_draw_lifecycle
+  --single_draw`` is the sanctioned way to re-import one draw: it deletes
+  only that draw's rows.)
+* *run_scenario* refuses unless passed ``--ignore_cleanup_marker``: the
+  scenario structure is inferred from the directory tree, so a partially
+  cleaned tree yields a silently wrong structure -- but deliberately
+  solving just what is on disk (a re-materialized subset) is a legitimate,
+  explicit choice.
+* *get_scenario_inputs* is never blocked -- it is the recovery path: a full
+  regeneration of the database-derived structure removes the marker, while
+  a partial regeneration (``--single_draw`` or a temporal-structure CSV)
+  leaves it in place, since the rest of the tree is still cleaned.
 """
 
 import csv
@@ -104,7 +121,10 @@ def check_scenario_directory_not_cleaned(scenario_directory, attempted_action):
             f"with gridpath_get_inputs (which removes the marker) and "
             f"re-solve, or restore the directory contents from the "
             f"'{ARCHIVE_DIRECTORY_NAME}' tarballs and delete "
-            f"{marker_path} yourself."
+            f"{marker_path} yourself -- the latter only if the directory "
+            f"has not since been partially regenerated with a different "
+            f"layout (e.g. via a temporal-structure CSV), as the restored "
+            f"and regenerated directories would not line up."
         )
 
 
@@ -132,12 +152,17 @@ def write_cleanup_marker(scenario_directory, action, cleaned_units):
             )
 
 
-def get_cells_by_cleanup_unit(scenario_structure):
+def get_cells_by_cleanup_unit(scenario_structure, granularity="draw"):
     """
+    :param granularity: "draw" (the default) groups by the iteration-draw
+        directory path; "subproblem" additionally includes the subproblem
+        directory in the unit (all of a subproblem's stages stay in one
+        unit). For scenarios without subproblem directories the two are the
+        same.
     :return: dictionary of {unit_relative_path: [cell_key]} where the unit
-        is the iteration-draw directory path relative to the scenario
-        directory ("" when the scenario has no iteration levels) and the
-        cell keys are the (weather_iteration, hydro_iteration,
+        is the directory path relative to the scenario directory ("" when
+        the scenario has no directories at the requested granularity) and
+        the cell keys are the (weather_iteration, hydro_iteration,
         availability_iteration, subproblem, stage) tuples used in the import
         statuses
     """
@@ -147,11 +172,14 @@ def get_cells_by_cleanup_unit(scenario_structure):
 
     cells_by_unit = {}
     for cell in iterate_directory_structure(scenario_directory_structure):
-        unit = os.path.join(
+        unit_components = [
             cell.weather_iteration_str,
             cell.hydro_iteration_str,
             cell.availability_iteration_str,
-        ).rstrip(os.sep)
+        ]
+        if granularity == "subproblem":
+            unit_components.append(cell.subproblem_str)
+        unit = os.path.join(*unit_components).rstrip(os.sep)
         cell_key = (
             cell.weather_iteration,
             cell.hydro_iteration,
@@ -224,6 +252,7 @@ def cleanup_scenario_directory(
     import_statuses,
     archive_format=None,
     quiet=False,
+    granularity="draw",
 ):
     """
     :param scenario_directory: the scenario directory to clean
@@ -233,11 +262,22 @@ def cleanup_scenario_directory(
     :param archive_format: None to delete without archiving, or a key of
         ARCHIVE_FORMATS to write one tarball per cleaned unit first
     :param quiet: boolean
+    :param granularity: "draw" (the default) retains a draw fully if ANY of
+        its subproblems/stages was not imported. "subproblem" additionally
+        cleans the imported subproblems WITHIN such partially imported
+        draws, retaining only the not-imported subproblems -- useful when a
+        single stuck subproblem would otherwise strand a large draw on
+        disk. Fully imported draws are always cleaned as one draw unit
+        (with one marker row), so re-run resume bookkeeping is identical at
+        both granularities; note that re-running a partially cleaned draw
+        re-solves its cleaned subproblems (their files are gone), so
+        --incomplete_only cannot skip them anymore.
     :return: (cleaned_units, retained_units) lists of unit relative paths
 
     Delete (or archive, then delete) each iteration draw whose
     subproblems/stages were all imported successfully. Draws with any
-    other import status are left fully intact, as is the whole directory
+    other import status are retained (fully, or minus their imported
+    subproblems at "subproblem" granularity), as is the whole directory
     if the import statuses don't cover the directory structure.
     """
     # Local import: import_scenario_results imports this module's marker
@@ -251,6 +291,25 @@ def cleanup_scenario_directory(
         )
 
     cells_by_unit = get_cells_by_cleanup_unit(scenario_structure)
+    cells_by_subproblem_unit = (
+        get_cells_by_cleanup_unit(scenario_structure, granularity="subproblem")
+        if granularity == "subproblem"
+        else {}
+    )
+
+    def clean_unit(unit):
+        if archive_format is not None:
+            archive_unit(
+                scenario_directory=scenario_directory,
+                unit=unit,
+                archive_format=archive_format,
+            )
+        if unit:
+            shutil.rmtree(os.path.join(scenario_directory, unit))
+            prune_empty_iteration_parents(scenario_directory, unit)
+        else:
+            remove_scenario_root_contents(scenario_directory)
+        cleaned_units.append(unit)
 
     cleaned_units = []
     retained_units = []
@@ -260,19 +319,31 @@ def cleanup_scenario_directory(
         if unit and not os.path.exists(os.path.join(scenario_directory, unit)):
             continue
         if all(import_statuses.get(cell) == IMPORT_STATUS_IMPORTED for cell in cells):
-            if archive_format is not None:
-                archive_unit(
-                    scenario_directory=scenario_directory,
-                    unit=unit,
-                    archive_format=archive_format,
-                )
-            if unit:
-                shutil.rmtree(os.path.join(scenario_directory, unit))
-                prune_empty_iteration_parents(scenario_directory, unit)
-            else:
-                remove_scenario_root_contents(scenario_directory)
-            cleaned_units.append(unit)
+            clean_unit(unit)
         else:
+            if granularity == "subproblem":
+                # Within a partially imported draw, clean the subproblems
+                # whose stages were all imported; the draw stays retained
+                # (and is reprocessed in full on a resumed run)
+                draw_key = cells[0][:3]
+                for (
+                    subproblem_unit,
+                    subproblem_cells,
+                ) in cells_by_subproblem_unit.items():
+                    if subproblem_cells[0][:3] != draw_key:
+                        continue
+                    # No subproblem directories: nothing finer to clean
+                    if subproblem_unit == unit:
+                        continue
+                    if not os.path.exists(
+                        os.path.join(scenario_directory, subproblem_unit)
+                    ):
+                        continue
+                    if all(
+                        import_statuses.get(cell) == IMPORT_STATUS_IMPORTED
+                        for cell in subproblem_cells
+                    ):
+                        clean_unit(subproblem_unit)
             retained_units.append(unit)
 
     if cleaned_units:
@@ -309,6 +380,7 @@ def cleanup_scenario_directory_for_run(
     quiet,
     temporal_structure_csv_overwrite=False,
     temporal_structure_csv_path=None,
+    granularity="draw",
 ):
     """
     Resolve the scenario directory and structure the same way the results
@@ -345,4 +417,5 @@ def cleanup_scenario_directory_for_run(
         import_statuses=import_statuses,
         archive_format=archive_format,
         quiet=quiet,
+        granularity=granularity,
     )

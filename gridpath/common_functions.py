@@ -175,11 +175,17 @@ def get_temporal_structure_csv_overwrite_parser():
         default=False,
         action="store_true",
         help="Overwrite the temporal structure from the database with the "
-        "provided CSV file.",
+        "provided CSV file: only the iteration/subproblem/stage combinations "
+        "listed in the CSV are processed. Every listed combination must "
+        "exist in the scenario's structure. To process a single iteration "
+        "draw, --single_draw is the alternative.",
     )
     parser.add_argument(
         "--temporal_structure_csv_path",
-        help="Path to the CSV where the temporal structure is defined.",
+        help="Path to the CSV where the temporal structure is defined "
+        "(columns: weather_iteration, hydro_iteration, "
+        "availability_iteration, subproblem, stage; one row per "
+        "subproblem/stage).",
     )
 
     return parser
@@ -364,6 +370,107 @@ def get_import_results_parser():
         help="Ignore problems with no results. Can be used to import results "
         "for subproblems before all other subproblems have been solved. "
         "Proceed with caution.",
+    )
+
+    return parser
+
+
+def get_per_draw_parser():
+    """
+    Create ArgumentParser object with the per-draw E2E mode arguments (see
+    run_end_to_end_per_draw).
+    """
+    parser = ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--per_draw_lifecycle",
+        default=False,
+        action="store_true",
+        help="Run the scenario one iteration draw at a time: write a draw's "
+        "inputs, solve it, and import it (can be concurrent with other draws' "
+        "solves) before moving on, instead of running each E2E step for the "
+        "whole scenario. Combine with --cleanup_after_import or "
+        "--archive_after_import to also reclaim each draw's directory as "
+        "soon as its results are imported, bounding the scenario's on-disk "
+        "footprint. Not compatible with linked subproblems or with "
+        "skipping/isolating the get_inputs/run_scenario/import_results "
+        "steps.",
+    )
+    parser.add_argument(
+        "--max_draws_pending_import",
+        type=int,
+        default=2,
+        help="In --per_draw_lifecycle mode, how many solved draws may await "
+        "import before solving pauses (bounds the on-disk footprint when "
+        "importing falls behind).",
+    )
+
+    return parser
+
+
+def get_single_draw_parser(context_help=""):
+    """
+    Create ArgumentParser object with the --single_draw argument, shared by
+    gridpath_run_e2e (where it selects the draw for --per_draw_lifecycle)
+    and gridpath_get_inputs (where it restricts input-writing to one draw).
+
+    :param context_help: entry-point-specific guidance appended to the
+        shared help text
+    """
+    parser = ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--single_draw",
+        nargs=3,
+        type=int,
+        default=None,
+        metavar=("WEATHER_ITERATION", "HYDRO_ITERATION", "AVAILABILITY_ITERATION"),
+        help="Restrict the run to a single iteration draw, given as the "
+        "draw's weather, hydro, and availability iteration values -- with "
+        "0 for iteration levels the scenario doesn't use, matching how "
+        "unused levels are stored in inputs_temporal_iterations. E.g. "
+        "'--single_draw 812 0 1' for a scenario with weather and "
+        "availability iterations but no hydro iterations. " + context_help,
+    )
+
+    return parser
+
+
+def get_scenario_directory_cleanup_parser():
+    """
+    Create ArgumentParser object with the post-import scenario-directory
+    cleanup/archiving arguments (see scenario_directory_cleanup).
+    """
+    parser = ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--cleanup_after_import",
+        default=False,
+        action="store_true",
+        help="After the other E2E steps complete, delete the "
+        "inputs/results directories of every iteration draw whose results "
+        "were all successfully imported into the database (scenario-level "
+        "files and logs are retained). Draws with skipped or failed "
+        "subproblems are left intact.",
+    )
+    parser.add_argument(
+        "--archive_after_import",
+        nargs="?",
+        const="tar",
+        choices=["tar", "tar.gz"],
+        default=None,
+        help="Like --cleanup_after_import, but first write one tarball per "
+        "cleaned iteration draw to the scenario's 'archive' directory "
+        "(default format 'tar').",
+    )
+    parser.add_argument(
+        "--cleanup_granularity",
+        choices=["draw", "subproblem"],
+        default="draw",
+        help="With --cleanup_after_import/--archive_after_import: 'draw' "
+        "(the default) retains a draw fully if any of its subproblems was "
+        "not imported; 'subproblem' additionally cleans the imported "
+        "subproblems within such partially imported draws, retaining only "
+        "the not-imported subproblems -- useful when a single stuck "
+        "subproblem would otherwise strand a large draw on disk. Fully "
+        "imported draws are cleaned as whole draws either way.",
     )
 
     return parser

@@ -1785,6 +1785,19 @@ def parse_arguments(args):
         ],
     )
 
+    parser.add_argument(
+        "--ignore_cleanup_marker",
+        default=False,
+        action="store_true",
+        help="Run even if the scenario directory was cleaned after its "
+        "results were imported (the cleanup marker file is present). The "
+        "scenario structure is inferred from whatever is on disk, so use "
+        "this to solve a subset re-materialized with gridpath_get_inputs -- "
+        "a single draw (its --single_draw option) or an arbitrary subset "
+        "(its --temporal_structure_csv_overwrite option); do NOT use it on "
+        "a tree you expect to be complete.",
+    )
+
     # Flip order of argument groups so "required arguments" show first
     # https://stackoverflow.com/questions/39047075/reorder-python-argparse-argument-groups
     # Note: hacky fix; preferred answer of creating an explicit optional group
@@ -1830,14 +1843,19 @@ def main(args=None):
     # Refuse to run from a cleaned scenario directory: the scenario
     # structure is inferred from the directory tree below, so a partially
     # cleaned tree would yield a silently wrong structure (and the inputs
-    # are gone)
-    check_scenario_directory_not_cleaned(
-        scenario_directory=scenario_directory,
-        attempted_action=(
-            "Running the scenario would infer a wrong scenario structure "
-            "from the cleaned directory tree."
-        ),
-    )
+    # are gone). --ignore_cleanup_marker overrides this, for deliberately
+    # solving a subset of the tree (e.g. a single re-materialized draw)
+    if not parsed_args.ignore_cleanup_marker:
+        check_scenario_directory_not_cleaned(
+            scenario_directory=scenario_directory,
+            attempted_action=(
+                "Running the scenario would infer a wrong scenario structure "
+                "from the cleaned directory tree. (If you deliberately want "
+                "to solve just what is on disk -- e.g. a single draw "
+                "re-materialized with gridpath_get_inputs -- pass "
+                "--ignore_cleanup_marker.)"
+            ),
+        )
 
     scenario_structure = get_scenario_structure_from_disk(
         scenario_directory=scenario_directory

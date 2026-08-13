@@ -29,12 +29,18 @@ from gridpath.auxiliary.scenario_chars import (
     build_single_draw_structure,
     iterate_directory_structure,
     iterate_draws,
+    resolve_requested_draw,
     ScenarioDirectoryStructure,
     ScenarioStructure,
 )
 from gridpath.import_scenario_results import IMPORT_STATUS_IMPORTED
+from gridpath.auxiliary.scenario_chars import (
+    get_diverging_layout_flags,
+    validate_csv_structure_against_db,
+)
 from gridpath.run_end_to_end_per_draw import (
     _ImportState,
+    check_csv_draws_are_whole,
     get_completed_draw_units,
     get_draw_unit,
     import_draws_worker,
@@ -134,6 +140,203 @@ class TestDrawSlicing(unittest.TestCase):
         unit, cells = get_draw_unit(structure, (0, 0, 0))
         self.assertEqual(unit, "")
         self.assertEqual(cells, [(0, 0, 0, 0, 0)])
+
+    def test_resolve_requested_draw(self):
+        # Draw values use the scenario-wide convention: 0 = level not used
+        structure = two_by_two_iteration_structure()
+
+        # Valid full specification
+        self.assertEqual(
+            resolve_requested_draw(
+                structure,
+                weather_iteration=1,
+                hydro_iteration=2,
+                availability_iteration=0,
+            ),
+            (1, 2, 0),
+        )
+        # A used level given as 0
+        with self.assertRaisesRegex(ValueError, "requires the draw's hydro"):
+            resolve_requested_draw(
+                structure,
+                weather_iteration=1,
+                hydro_iteration=0,
+                availability_iteration=0,
+            )
+        # An unused level given a nonzero value
+        with self.assertRaisesRegex(ValueError, "no availability iterations"):
+            resolve_requested_draw(
+                structure,
+                weather_iteration=1,
+                hydro_iteration=2,
+                availability_iteration=1,
+            )
+        # A draw that doesn't exist
+        with self.assertRaisesRegex(ValueError, "no draw"):
+            resolve_requested_draw(
+                structure,
+                weather_iteration=1,
+                hydro_iteration=7,
+                availability_iteration=0,
+            )
+
+    def test_resolve_requested_draw_sparse_middle_level(self):
+        # Weather and availability iterations, no hydro: the hydro slot is
+        # 0 in the draw keys and must be requested as 0
+        structure = ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict={
+                1: {0: {10: {1: [1]}, 11: {1: [1]}}},
+                2: {0: {10: {1: [1]}, 11: {1: [1]}}},
+            },
+            weather_iteration_flag=True,
+            hydro_iteration_flag=False,
+            availability_iteration_flag=True,
+            subproblem_flag=False,
+            stage_flag=False,
+        )
+        self.assertEqual(
+            resolve_requested_draw(
+                structure,
+                weather_iteration=2,
+                hydro_iteration=0,
+                availability_iteration=11,
+            ),
+            (2, 0, 11),
+        )
+        with self.assertRaisesRegex(ValueError, "no hydro iterations"):
+            resolve_requested_draw(
+                structure,
+                weather_iteration=2,
+                hydro_iteration=1,
+                availability_iteration=11,
+            )
+
+    def test_get_draw_unit_sparse_middle_level(self):
+        # The unit path skips the unused middle level cleanly
+        structure = ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict={1: {0: {10: {1: [1], 2: [1]}}}},
+            weather_iteration_flag=True,
+            hydro_iteration_flag=False,
+            availability_iteration_flag=True,
+            subproblem_flag=True,
+            stage_flag=False,
+        )
+        unit, cells = get_draw_unit(structure, (1, 0, 10))
+        self.assertEqual(
+            unit, os.path.join("weather_iteration_1", "availability_iteration_10")
+        )
+        self.assertEqual(sorted(cells), [(1, 0, 10, 1, 0), (1, 0, 10, 2, 0)])
+
+
+class TestValidateCsvStructureAgainstDb(unittest.TestCase):
+    def make_csv_structure(self, subproblem_stage_dict):
+        return ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict=subproblem_stage_dict,
+            weather_iteration_flag=True,
+            hydro_iteration_flag=True,
+            availability_iteration_flag=False,
+            subproblem_flag=True,
+            stage_flag=False,
+        )
+
+    def test_subset_accepted_unknown_combinations_refused(self):
+        db_structure = two_by_two_iteration_structure()
+
+        # A valid subset (one whole draw, one partial draw): accepted --
+        # existence is this check's concern, completeness is
+        # check_csv_draws_are_whole's
+        validate_csv_structure_against_db(
+            csv_structure=self.make_csv_structure(
+                {1: {2: {0: {1: [1], 2: [1]}}}, 2: {1: {0: {1: [1]}}}}
+            ),
+            db_structure=db_structure,
+        )
+
+        # A draw that doesn't exist
+        with self.assertRaisesRegex(ValueError, r"draw \(weather 1, hydro 7"):
+            validate_csv_structure_against_db(
+                csv_structure=self.make_csv_structure({1: {7: {0: {1: [1]}}}}),
+                db_structure=db_structure,
+            )
+        # A subproblem that doesn't exist
+        with self.assertRaisesRegex(ValueError, "subproblem 9"):
+            validate_csv_structure_against_db(
+                csv_structure=self.make_csv_structure({1: {2: {0: {9: [1]}}}}),
+                db_structure=db_structure,
+            )
+        # A stage that doesn't exist
+        with self.assertRaisesRegex(ValueError, "subproblem 1, stage 4"):
+            validate_csv_structure_against_db(
+                csv_structure=self.make_csv_structure({1: {2: {0: {1: [4]}}}}),
+                db_structure=db_structure,
+            )
+
+    def test_get_diverging_layout_flags(self):
+        db_structure = two_by_two_iteration_structure()
+
+        # Same subproblem/stage flags: no divergence
+        matching_csv = ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict={1: {2: {0: {1: [1], 2: [1]}}}},
+            weather_iteration_flag=True,
+            hydro_iteration_flag=True,
+            availability_iteration_flag=False,
+            subproblem_flag=True,
+            stage_flag=False,
+        )
+        self.assertEqual(
+            get_diverging_layout_flags(
+                csv_structure=matching_csv, db_structure=db_structure
+            ),
+            [],
+        )
+
+        # A CSV narrowed to only subproblem 1 derives no-subproblem-directory
+        # layout while the scenario uses subproblem directories
+        narrowed_csv = ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict={1: {2: {0: {1: [1]}}}},
+            weather_iteration_flag=True,
+            hydro_iteration_flag=True,
+            availability_iteration_flag=False,
+            subproblem_flag=False,
+            stage_flag=False,
+        )
+        diverging = get_diverging_layout_flags(
+            csv_structure=narrowed_csv, db_structure=db_structure
+        )
+        self.assertEqual(len(diverging), 1)
+        self.assertIn("subproblem directories", diverging[0])
+
+
+class TestCsvDrawsAreWhole(unittest.TestCase):
+    def test_whole_draw_csv_accepted_partial_refused(self):
+        db_structure = two_by_two_iteration_structure()
+
+        # A CSV selecting a subset of DRAWS, each listed in full: fine
+        whole_draw_csv = ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict={1: {2: {0: {1: [1], 2: [1]}}}},
+            weather_iteration_flag=True,
+            hydro_iteration_flag=True,
+            availability_iteration_flag=False,
+            subproblem_flag=True,
+            stage_flag=False,
+        )
+        check_csv_draws_are_whole(
+            csv_structure=whole_draw_csv, db_structure=db_structure
+        )
+
+        # A CSV listing only one of a draw's two subproblems: refused
+        partial_draw_csv = ScenarioStructure(
+            weather_hydro_avail_subproblem_stage_dict={1: {2: {0: {1: [1]}}}},
+            weather_iteration_flag=True,
+            hydro_iteration_flag=True,
+            availability_iteration_flag=False,
+            subproblem_flag=True,
+            stage_flag=False,
+        )
+        with self.assertRaisesRegex(ValueError, "only part of draw"):
+            check_csv_draws_are_whole(
+                csv_structure=partial_draw_csv, db_structure=db_structure
+            )
 
 
 class TestDeleteScenarioResultsForDraw(unittest.TestCase):

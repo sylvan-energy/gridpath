@@ -26,7 +26,7 @@ iteration, availability iteration) at a time:
   draw are parallelized with the usual ``--n_parallel_solve`` machinery),
   and hands the solved draw to the importer queue.
 * A single importer thread -- the only database writer -- imports queued
-  draws while later draws are still solving, and, with
+  draws while other draws are still solving, and, with
   ``--cleanup_after_import``/``--archive_after_import``, cleans each draw's
   directory as soon as its import succeeds. The queue is bounded
   (``--max_draws_pending_import``), so if importing falls behind, solving
@@ -45,6 +45,26 @@ results are already on disk.
 
 Linked-subproblem scenarios are refused: subproblems then depend on each
 other's inputs and the draws cannot be processed independently.
+
+``--temporal_structure_csv_overwrite`` works with this mode: the draws
+are then iterated from the CSV's structure instead of the database's, so a
+per-draw run can be restricted to a subset of the scenario's draws. The CSV
+must list WHOLE draws here (each processed draw's database results are
+deleted in full before its re-import, so a partial draw would lose its
+unlisted subproblems' results -- refused with a clear error); sub-draw
+subsets belong in the classic pipeline.
+
+``gridpath_run_e2e --per_draw_lifecycle --single_draw WEATHER HYDRO
+AVAILABILITY`` (0 for iteration levels the scenario doesn't use; the two
+flags are required together, --single_draw being a selector for this mode)
+runs this same machinery for one
+requested draw: its inputs are (re)written, it is solved and imported --
+deleting only THIS draw's prior database rows, so the scenario's other
+results are untouched -- and it is cleaned/archived if those options are
+set. An explicitly requested draw is never skipped as already-completed,
+and a scenario directory cleaned after import needs no special handling
+(the draw is simply re-materialized). This is the one-command way to re-run
+or debug a single draw of a large Monte Carlo case.
 """
 
 import datetime
@@ -64,9 +84,11 @@ from gridpath.auxiliary.scenario_chars import (
     iterate_directory_structure,
     iterate_draws,
     OptionalFeatures,
+    resolve_requested_draw,
     ScenarioDirectoryStructure,
     SolverOptions,
     SubScenarios,
+    validate_csv_structure_against_db,
 )
 from gridpath.common_functions import (
     create_directory_if_not_exists,
@@ -151,6 +173,50 @@ def get_completed_draw_units(scenario_directory):
     return completed_units
 
 
+def check_csv_draws_are_whole(csv_structure, db_structure):
+    """
+    Per-draw mode deletes each processed draw's database results IN FULL
+    before re-importing it (that is what makes the re-import safe), so a
+    temporal-structure CSV used with per-draw mode must list whole draws: if
+    it listed only some of a draw's subproblems/stages, the rest of that
+    draw's imported results would be deleted and not re-imported. Sub-draw
+    subsets belong in the classic (non-per-draw) pipeline.
+    """
+
+    def normalized(subproblem_stage_dict):
+        return {
+            int(subproblem): sorted(int(stage) for stage in stages)
+            for subproblem, stages in subproblem_stage_dict.items()
+        }
+
+    # The database structure has the same subproblem/stage set for every
+    # draw; use any draw's as the canonical set
+    a_db_draw = next(iterate_draws(db_structure))
+    canonical = normalized(
+        db_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[a_db_draw[0]][
+            a_db_draw[1]
+        ][a_db_draw[2]]
+    )
+
+    for draw in iterate_draws(csv_structure):
+        csv_draw_cells = normalized(
+            csv_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[draw[0]][draw[1]][
+                draw[2]
+            ]
+        )
+        if csv_draw_cells != canonical:
+            raise ValueError(
+                f"The temporal structure CSV lists only part of draw "
+                f"(weather {draw[0]}, hydro {draw[1]}, availability "
+                f"{draw[2]}): its subproblems/stages {csv_draw_cells} vs "
+                f"the scenario's {canonical}. Per-draw mode deletes and "
+                f"re-imports each listed draw's database results in full, "
+                f"so a partial draw would lose its unlisted "
+                f"subproblems'/stages' results. List whole draws, or use "
+                f"the classic (non-per-draw) pipeline for sub-draw subsets."
+            )
+
+
 def refuse_linked_subproblems(conn, subscenarios):
     """
     Per-draw mode requires draws (and their subproblems) to be independent;
@@ -212,6 +278,7 @@ def import_draws_worker(
     cleanup_after_import,
     archive_format,
     quiet,
+    cleanup_granularity="draw",
 ):
     """
     The importer thread: the run's only database writer. Imports queued
@@ -271,6 +338,7 @@ def import_draws_worker(
                         import_statuses=statuses,
                         archive_format=archive_format,
                         quiet=quiet,
+                        granularity=cleanup_granularity,
                     )
                 import_state.record_statuses(statuses)
             except Exception as e:
@@ -309,6 +377,18 @@ def run_end_to_end_per_draw(args, parsed_args):
             scenario_structure = get_scenario_structure_from_csv(
                 parsed_args.temporal_structure_csv_path
             )
+            db_structure = get_scenario_structure_from_db(
+                conn=conn, scenario_id=scenario_id
+            )
+            validate_csv_structure_against_db(
+                csv_structure=scenario_structure, db_structure=db_structure
+            )
+            # A CSV-selected subset must additionally consist of whole
+            # draws in this mode: each processed draw's database results
+            # are deleted in full before its re-import
+            check_csv_draws_are_whole(
+                csv_structure=scenario_structure, db_structure=db_structure
+            )
         else:
             scenario_structure = get_scenario_structure_from_db(
                 conn=conn, scenario_id=scenario_id
@@ -324,6 +404,16 @@ def run_end_to_end_per_draw(args, parsed_args):
         solver_options = SolverOptions(conn=conn, scenario_id=scenario_id)
 
         refuse_linked_subproblems(conn=conn, subscenarios=subscenarios)
+
+        # With --single_draw, run the pipeline for only the requested draw
+        requested_draw = None
+        if parsed_args.single_draw is not None:
+            requested_draw = resolve_requested_draw(
+                scenario_structure=scenario_structure,
+                weather_iteration=parsed_args.single_draw[0],
+                hydro_iteration=parsed_args.single_draw[1],
+                availability_iteration=parsed_args.single_draw[2],
+            )
 
         feature_list = optional_features.get_active_features()
         modules_to_use = determine_modules(
@@ -374,6 +464,7 @@ def run_end_to_end_per_draw(args, parsed_args):
             "cleanup_after_import": parsed_args.cleanup_after_import,
             "archive_format": parsed_args.archive_after_import,
             "quiet": quiet,
+            "cleanup_granularity": parsed_args.cleanup_granularity,
         },
         name="gridpath-draw-importer",
     )
@@ -384,14 +475,22 @@ def run_end_to_end_per_draw(args, parsed_args):
         importer.start()
         importer.started = True
 
+        draws_to_run = (
+            [requested_draw]
+            if requested_draw is not None
+            else list(iterate_draws(scenario_structure))
+        )
+
         n_draws = 0
         n_skipped_completed = 0
-        for draw in iterate_draws(scenario_structure):
+        for draw in draws_to_run:
             n_draws += 1
             draw_structure = build_single_draw_structure(scenario_structure, *draw)
             unit, cells = get_draw_unit(scenario_structure, draw)
 
-            if unit in completed_units:
+            # An explicitly requested draw is never skipped: the user asked
+            # for it to be re-run, whatever the marker says
+            if requested_draw is None and unit in completed_units:
                 # Completed in a previous run; record its cells as imported
                 # so the end-of-run summary covers the whole scenario
                 import_state.record_statuses(

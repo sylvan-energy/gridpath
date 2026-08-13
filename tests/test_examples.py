@@ -845,6 +845,206 @@ class TestExamples(unittest.TestCase):
                 "weather_iteration_1", sorted(os.listdir(scenario_directory))
             )
 
+    def test_single_draw_regeneration_debug_workflow(self):
+        """
+        The debugging workflow for a cleaned scenario: re-materialize ONE
+        draw's inputs with gridpath_get_inputs' iteration options (the
+        cleanup marker must stay in place, since the rest of the tree is
+        still cleaned), then solve just that draw with run_scenario's
+        --ignore_cleanup_marker. Run in a temporary copy of the scenario
+        directory.
+        """
+        scenario_name = "ra_toolkit_monte_carlo"
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            scenario_directory = os.path.join(tmp_dir, scenario_name)
+            shutil.copytree(
+                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
+                scenario_directory,
+            )
+            self.run_e2e_in(
+                scenario_name,
+                tmp_dir,
+                ["--per_draw_lifecycle", "--cleanup_after_import"],
+            )
+            results_rows = self.get_scenario_results_rows(scenario_name)
+
+            # Re-materialize one draw's inputs
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    tmp_dir,
+                    "--single_draw",
+                    "1",
+                    "2010",
+                    "1",
+                    "--quiet",
+                ]
+            )
+            draw_directory = os.path.join(
+                scenario_directory,
+                "weather_iteration_1",
+                "hydro_iteration_2010",
+                "availability_iteration_1",
+            )
+            self.assertTrue(os.path.exists(draw_directory))
+            # Only the requested draw was regenerated, and the marker stays
+            self.assertFalse(
+                os.path.exists(os.path.join(scenario_directory, "weather_iteration_2"))
+            )
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(scenario_directory, CLEANUP_MARKER_FILENAME)
+                )
+            )
+
+            # The temporal-structure-CSV overwrite is the other way to
+            # regenerate part of the tree; it too must leave the cleanup
+            # marker in place (only a full regeneration clears it)
+            csv_path = os.path.join(tmp_dir, "structure_subset.csv")
+            with open(csv_path, "w", newline="") as f:
+                f.write(
+                    "weather_iteration,hydro_iteration,availability_iteration,"
+                    "subproblem,stage\n"
+                    "1,2010,1,1,1\n"
+                    "1,2010,1,2,1\n"
+                )
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    tmp_dir,
+                    "--temporal_structure_csv_overwrite",
+                    "--temporal_structure_csv_path",
+                    csv_path,
+                    "--quiet",
+                ]
+            )
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(scenario_directory, CLEANUP_MARKER_FILENAME)
+                )
+            )
+
+            # A CSV listing combinations that don't exist in the scenario's
+            # structure is refused up front (they'd otherwise fail late,
+            # with no input data behind them)
+            bogus_csv_path = os.path.join(tmp_dir, "structure_bogus.csv")
+            with open(bogus_csv_path, "w", newline="") as f:
+                f.write(
+                    "weather_iteration,hydro_iteration,availability_iteration,"
+                    "subproblem,stage\n"
+                    "1,2010,7,1,1\n"
+                )
+            with self.assertRaisesRegex(ValueError, "don't exist"):
+                get_scenario_inputs.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        tmp_dir,
+                        "--temporal_structure_csv_overwrite",
+                        "--temporal_structure_csv_path",
+                        bogus_csv_path,
+                        "--quiet",
+                    ]
+                )
+
+            # A CSV whose derived directory layout differs from the
+            # scenario's (here: narrowed to only subproblem 1, so no
+            # subproblem directories) is refused on a cleaned/archived
+            # directory: the regenerated files would not line up with the
+            # original layout or the archive tarballs
+            divergent_csv_path = os.path.join(tmp_dir, "structure_divergent.csv")
+            with open(divergent_csv_path, "w", newline="") as f:
+                f.write(
+                    "weather_iteration,hydro_iteration,availability_iteration,"
+                    "subproblem,stage\n"
+                    "1,2010,1,1,1\n"
+                )
+            with self.assertRaisesRegex(ValueError, "different directory layout"):
+                get_scenario_inputs.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        tmp_dir,
+                        "--temporal_structure_csv_overwrite",
+                        "--temporal_structure_csv_path",
+                        divergent_csv_path,
+                        "--quiet",
+                    ]
+                )
+
+            run_scenario_args = [
+                "--scenario",
+                scenario_name,
+                "--scenario_location",
+                tmp_dir,
+                "--quiet",
+                "--mute_solver_output",
+            ]
+            # Solving is still guarded by the marker...
+            with self.assertRaises(RuntimeError):
+                run_scenario.main(run_scenario_args)
+            # ...and proceeds with the explicit override, solving only the
+            # regenerated draw
+            run_scenario.main(run_scenario_args + ["--ignore_cleanup_marker"])
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(
+                        draw_directory, "1", "results", "termination_condition.txt"
+                    )
+                )
+            )
+
+            # Nothing in this workflow touches the database results
+            self.assertEqual(
+                results_rows, self.get_scenario_results_rows(scenario_name)
+            )
+
+            # The one-command alternative: gridpath_run_e2e
+            # --per_draw_lifecycle --single_draw re-runs the full pipeline
+            # for that draw. The draw's marker row must NOT skip it (it was
+            # requested explicitly), only its own database rows are
+            # re-imported (differential: rows identical to the full run's),
+            # and, with no cleanup flag, its directory remains on disk
+            self.run_e2e_in(
+                scenario_name,
+                tmp_dir,
+                ["--per_draw_lifecycle", "--single_draw", "1", "2010", "1"],
+            )
+            self.assertEqual(
+                results_rows, self.get_scenario_results_rows(scenario_name)
+            )
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(
+                        draw_directory, "1", "results", "termination_condition.txt"
+                    )
+                )
+            )
+            # The other draw is still cleaned, and the marker still guards
+            self.assertFalse(
+                os.path.exists(os.path.join(scenario_directory, "weather_iteration_2"))
+            )
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(scenario_directory, CLEANUP_MARKER_FILENAME)
+                )
+            )
+
     def test_cleanup_after_import_differential(self):
         """
         An E2E run with --cleanup_after_import must import the same rows into

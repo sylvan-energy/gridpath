@@ -29,6 +29,7 @@ import warnings
 from gridpath.auxiliary.import_export_rules import import_export_rules
 from gridpath.auxiliary.scenario_chars import ScenarioStructure
 from gridpath.common_functions import RESULTS_EXPORT_COMPLETE_FILENAME
+from gridpath import import_scenario_results
 from gridpath.import_scenario_results import (
     IMPORT_STATUS_IMPORTED,
     IMPORT_STATUS_IMPORTED_EXPORT_UNVERIFIED,
@@ -348,6 +349,19 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
                 },
             ),
             (
+                "sparse_middle_weather_and_availability_no_hydro",
+                {1: {0: {10: {1: [1], 2: [1]}}}},
+                (True, False, True, True, False),
+                {
+                    os.path.join(
+                        "weather_iteration_1", "availability_iteration_10", "1"
+                    ): (1, 0, 10, 1, 0),
+                    os.path.join(
+                        "weather_iteration_1", "availability_iteration_10", "2"
+                    ): (1, 0, 10, 2, 0),
+                },
+            ),
+            (
                 "availability_iterations_and_subproblems",
                 {0: {0: {9: {1: [1], 2: [1]}}}},
                 (False, False, True, True, False),
@@ -429,6 +443,34 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
                         )
                     finally:
                         conn.close()
+
+
+class TestSingleDrawRefused(unittest.TestCase):
+    def test_single_draw_argument_refused_not_ignored(self):
+        """
+        The parser ignores unknown arguments (run_end_to_end passes its full
+        argument list through), but --single_draw must error rather than be
+        silently ignored: this script deletes ALL prior results, exactly
+        what a user asking for a single draw is trying to avoid.
+        """
+        with contextlib.redirect_stderr(io.StringIO()) as captured:
+            with self.assertRaises(SystemExit):
+                import_scenario_results.parse_arguments(
+                    [
+                        "--database",
+                        "irrelevant.db",
+                        "--scenario",
+                        "irrelevant",
+                        "--single_draw",
+                        "1",
+                        "0",
+                        "1",
+                    ]
+                )
+        self.assertIn(
+            "gridpath_run_e2e --per_draw_lifecycle --single_draw",
+            captured.getvalue(),
+        )
 
 
 class TestWarnOnImportGaps(unittest.TestCase):

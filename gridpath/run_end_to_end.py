@@ -38,6 +38,9 @@ from gridpath.common_functions import (
     get_run_scenario_parser,
     get_required_e2e_arguments_parser,
     get_get_inputs_parser,
+    get_per_draw_parser,
+    get_scenario_directory_cleanup_parser,
+    get_single_draw_parser,
     get_version_parser,
     create_logs_directory_if_not_exists,
     Logging,
@@ -77,6 +80,18 @@ def parse_arguments(args):
             get_run_scenario_parser(),
             get_get_inputs_parser(),
             get_import_results_parser(),
+            get_per_draw_parser(),
+            get_single_draw_parser(
+                context_help="Must be passed together with "
+                "--per_draw_lifecycle (it selects the draw for that mode). "
+                "Only this draw's database results are deleted and "
+                "re-imported -- safe on a scenario whose other draws' "
+                "results must be kept -- and it works on a scenario "
+                "directory that was cleaned after import (the draw is "
+                "re-materialized; a cleanup marker row for the draw does "
+                "not skip it, since the draw was requested explicitly)."
+            ),
+            get_scenario_directory_cleanup_parser(),
             get_version_parser(),
         ],
     )
@@ -114,52 +129,6 @@ def parse_arguments(args):
         help="Run only the specified E2E step. All others " "will be skipped.",
     )
 
-    # Per-draw E2E mode
-    parser.add_argument(
-        "--per_draw_lifecycle",
-        default=False,
-        action="store_true",
-        help="Run the scenario one iteration draw at a time: write a draw's "
-        "inputs, solve it, and import it (concurrently with later draws' "
-        "solves) before moving on, instead of running each E2E step for the "
-        "whole scenario. Combine with --cleanup_after_import or "
-        "--archive_after_import to also reclaim each draw's directory as "
-        "soon as its results are imported, bounding the scenario's on-disk "
-        "footprint. Not compatible with linked subproblems or with "
-        "skipping/isolating the get_inputs/run_scenario/import_results "
-        "steps.",
-    )
-    parser.add_argument(
-        "--max_draws_pending_import",
-        type=int,
-        default=2,
-        help="In --per_draw_lifecycle mode, how many solved draws may await "
-        "import before solving pauses (bounds the on-disk footprint when "
-        "importing falls behind).",
-    )
-
-    # Scenario-directory lifecycle after successful results import
-    parser.add_argument(
-        "--cleanup_after_import",
-        default=False,
-        action="store_true",
-        help="After the other E2E steps complete, delete the "
-        "inputs/results directories of every iteration draw whose results "
-        "were all successfully imported into the database (scenario-level "
-        "files and logs are retained). Draws with skipped or failed "
-        "subproblems are left intact.",
-    )
-    parser.add_argument(
-        "--archive_after_import",
-        nargs="?",
-        const="tar",
-        choices=["tar", "tar.gz"],
-        default=None,
-        help="Like --cleanup_after_import, but first write one tarball per "
-        "cleaned iteration draw to the scenario's 'archive' directory "
-        "(default format 'tar').",
-    )
-
     parsed_arguments = parser.parse_args(args=args)
 
     # The cleanup/archive steps are gated on the import statuses from a
@@ -186,6 +155,16 @@ def parse_arguments(args):
                 "combined with --single_e2e_step_only: cleanup requires the "
                 "import statuses from a results import in the same run."
             )
+
+    # --single_draw is a selector for per-draw mode, not a mode of its own:
+    # requiring the pairing keeps it explicit which machinery runs
+    if parsed_arguments.single_draw is not None and (
+        not parsed_arguments.per_draw_lifecycle
+    ):
+        parser.error(
+            "--single_draw selects the draw for --per_draw_lifecycle and "
+            "must be passed together with it."
+        )
 
     # Per-draw mode fuses the get_inputs/run_scenario/import_results steps,
     # so they cannot be individually skipped or isolated
@@ -630,8 +609,11 @@ def main(args=None):
 
     # Per-draw mode fuses the get_inputs/run_scenario/import_results steps
     # (and any per-draw cleanup) into a single step; process_results still
-    # runs separately below
-    if parsed_args.per_draw_lifecycle:
+    # runs separately below. --single_draw narrows the same machinery to
+    # one requested draw (the parser requires it to be paired with
+    # --per_draw_lifecycle)
+    per_draw_mode = parsed_args.per_draw_lifecycle
+    if per_draw_mode:
         skip_get_inputs = True
         skip_run_scenario = True
         skip_import_results = True
@@ -803,7 +785,7 @@ def main(args=None):
         )
 
     # In per-draw mode, cleanup/archiving already happened per draw
-    if not parsed_args.per_draw_lifecycle and (
+    if not per_draw_mode and (
         parsed_args.cleanup_after_import or parsed_args.archive_after_import is not None
     ):
         step_start_time = datetime.datetime.now()
@@ -818,6 +800,7 @@ def main(args=None):
                 quiet=parsed_args.quiet,
                 temporal_structure_csv_overwrite=parsed_args.temporal_structure_csv_overwrite,
                 temporal_structure_csv_path=parsed_args.temporal_structure_csv_path,
+                granularity=parsed_args.cleanup_granularity,
             )
         except Exception as e:
             logging.exception(e)

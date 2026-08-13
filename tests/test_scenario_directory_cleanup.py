@@ -208,6 +208,99 @@ class TestCleanupScenarioDirectory(unittest.TestCase):
             ["weather_iteration_1"],
         )
 
+    def test_subproblem_granularity_cleans_within_partial_draw(self):
+        self.write_two_weather_draws()
+        import_statuses = all_imported_statuses_for_two_weather_draws()
+        # Draw 2's subproblem 2 was not imported
+        import_statuses[(2, 0, 0, 2, 0)] = IMPORT_STATUS_SKIPPED_NOT_SOLVED
+
+        cleaned, retained = cleanup_scenario_directory(
+            scenario_directory=self.scenario_directory,
+            scenario_structure=two_weather_draw_structure(),
+            import_statuses=import_statuses,
+            quiet=True,
+            granularity="subproblem",
+        )
+
+        # The fully imported draw is cleaned as ONE draw unit (identical to
+        # draw granularity, so resume bookkeeping is unchanged); within the
+        # partial draw, the imported subproblem 1 is cleaned and only the
+        # failed subproblem 2 is retained
+        self.assertEqual(
+            sorted(cleaned),
+            [
+                "weather_iteration_1",
+                os.path.join("weather_iteration_2", "1"),
+            ],
+        )
+        self.assertEqual(retained, ["weather_iteration_2"])
+        self.assertFalse(
+            os.path.exists(
+                os.path.join(self.scenario_directory, "weather_iteration_2", "1")
+            )
+        )
+        self.assertTrue(
+            os.path.exists(
+                os.path.join(
+                    self.scenario_directory,
+                    "weather_iteration_2",
+                    "2",
+                    "inputs",
+                    "load_mw.tab",
+                )
+            )
+        )
+        self.assert_root_files_retained()
+        # Marker rows: the whole draw and the cleaned subproblem
+        self.assertEqual(
+            sorted(row["cleaned_unit"] for row in self.read_marker_rows()),
+            [
+                "weather_iteration_1",
+                os.path.join("weather_iteration_2", "1"),
+            ],
+        )
+
+    def test_subproblem_granularity_archives_cleaned_subproblems(self):
+        self.write_two_weather_draws()
+        import_statuses = all_imported_statuses_for_two_weather_draws()
+        import_statuses[(2, 0, 0, 2, 0)] = IMPORT_STATUS_SKIPPED_NOT_SOLVED
+
+        cleanup_scenario_directory(
+            scenario_directory=self.scenario_directory,
+            scenario_structure=two_weather_draw_structure(),
+            import_statuses=import_statuses,
+            archive_format="tar",
+            quiet=True,
+            granularity="subproblem",
+        )
+
+        archive_directory = os.path.join(
+            self.scenario_directory, ARCHIVE_DIRECTORY_NAME
+        )
+        # One tar for the complete draw, one for the cleaned subproblem
+        self.assertEqual(
+            sorted(os.listdir(archive_directory)),
+            ["weather_iteration_1.tar", "weather_iteration_2__1.tar"],
+        )
+        # The subproblem tar restores the subproblem subtree in place
+        extract_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(extract_dir.cleanup)
+        with tarfile.open(
+            os.path.join(archive_directory, "weather_iteration_2__1.tar"), "r"
+        ) as tar:
+            tar.extractall(path=extract_dir.name, filter="data")
+        self.assertTrue(
+            os.path.exists(
+                os.path.join(
+                    extract_dir.name,
+                    "weather_iteration_2",
+                    "1",
+                    "results",
+                    "termination_condition.txt",
+                )
+            )
+        )
+
     def test_no_statuses_cleans_nothing_and_writes_no_marker(self):
         self.write_two_weather_draws()
 

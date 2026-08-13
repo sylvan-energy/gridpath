@@ -250,6 +250,158 @@ def iterate_draws(scenario_structure):
                 yield w, h, a
 
 
+def validate_csv_structure_against_db(csv_structure, db_structure):
+    """
+    :param csv_structure: ScenarioStructure from a temporal-structure CSV
+    :param db_structure: the scenario's database-derived ScenarioStructure
+    :raises ValueError: if the CSV specifies draws or subproblems/stages
+        that don't exist in the scenario's structure
+
+    A temporal-structure CSV can only meaningfully NARROW the scenario's
+    structure: iteration/subproblem/stage combinations outside it have no
+    input data, so without this check they fail late -- at model load
+    ("load not specified"-style errors) or as an import that finds nothing.
+    """
+    db_draws = set(iterate_draws(db_structure))
+    # The database structure has the same subproblem/stage set for every
+    # draw
+    a_db_draw = next(iter(db_draws))
+    db_subproblem_stages = {
+        int(subproblem): {int(stage) for stage in stages}
+        for subproblem, stages in db_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[
+            a_db_draw[0]
+        ][
+            a_db_draw[1]
+        ][
+            a_db_draw[2]
+        ].items()
+    }
+
+    unknown = []
+    for draw in iterate_draws(csv_structure):
+        if draw not in db_draws:
+            unknown.append(
+                f"draw (weather {draw[0]}, hydro {draw[1]}, availability {draw[2]})"
+            )
+            continue
+        csv_subproblem_stages = csv_structure.WEATHER_HYDRO_AVAIL_SUBPROBLEM_STAGE_DICT[
+            draw[0]
+        ][draw[1]][draw[2]]
+        for subproblem, stages in csv_subproblem_stages.items():
+            if int(subproblem) not in db_subproblem_stages:
+                unknown.append(f"subproblem {subproblem}")
+                continue
+            for stage in stages:
+                if int(stage) not in db_subproblem_stages[int(subproblem)]:
+                    unknown.append(f"subproblem {subproblem}, stage {stage}")
+
+    if unknown:
+        max_examples = 10
+        examples = "; ".join(unknown[:max_examples])
+        if len(unknown) > max_examples:
+            examples += f"; ... and {len(unknown) - max_examples} more"
+        raise ValueError(
+            f"The temporal structure CSV specifies "
+            f"iteration/subproblem/stage combinations that don't exist in "
+            f"the scenario's structure: {examples}. The CSV can only narrow "
+            f"the scenario's structure -- combinations outside it have no "
+            f"input data."
+        )
+
+
+def get_diverging_layout_flags(csv_structure, db_structure):
+    """
+    :param csv_structure: ScenarioStructure from a temporal-structure CSV
+    :param db_structure: the scenario's database-derived ScenarioStructure
+    :return: list of human-readable descriptions of directory-layout flags
+        on which the two structures diverge (empty if none)
+
+    The CSV's directory-layout flags are derived from its values (see
+    get_scenario_structure_from_csv), so a CSV narrowing a scenario to only
+    subproblem/stage 1 implies a DIFFERENT directory layout than the
+    scenario's own structure uses. That layout is self-consistent for a
+    stand-alone run, but files generated with it will not line up with a
+    directory tree (or archive tarballs) generated from the scenario's full
+    structure. The iteration-level flags cannot diverge once the CSV has
+    been validated against the database structure, so only the
+    subproblem/stage flags are compared.
+    """
+    diverging = []
+    if csv_structure.SUBPROBLEM_FLAG != db_structure.SUBPROBLEM_FLAG:
+        diverging.append(
+            f"subproblem directories ({'used' if csv_structure.SUBPROBLEM_FLAG else 'not used'} "
+            f"per the CSV vs "
+            f"{'used' if db_structure.SUBPROBLEM_FLAG else 'not used'} "
+            f"per the scenario's structure)"
+        )
+    if csv_structure.STAGE_FLAG != db_structure.STAGE_FLAG:
+        diverging.append(
+            f"stage directories ({'used' if csv_structure.STAGE_FLAG else 'not used'} "
+            f"per the CSV vs "
+            f"{'used' if db_structure.STAGE_FLAG else 'not used'} "
+            f"per the scenario's structure)"
+        )
+
+    return diverging
+
+
+def resolve_requested_draw(
+    scenario_structure, weather_iteration, hydro_iteration, availability_iteration
+):
+    """
+    :param scenario_structure: ScenarioStructure
+    :param weather_iteration: int; 0 means the scenario doesn't use the
+        level (the same convention as inputs_temporal_iterations and the
+        structure dictionaries)
+    :param hydro_iteration: int
+    :param availability_iteration: int
+    :return: the validated (weather_iteration, hydro_iteration,
+        availability_iteration) draw key
+
+    Validate a user-requested iteration draw against the scenario's
+    structure: every iteration level the scenario uses needs a (nonzero)
+    iteration value, levels the scenario doesn't use must be given as 0,
+    and the resulting draw must exist.
+    """
+    requested = {
+        "weather": weather_iteration,
+        "hydro": hydro_iteration,
+        "availability": availability_iteration,
+    }
+    flags = {
+        "weather": scenario_structure.WEATHER_ITERATION_FLAG,
+        "hydro": scenario_structure.HYDRO_ITERATION_FLAG,
+        "availability": scenario_structure.AVAILABILITY_ITERATION_FLAG,
+    }
+
+    for level, value in requested.items():
+        if flags[level] and value == 0:
+            raise ValueError(
+                f"The scenario has {level} iterations, so a single draw "
+                f"requires the draw's {level} iteration value (0 means the "
+                f"level is not used)."
+            )
+        if not flags[level] and value != 0:
+            raise ValueError(
+                f"The scenario has no {level} iterations; pass 0 for the "
+                f"{level} iteration value."
+            )
+
+    draw = (
+        requested["weather"],
+        requested["hydro"],
+        requested["availability"],
+    )
+    if draw not in set(iterate_draws(scenario_structure)):
+        raise ValueError(
+            f"The scenario has no draw with weather iteration {draw[0]}, "
+            f"hydro iteration {draw[1]}, availability iteration {draw[2]} "
+            f"(0 = level not used)."
+        )
+
+    return draw
+
+
 def build_single_draw_structure(
     scenario_structure, weather_iteration, hydro_iteration, availability_iteration
 ):
@@ -484,9 +636,27 @@ def get_scenario_structure_from_db(conn, scenario_id):
 
 def get_scenario_structure_from_csv(csv_path):
     """
+    :param csv_path: path to a CSV with columns weather_iteration,
+        hydro_iteration, availability_iteration, subproblem, stage -- one
+        row per subproblem/stage to include (0 for iteration levels the
+        scenario doesn't use; subproblem/stage 1 when not used)
+    :return: ScenarioStructure
 
-    :param conn:
-    :param scenario_id:
+    Build the scenario structure from a CSV instead of the database -- used
+    with --temporal_structure_csv_overwrite to run/import an arbitrary
+    subset of a scenario's iteration/subproblem/stage cells (e.g.
+    gridpath_iterate's conditions-only re-runs). This function itself takes
+    the rows as given (it has no database connection); the consuming entry
+    points validate them against the scenario's database-derived structure
+    with validate_csv_structure_against_db. The directory-layout
+    flags are DERIVED from the values: an iteration level is "in use" if
+    any of its values is nonzero, subproblems/stages if any value isn't 1.
+    Note the implication: a CSV that narrows a multi-subproblem scenario
+    down to subproblem 1 only yields a no-subproblem-directory layout,
+    which will not line up with the scenario's existing directories --
+    include a different subproblem, or use get_scenario_inputs'
+    --single_draw option (which preserves the scenario's flags) when the
+    goal is one iteration draw.
     """
 
     df = pd.read_csv(csv_path)
