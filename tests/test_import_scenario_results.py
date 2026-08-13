@@ -103,7 +103,7 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
         ignore_incomplete=False,
         require_results_export_complete=False,
     ):
-        return import_scenario_results_into_database(
+        import_statuses, termination_conditions = import_scenario_results_into_database(
             import_rule=import_rule,
             loaded_modules=[],
             scenario_id=1,
@@ -114,6 +114,11 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
             quiet=True,
             require_results_export_complete=require_results_export_complete,
         )
+        # Stashed for tests that assert on the conditions; returning only
+        # the statuses keeps the many existing status assertions unchanged
+        self.termination_conditions = termination_conditions
+
+        return import_statuses
 
     def get_results_scenario_rows(self):
         return self.conn.execute("""SELECT subproblem_id, solver_termination_condition,
@@ -160,6 +165,15 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
         self.assertEqual(
             self.get_results_scenario_rows(),
             [(1, "optimal", 42.0), (2, "infeasible", None)],
+        )
+        # The termination conditions are also returned per cell, so the
+        # end-of-import warning can say WHY results were skipped
+        self.assertEqual(
+            self.termination_conditions,
+            {
+                (0, 0, 0, 1, 0): "optimal",
+                (0, 0, 0, 2, 0): "infeasible",
+            },
         )
 
     def test_missing_files_raise_without_ignore_incomplete(self):
@@ -414,7 +428,7 @@ class TestImportScenarioResultsStatuses(unittest.TestCase):
                         for cell_directory in expected_cells_by_dir:
                             write_cell_results_files(scenario_directory, cell_directory)
 
-                        import_statuses = import_scenario_results_into_database(
+                        import_statuses, _ = import_scenario_results_into_database(
                             import_rule=None,
                             loaded_modules=[],
                             scenario_id=1,
@@ -474,10 +488,10 @@ class TestSingleDrawRefused(unittest.TestCase):
 
 
 class TestWarnOnImportGaps(unittest.TestCase):
-    def get_warning_output(self, import_statuses):
+    def get_warning_output(self, import_statuses, termination_conditions=None):
         captured = io.StringIO()
         with contextlib.redirect_stdout(captured):
-            warn_on_import_gaps(import_statuses)
+            warn_on_import_gaps(import_statuses, termination_conditions)
 
         return captured.getvalue()
 
@@ -520,6 +534,38 @@ class TestWarnOnImportGaps(unittest.TestCase):
         }
         output = self.get_warning_output(import_statuses)
         self.assertIn("and 10 more", output)
+
+    def test_termination_condition_reported_for_not_ok_cells(self):
+        # Cells skipped for a not-ok solver status are reported by their
+        # termination condition (the WHY), grouped separately per condition
+        output = self.get_warning_output(
+            {
+                (0, 0, 0, 1, 0): IMPORT_STATUS_IMPORTED,
+                (0, 0, 0, 2, 0): IMPORT_STATUS_SKIPPED_SOLVER_STATUS_NOT_OK,
+                (0, 0, 0, 3, 0): IMPORT_STATUS_SKIPPED_SOLVER_STATUS_NOT_OK,
+            },
+            termination_conditions={
+                (0, 0, 0, 1, 0): "optimal",
+                (0, 0, 0, 2, 0): "infeasible",
+                (0, 0, 0, 3, 0): "maxTimeLimit",
+            },
+        )
+        self.assertIn("(termination condition 'infeasible')", output)
+        self.assertIn("(0, 0, 0, 2, 0)", output)
+        self.assertIn("(termination condition 'maxTimeLimit')", output)
+        self.assertIn("(0, 0, 0, 3, 0)", output)
+
+    def test_termination_conditions_optional(self):
+        # Callers without the conditions (or with a cell missing from them)
+        # still get the generic status grouping
+        output = self.get_warning_output(
+            {
+                (0, 0, 0, 1, 0): IMPORT_STATUS_IMPORTED,
+                (0, 0, 0, 2, 0): IMPORT_STATUS_SKIPPED_SOLVER_STATUS_NOT_OK,
+            }
+        )
+        self.assertIn(IMPORT_STATUS_SKIPPED_SOLVER_STATUS_NOT_OK, output)
+        self.assertNotIn("termination condition", output)
 
 
 if __name__ == "__main__":

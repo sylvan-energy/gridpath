@@ -45,7 +45,9 @@ subproblems/stages, a warning is printed regardless of the --quiet setting:
 skipped subproblems are otherwise silent, and, since all prior results for
 the scenario are deleted at the start of the import step, an import that
 skips everything leaves the scenario with no results in the database while
-appearing to have succeeded.
+appearing to have succeeded. Subproblems/stages skipped because the solver
+status was not 'ok' are reported by their solver termination condition
+(e.g. 'infeasible'), so the warning says WHY there are no results for them.
 """
 
 import warnings
@@ -139,10 +141,12 @@ def import_scenario_results_into_database(
         GridPath wrote export-complete files have no way to prove
         completeness
 
-    :return: dictionary keyed by (weather_iteration, hydro_iteration,
-        availability_iteration, subproblem, stage) tuples (integers, 0 where
-        the level does not apply) with the ``IMPORT_STATUS_*`` constant for
-        each
+    :return: two dictionaries, both keyed by (weather_iteration,
+        hydro_iteration, availability_iteration, subproblem, stage) tuples
+        (integers, 0 where the level does not apply): the
+        ``IMPORT_STATUS_*`` constant for each cell, and each cell's solver
+        termination condition (used to say WHY results were skipped -- e.g.
+        'infeasible' -- in the end-of-import warning)
     """
 
     scenario_directory_structure = ScenarioDirectoryStructure(
@@ -150,6 +154,7 @@ def import_scenario_results_into_database(
     ).SCENARIO_DIRECTORY_STRUCTURE
 
     import_statuses = {}
+    termination_conditions = {}
 
     for structure_cell in iterate_directory_structure(scenario_directory_structure):
         results_directory = os.path.join(
@@ -237,6 +242,7 @@ def import_scenario_results_into_database(
             structure_cell.subproblem,
             structure_cell.stage,
         )
+        termination_conditions[cell] = termination_condition
 
         # Only import other results if solver status was "ok"
         # When the problem is infeasible, the solver status is "warning"
@@ -306,7 +312,7 @@ def import_scenario_results_into_database(
                 Termination condition was '{termination_condition}'.
                 """)
 
-    return import_statuses
+    return import_statuses, termination_conditions
 
 
 def import_objective_function_value(
@@ -403,12 +409,18 @@ def import_subproblem_stage_results_into_database(
     return import_results
 
 
-def warn_on_import_gaps(import_statuses):
+def warn_on_import_gaps(import_statuses, termination_conditions=None):
     """
     :param import_statuses: dictionary of import statuses by
         (weather_iteration, hydro_iteration, availability_iteration,
         subproblem, stage), as returned by
         import_scenario_results_into_database()
+    :param termination_conditions: optional dictionary of solver termination
+        conditions by the same cell keys, as returned by
+        import_scenario_results_into_database(); when provided, cells
+        skipped because the solver status was not 'ok' are reported by
+        their termination condition (e.g. 'infeasible') rather than only by
+        the generic status
 
     Print a warning -- deliberately regardless of the --quiet setting -- if
     results were imported for none or only some of the scenario's
@@ -428,7 +440,17 @@ def warn_on_import_gaps(import_statuses):
     cells_by_status = {}
     for cell, status in import_statuses.items():
         if status != IMPORT_STATUS_IMPORTED:
-            cells_by_status.setdefault(status, []).append(cell)
+            status_key = status
+            if (
+                status == IMPORT_STATUS_SKIPPED_SOLVER_STATUS_NOT_OK
+                and termination_conditions is not None
+                and cell in termination_conditions
+            ):
+                status_key = (
+                    f"{status} (termination condition "
+                    f"'{termination_conditions[cell]}')"
+                )
+            cells_by_status.setdefault(status_key, []).append(cell)
 
     if n_imported == 0:
         header = (
@@ -593,7 +615,7 @@ def main(args=None):
         loaded_modules = load_modules(modules_to_use)
 
         # Import appropriate results into database
-        import_statuses = import_scenario_results_into_database(
+        import_statuses, termination_conditions = import_scenario_results_into_database(
             import_rule=import_rule,
             loaded_modules=loaded_modules,
             scenario_id=scenario_id,
@@ -618,7 +640,7 @@ def main(args=None):
             f"Imported results for {n_imported} of {len(import_statuses)} "
             f"subproblems/stages."
         )
-    warn_on_import_gaps(import_statuses)
+    warn_on_import_gaps(import_statuses, termination_conditions)
 
     return import_statuses
 

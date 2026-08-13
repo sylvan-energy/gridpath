@@ -159,12 +159,15 @@ class _ImportState:
 
     def __init__(self):
         self.statuses = {}
+        self.termination_conditions = {}
         self.error = None
         self.lock = threading.Lock()
 
-    def record_statuses(self, statuses):
+    def record_statuses(self, statuses, termination_conditions=None):
         with self.lock:
             self.statuses.update(statuses)
+            if termination_conditions is not None:
+                self.termination_conditions.update(termination_conditions)
 
     def record_error(self, error):
         with self.lock:
@@ -353,19 +356,21 @@ def import_draws_worker(
                         hydro_iteration_str=a_cell.hydro_iteration_str,
                         availability_iteration_str=a_cell.availability_iteration_str,
                     )
-                statuses = import_scenario_results_into_database(
-                    import_rule=import_rule,
-                    loaded_modules=loaded_modules,
-                    scenario_id=scenario_id,
-                    scenario_structure=batch_structure,
-                    db=conn,
-                    scenario_directory=scenario_directory,
-                    ignore_incomplete=False,
-                    quiet=quiet,
-                    # Draws are solved fresh in this run, so a missing
-                    # export-complete file is a real interrupted export,
-                    # never a legacy directory
-                    require_results_export_complete=True,
+                statuses, termination_conditions = (
+                    import_scenario_results_into_database(
+                        import_rule=import_rule,
+                        loaded_modules=loaded_modules,
+                        scenario_id=scenario_id,
+                        scenario_structure=batch_structure,
+                        db=conn,
+                        scenario_directory=scenario_directory,
+                        ignore_incomplete=False,
+                        quiet=quiet,
+                        # Draws are solved fresh in this run, so a missing
+                        # export-complete file is a real interrupted export,
+                        # never a legacy directory
+                        require_results_export_complete=True,
+                    )
                 )
                 conn.commit()
                 if cleanup_after_import or archive_format is not None:
@@ -377,7 +382,7 @@ def import_draws_worker(
                         quiet=quiet,
                         granularity=cleanup_granularity,
                     )
-                import_state.record_statuses(statuses)
+                import_state.record_statuses(statuses, termination_conditions)
             except Exception as e:
                 import_state.record_error(e)
                 break
@@ -619,6 +624,6 @@ def run_end_to_end_per_draw(args, parsed_args):
             f"{n_imported} of {len(import_state.statuses)} subproblems/stages "
             f"imported."
         )
-    warn_on_import_gaps(import_state.statuses)
+    warn_on_import_gaps(import_state.statuses, import_state.termination_conditions)
 
     return import_state.statuses
