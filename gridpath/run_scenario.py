@@ -33,6 +33,7 @@ import xml.etree.ElementTree as ET
 
 from pyomo.environ import (
     AbstractModel,
+    Constraint,
     Suffix,
     DataPortal,
     SolverFactory,
@@ -48,6 +49,7 @@ from pyomo.common.tempfiles import TempfileManager
 from pyomo.core import ComponentUID, SymbolMap
 from pyomo.opt import ReaderFactory, ResultsFormat, ProblemFormat
 import sys
+import time
 import warnings
 
 from gridpath.auxiliary.import_export_rules import import_export_rules
@@ -482,15 +484,25 @@ def run_optimization_for_subproblem_stage(
                 )
                 symbol_map = instance.solutions.symbol_map[smap_id]
 
-                symbol_cuid_pairs = tuple(
-                    (symbol, ComponentUID(var_weakref, cuid_buffer={}))
-                    for symbol, var_weakref in symbol_map.bySymbol.items()
+                print("Building symbol map for solution loading...")
+                symbol_map_start = time.time()
+                # Constraint symbols are only needed to load duals, so skip
+                # them if the instance has no dual suffix (--skip_duals)
+                symbol_cuid_pairs = build_symbol_cuid_pairs(
+                    symbol_map=symbol_map,
+                    include_constraints=hasattr(instance, "dual"),
                 )
 
                 with open(
                     os.path.join(prob_sol_files_directory, "symbol_map.pickle"), "wb"
                 ) as f_out:
                     dill.dump(symbol_cuid_pairs, f_out)
+                print(
+                    "...symbol map with {:,} symbols written in {:,.0f} "
+                    "seconds".format(
+                        len(symbol_cuid_pairs), time.time() - symbol_map_start
+                    )
+                )
 
                 print("Problem file written to {}".format(prob_sol_files_directory))
                 sys.exit()
@@ -2116,6 +2128,31 @@ def write_problem_file(instance, prob_sol_files_directory, problem_format="lp"):
     )
 
     return smap_id
+
+
+def build_symbol_cuid_pairs(symbol_map, include_constraints=True):
+    """
+    :param symbol_map: the Pyomo SymbolMap created by the problem-file write
+    :param include_constraints: whether to include constraint symbols;
+        these are only needed to load duals from the solution file, so
+        callers should pass False if the instance has no dual suffix
+    :return: tuple of (symbol, ComponentUID) pairs
+
+    Convert the problem file's symbol map to picklable (symbol,
+    ComponentUID) pairs that load_problem_info() can resolve against the
+    unpickled instance when loading a solution.
+
+    A single cuid_buffer must be shared across all ComponentUID calls: when
+    a buffer is passed, Pyomo populates it by iterating every index of the
+    component's parent, so a fresh buffer per call would make this loop
+    quadratic in component size.
+    """
+    cuid_buffer = {}
+    return tuple(
+        (symbol, ComponentUID(component, cuid_buffer=cuid_buffer))
+        for symbol, component in symbol_map.bySymbol.items()
+        if include_constraints or component.ctype is not Constraint
+    )
 
 
 def load_cplex_xml_solution(
