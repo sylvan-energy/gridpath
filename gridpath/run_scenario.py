@@ -44,7 +44,7 @@ from pyomo.environ import (
 
 # from pyomo.util.infeasible import log_infeasible_constraints
 from pyomo.common.timing import report_timing
-from pyomo.contrib.solver.common.base import LegacySolverWrapper
+from pyomo.contrib.solver.common.base import LegacySolverWrapper, PersistentSolverBase
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.core import ComponentUID, SymbolMap
 from pyomo.opt import ReaderFactory, ResultsFormat, ProblemFormat
@@ -480,7 +480,9 @@ def run_optimization_for_subproblem_stage(
                     dill.dump(dynamic_components, f_out)
 
                 smap_id = write_problem_file(
-                    instance=instance, prob_sol_files_directory=prob_sol_files_directory
+                    instance=instance,
+                    prob_sol_files_directory=prob_sol_files_directory,
+                    symbolic_solver_labels=parsed_arguments.symbolic,
                 )
                 symbol_map = instance.solutions.symbol_map[smap_id]
 
@@ -1429,6 +1431,72 @@ def view_loaded_data(loaded_modules, instance):
             m.view_loaded_data(instance)
 
 
+def warn_on_unsupported_solver_file_arguments(
+    solver_name, new_interface, in_memory_interface, parsed_arguments
+):
+    """
+    :param solver_name: the name of the solver we are using
+    :param new_interface: boolean, True if the solver uses one of Pyomo's
+        new (contrib.solver) interfaces
+    :param in_memory_interface: boolean, True if the solver exchanges the
+        model with the solver in memory instead of through files
+    :param parsed_arguments: the user-defined arguments (parsed)
+
+    Warn the user if they requested solver files that the chosen solver
+    cannot produce. The solver-file arguments (--write_solver_files_to_logs_dir,
+    --keepfiles, --symbolic) only mean something for solvers that
+    communicate with the model through files: Pyomo's persistent interfaces
+    (e.g. HiGHS, GridPath's default solver) pass the model to the solver in
+    memory and read the solution back the same way, so they never write a
+    problem or solution file, and Pyomo's new interfaces take a working
+    directory instead of *keepfiles*.
+    """
+    if in_memory_interface:
+        requested_arguments = [
+            argument
+            for argument, requested in (
+                (
+                    "--write_solver_files_to_logs_dir",
+                    parsed_arguments.write_solver_files_to_logs_dir,
+                ),
+                ("--keepfiles", parsed_arguments.keepfiles),
+                ("--symbolic", parsed_arguments.symbolic),
+            )
+            if requested
+        ]
+        if requested_arguments:
+            message = (
+                f"WARNING: {', '.join(requested_arguments)} requested, but "
+                f"the {solver_name} interface passes the model to the solver "
+                f"in memory (Pyomo's persistent solver interface), so no "
+                f"problem or solution files are created and these arguments "
+                f"have no effect. Use --create_lp_problem_file_only (with "
+                f"--symbolic for Pyomo component names) to write the problem "
+                f"file, or set the solver's own file-writing options in the "
+                f"scenario's solver_options.csv file."
+            )
+            if solver_name.lower() == "highs":
+                message += (
+                    " For HiGHS, those options are 'write_solution_to_file' "
+                    "and 'solution_file' for the solution, and "
+                    "'write_model_to_file' and 'write_model_file' for the "
+                    "model -- but note that HiGHS writes the model instead "
+                    "of solving it, and labels it with its own internal "
+                    "column and row numbers (the model reaches it without "
+                    "any names), so --create_lp_problem_file_only "
+                    "--symbolic is the way to get a readable problem file."
+                )
+            warnings.warn(message)
+    elif new_interface and parsed_arguments.keepfiles:
+        warnings.warn(
+            f"WARNING: --keepfiles has no effect with {solver_name}, which "
+            f"uses one of Pyomo's new solver interfaces: those take a "
+            f"working directory instead of keeping temporary files. Use "
+            f"--write_solver_files_to_logs_dir to write the solver files to "
+            f"the scenario's logs directory."
+        )
+
+
 # HiGHS's HiPO (parallel interior-point) algorithm needs the BLAS/AMD/METIS
 # libraries shipped by the separate highspy-extras package. When those are
 # unavailable (package missing, or its version not an exact match for
@@ -1554,6 +1622,23 @@ def solve(instance, parsed_arguments):
     else:
         optimizer = SolverFactory(solver_name)
 
+    # Figure out which kind of interface the solver uses, as that determines
+    # which of the solver-file arguments it can honor: the legacy interfaces
+    # (e.g. Cbc, CPLEX) write the problem and solution files that
+    # --keepfiles saves and --write_solver_files_to_logs_dir redirects,
+    # whereas Pyomo's new interfaces take a working directory instead of
+    # *keepfiles* and, when they are persistent (e.g. HiGHS), exchange the
+    # model with the solver in memory and never write any files at all
+    new_interface = isinstance(optimizer, LegacySolverWrapper)
+    in_memory_interface = new_interface and isinstance(optimizer, PersistentSolverBase)
+
+    warn_on_unsupported_solver_file_arguments(
+        solver_name=solver_name,
+        new_interface=new_interface,
+        in_memory_interface=in_memory_interface,
+        parsed_arguments=parsed_arguments,
+    )
+
     # Solve
     # Apply the solver options (if any)
     # Note: Pyomo moves the results to the instance object by default.
@@ -1613,9 +1698,25 @@ def solve(instance, parsed_arguments):
 
         solve_kwargs = {
             "tee": not parsed_arguments.mute_solver_output,
-            "keepfiles": parsed_arguments.keepfiles,
             "symbolic_solver_labels": parsed_arguments.symbolic,
         }
+
+        # On the legacy interfaces, keeping the solver files is a solve
+        # argument and they are written to the temporary file directory
+        # (which --write_solver_files_to_logs_dir points at the logs
+        # directory). On the new interfaces, *keepfiles* is deprecated in
+        # favor of a working directory: passing it would both warn and
+        # silently point the solver's files at the current working directory
+        # instead of the logs directory, so set the working directory
+        # ourselves instead
+        if new_interface:
+            if (
+                parsed_arguments.write_solver_files_to_logs_dir
+                and "working_dir" in optimizer.config
+            ):
+                optimizer.config.working_dir = TempfileManager.tempdir
+        else:
+            solve_kwargs["keepfiles"] = parsed_arguments.keepfiles
 
         # If we are logging, pass the log file and the terminal as separate
         # tee streams to solvers on Pyomo's new solver interface (e.g.
@@ -2170,12 +2271,20 @@ def _summarize_rule(
 #####
 
 
-def write_problem_file(instance, prob_sol_files_directory, problem_format="lp"):
+def write_problem_file(
+    instance,
+    prob_sol_files_directory,
+    problem_format="lp",
+    symbolic_solver_labels=False,
+):
     """
 
     :param instance:
     :param prob_sol_files_directory:
     :param problem_format:
+    :param symbolic_solver_labels: boolean, whether to name the problem
+        file's variables and constraints after the Pyomo components they
+        come from instead of using generic labels (e.g. x1, c_e_x1_)
     :return:
 
     """
@@ -2198,7 +2307,7 @@ def write_problem_file(instance, prob_sol_files_directory, problem_format="lp"):
             prob_sol_files_directory, "problem_file.{}".format(problem_format)
         ),
         format=formats[problem_format],
-        io_options=[],
+        io_options={"symbolic_solver_labels": symbolic_solver_labels},
     )
 
     return smap_id

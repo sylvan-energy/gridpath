@@ -232,7 +232,11 @@ def get_run_scenario_parser():
         "--create_lp_problem_file_only",
         default=False,
         action="store_true",
-        help="Create and save the problem file, but don't solve yet.",
+        help="Create and save the problem file, but don't solve yet. This "
+        "works with any solver, including the solvers that don't write "
+        "problem files themselves; use --symbolic to name the problem "
+        "file's variables and constraints after the Pyomo components they "
+        "come from.",
     )
     parser.add_argument(
         "--load_cplex_solution",
@@ -290,19 +294,33 @@ def get_run_scenario_parser():
         "--write_solver_files_to_logs_dir",
         default=False,
         action="store_true",
-        help="Write the temporary " "solver files to the logs " "directory.",
+        help="Write the solver files to the scenario's logs directory "
+        "instead of a temporary directory. This only applies to solvers "
+        "that exchange the problem and solution with GridPath through "
+        "files; solvers on Pyomo's persistent interfaces, including the "
+        "default HiGHS, pass the model to the solver in memory and don't "
+        "create any solver files (use --create_lp_problem_file_only to get "
+        "a problem file from those).",
     )
     parser.add_argument(
         "--keepfiles",
         default=False,
         action="store_true",
-        help="Save temporary solver files.",
+        help="Save the temporary solver files. This only applies to solvers "
+        "on Pyomo's legacy interfaces (e.g. Cbc, CPLEX), which delete their "
+        "files after the solve; solvers on Pyomo's new interfaces keep the "
+        "files they write and only need --write_solver_files_to_logs_dir to "
+        "say where.",
     )
     parser.add_argument(
         "--symbolic",
         default=False,
         action="store_true",
-        help="Use symbolic labels in solver files.",
+        help="Name the variables and constraints in the solver files and in "
+        "the problem file written by --create_lp_problem_file_only after the "
+        "Pyomo components they come from, instead of using generic labels "
+        "(e.g. x1). Ignored by solvers that don't write solver files (e.g. "
+        "HiGHS).",
     )
     parser.add_argument(
         "--report_timing",
