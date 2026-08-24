@@ -21,6 +21,10 @@ dependencies = [
     "networkx==3.6.1", # network package for DC OPF
     "PyUtilib==6.0.0", # used for solver temp file management
     "highspy==1.15.1", # HiGHS Python interface (default solver)
+    # HiGHS plugin shipping the BLAS/AMD/METIS libraries the HiPO parallel
+    # interior-point algorithm needs; must always move together with the
+    # highspy pin above.
+    "highspy-extras==1.15.1", # HiPO dependencies for highspy
     "dill==0.4.1", # pickling
     "duckdb==1.5.4", # data-handling
     "sphinx-rtd-theme", # documentation theme

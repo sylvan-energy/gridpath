@@ -1429,6 +1429,62 @@ def view_loaded_data(loaded_modules, instance):
             m.view_loaded_data(instance)
 
 
+# HiGHS's HiPO (parallel interior-point) algorithm needs the BLAS/AMD/METIS
+# libraries shipped by the separate highspy-extras package. When those are
+# unavailable (package missing, or its version not an exact match for
+# highspy's), HiGHS *silently* ignores the requested algorithm and solves with
+# its default one instead: the setOptionValue() error is swallowed by the
+# solver interface, so a run that was meant to use HiPO can spend hours in
+# simplex with nothing in GridPath's output to say so. Check explicitly.
+HIGHS_SOLVER_NAMES = ["highs", "appsi_highs"]
+HIPO_SOLVER_OPTION_VALUE = "hipo"
+HIGHS_EXTRAS_LOADED_STATUS_PREFIX = "Extras: Successfully loaded"
+
+
+def check_hipo_availability(solver_name, solver_options):
+    """
+    :param solver_name: the name of the solver GridPath was asked to use
+    :param solver_options: dict of the scenario's solver options
+    :return:
+
+    If the scenario's solver options request HiGHS's HiPO algorithm, confirm
+    that highspy actually loaded the highspy-extras library it needs, and
+    raise if it did not (HiGHS would otherwise fall back to its default
+    algorithm without telling us).
+    """
+    if solver_name is None or solver_name.lower() not in HIGHS_SOLVER_NAMES:
+        return
+    requested_algorithm = str(solver_options.get("solver", "")).strip().lower()
+    if requested_algorithm != HIPO_SOLVER_OPTION_VALUE:
+        return
+
+    try:
+        from highspy._core import getExtrasLoadStatus
+
+        extras_load_status = getExtrasLoadStatus()
+    except Exception as e:
+        raise UserWarning(
+            f"ERROR! The scenario's solver options request the HiGHS HiPO "
+            f"algorithm, but GridPath was unable to check whether the "
+            f"highspy-extras library HiPO requires is available "
+            f"({type(e).__name__}: {e}). HiGHS would silently solve with its "
+            f"default algorithm instead. Install a highspy-extras version "
+            f"that matches your highspy version, or remove the 'solver, "
+            f"{HIPO_SOLVER_OPTION_VALUE}' solver option."
+        )
+
+    if not extras_load_status.startswith(HIGHS_EXTRAS_LOADED_STATUS_PREFIX):
+        raise UserWarning(
+            f"ERROR! The scenario's solver options request the HiGHS HiPO "
+            f"algorithm, but the highspy-extras library HiPO requires was not "
+            f"loaded (highspy reports: '{extras_load_status}'). HiGHS would "
+            f"silently solve with its default algorithm instead. Install a "
+            f"highspy-extras version that matches your highspy version "
+            f"exactly -- the ABI check requires an exact match -- or remove "
+            f"the 'solver, {HIPO_SOLVER_OPTION_VALUE}' solver option."
+        )
+
+
 def solve(instance, parsed_arguments):
     """
     :param instance: the compiled problem instance
@@ -1482,6 +1538,10 @@ def solve(instance, parsed_arguments):
     else:
         if parsed_arguments.solver is None:
             solver_name = "highs"
+
+    # If HiPO was requested, fail loudly if it is not actually available
+    # (HiGHS would otherwise silently use its default algorithm)
+    check_hipo_availability(solver_name=solver_name, solver_options=solver_options)
 
     # Get solver
     # If a solver executable is specified, pass it to Pyomo

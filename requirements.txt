@@ -16,6 +16,7 @@ execnet==2.1.2
 GridPath==2026.8.0
 gurobipy==13.0.2
 highspy==1.15.1
+highspy-extras==1.15.1
 idna==3.18
 imagesize==2.0.0
 iniconfig==2.3.0

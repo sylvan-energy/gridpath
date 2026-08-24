@@ -1,0 +1,4 @@
+solver_name,solver_option_name,solver_option_value
+highs,solver,hipo
+highs,parallel,on
+highs,run_crossover,on
