@@ -863,6 +863,17 @@ def main(args=None):
         return expected_objective_values
 
 
+def cli(args=None):
+    """
+    Console-script entry point for gridpath_run_e2e.
+
+    This discards the objective function values that main() returns under
+    --testing, so that the console script exits with status 0 on success.
+    See gridpath.run_scenario.cli for additional explanation.
+    """
+    main(args=args)
+
+
 def update_db_for_run_end(
     db_path,
     scenario,

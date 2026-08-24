@@ -645,5 +645,16 @@ def main(args=None):
     return import_statuses
 
 
+def cli(args=None):
+    """
+    Console-script entry point for gridpath_import_results.
+
+    This discards the import statuses that main() returns for programmatic
+    callers, so that the console script exits with status 0 on success. See
+    gridpath.run_scenario.cli for additional explanation.
+    """
+    main(args=args)
+
+
 if __name__ == "__main__":
     main()

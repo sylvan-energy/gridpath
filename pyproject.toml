@@ -65,11 +65,11 @@ all = [
 
 [project.scripts]
 gridpath = "gridpath.cli:main"
-gridpath_run = "gridpath.run_scenario:main"
+gridpath_run = "gridpath.run_scenario:cli"
 gridpath_run_parallel = "gridpath.run_scenario_parallel:main"
-gridpath_run_e2e = "gridpath.run_end_to_end:main"
+gridpath_run_e2e = "gridpath.run_end_to_end:cli"
 gridpath_get_inputs = "gridpath.get_scenario_inputs:main"
-gridpath_import_results = "gridpath.import_scenario_results:main"
+gridpath_import_results = "gridpath.import_scenario_results:cli"
 gridpath_process_results = "gridpath.process_results:main"
 gridpath_validate = "gridpath.validate_inputs:main"
 gridpath_run_server = "ui.server.run_server:main"

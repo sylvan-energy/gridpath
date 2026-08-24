@@ -2049,6 +2049,20 @@ def main(args=None):
     return expected_objective_values
 
 
+def cli(args=None):
+    """
+    Console-script entry point for gridpath_run.
+
+    This discards the objective function values that main() returns for
+    programmatic callers (tests, run_end_to_end). The console-script shim
+    generated at install time wraps the entry point as sys.exit(main()),
+    and sys.exit() of a non-integer value prints that value to stderr and
+    exits with status 1, i.e., every successful solve would report failure
+    without this. Exceptions still propagate and exit nonzero.
+    """
+    main(args=args)
+
+
 def _export_rule(instance, quiet):
     """
     :return: boolean
