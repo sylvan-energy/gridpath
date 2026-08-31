@@ -17,8 +17,8 @@ abstract: >-
   GridPath is a versatile simulation and optimization platform for
   power-system planning and operations, capable of production-cost,
   capacity-expansion, asset-valuation, and reliability modeling.
-version: "v2026.8.0"
-date-released: 2026-08-03
+version: "v2026.9.0"
+date-released: 2026-08-31
 license: Apache-2.0
 doi: 10.5281/zenodo.5822994
 repository-code: "https://github.com/sylvan-energy/gridpath"

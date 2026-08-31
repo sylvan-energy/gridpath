@@ -1,0 +1,5 @@
+project	linked_timepoint	startup_type	linked_provide_power_startup	linked_startup_ramp_rate_mw_per_tmp
+Coal	-1	1.0	0.0	6.0
+Coal	0	1.0	0.0	6.0
+Gas_CCGT	-1	1.0	0.0	6.0
+Gas_CCGT	0	1.0	0.0	6.0

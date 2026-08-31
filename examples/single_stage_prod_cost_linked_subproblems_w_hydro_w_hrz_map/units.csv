@@ -1,0 +1,15 @@
+metric,unit
+power,MW
+energy,MWh
+fuel_energy,MMBtu
+cost,USD
+carbon_emissions,tonnes CO2
+time_for_cost,yr.
+heat_rate,MMBtu/MWh
+fuel_emission_intensity,tonnes CO2/MMBtu
+fuel_price,USD/MMBtu
+variable_om_cost,USD/MWh
+fixed_om_cost,USD/MW-yr.
+fixed_om_cost_energy,USD/MW-yr.
+capacity_cost,USD/MW-yr.
+energy_capacity_cost,USD/MWh-yr.

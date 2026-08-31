@@ -1,0 +1,5 @@
+subproblem,stage,timepoint,subproblem_to_link,linked_timepoint,number_of_hours_in_timepoint
+1,1,20200101,2,-1,1
+1,1,20200102,2,0,1
+2,1,20200201,3,-1,1
+2,1,20200202,3,0,1

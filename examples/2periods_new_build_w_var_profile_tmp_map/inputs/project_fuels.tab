@@ -1,0 +1,7 @@
+project	fuel	min_fraction_in_fuel_blend	max_fraction_in_fuel_blend
+Coal	Coal	.	.
+Gas_CCGT	Gas	.	.
+Gas_CCGT_new	Gas	.	.
+Gas_CT	Gas	.	.
+Gas_CT_new	Gas	.	.
+Nuclear	Uranium	.	.

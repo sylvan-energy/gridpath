@@ -33,6 +33,7 @@ import xml.etree.ElementTree as ET
 
 from pyomo.environ import (
     AbstractModel,
+    Constraint,
     Suffix,
     DataPortal,
     SolverFactory,
@@ -43,16 +44,18 @@ from pyomo.environ import (
 
 # from pyomo.util.infeasible import log_infeasible_constraints
 from pyomo.common.timing import report_timing
-from pyomo.contrib.solver.common.base import LegacySolverWrapper
+from pyomo.contrib.solver.common.base import LegacySolverWrapper, PersistentSolverBase
 from pyomo.common.tempfiles import TempfileManager
 from pyomo.core import ComponentUID, SymbolMap
 from pyomo.opt import ReaderFactory, ResultsFormat, ProblemFormat
 import sys
+import time
 import warnings
 
 from gridpath.auxiliary.import_export_rules import import_export_rules
 from gridpath.auxiliary.scenario_chars import (
     get_scenario_structure_from_disk,
+    iterate_directory_structure,
     ScenarioDirectoryStructure,
 )
 from gridpath.common_functions import (
@@ -64,11 +67,14 @@ from gridpath.common_functions import (
     create_logs_directory_if_not_exists,
     Logging,
     ensure_empty_string,
+    results_export_complete,
     string_from_time,
     append_to_timing_summary_file,
+    write_results_export_complete_file,
 )
 from gridpath.auxiliary.dynamic_components import DynamicComponents
 from gridpath.auxiliary.module_list import determine_modules, load_modules
+from gridpath.scenario_directory_cleanup import check_scenario_directory_not_cleaned
 
 
 def start_step(step, quiet):
@@ -293,17 +299,29 @@ def run_optimization_for_subproblem_stage(
     # simulations
     skip_solve = False
     if parsed_arguments.incomplete_only:
-        termination_condition_file = os.path.join(
-            scenario_directory,
-            weather_iteration_directory,
-            hydro_iteration_directory,
-            availability_iteration_directory,
-            subproblem_directory,
-            stage_directory,
-            "results",
-            "termination_condition.txt",
-        )
-        if os.path.isfile(termination_condition_file):
+        # A subproblem/stage only counts as complete if its results were
+        # COMPLETELY written (the export-complete file is the last file the
+        # export writes); the termination condition file alone is written
+        # before the results files, so its presence doesn't guarantee an
+        # uninterrupted export
+        if results_export_complete(
+            scenario_directory=scenario_directory,
+            weather_iteration=weather_iteration_directory,
+            hydro_iteration=hydro_iteration_directory,
+            availability_iteration=availability_iteration_directory,
+            subproblem=subproblem_directory,
+            stage=stage_directory,
+        ):
+            termination_condition_file = os.path.join(
+                scenario_directory,
+                weather_iteration_directory,
+                hydro_iteration_directory,
+                availability_iteration_directory,
+                subproblem_directory,
+                stage_directory,
+                "results",
+                "termination_condition.txt",
+            )
             with open(termination_condition_file, "r") as f:
                 termination_condition = f.read()
             if not parsed_arguments.quiet:
@@ -462,19 +480,31 @@ def run_optimization_for_subproblem_stage(
                     dill.dump(dynamic_components, f_out)
 
                 smap_id = write_problem_file(
-                    instance=instance, prob_sol_files_directory=prob_sol_files_directory
+                    instance=instance,
+                    prob_sol_files_directory=prob_sol_files_directory,
+                    symbolic_solver_labels=parsed_arguments.symbolic,
                 )
                 symbol_map = instance.solutions.symbol_map[smap_id]
 
-                symbol_cuid_pairs = tuple(
-                    (symbol, ComponentUID(var_weakref, cuid_buffer={}))
-                    for symbol, var_weakref in symbol_map.bySymbol.items()
+                print("Building symbol map for solution loading...")
+                symbol_map_start = time.time()
+                # Constraint symbols are only needed to load duals, so skip
+                # them if the instance has no dual suffix (--skip_duals)
+                symbol_cuid_pairs = build_symbol_cuid_pairs(
+                    symbol_map=symbol_map,
+                    include_constraints=hasattr(instance, "dual"),
                 )
 
                 with open(
                     os.path.join(prob_sol_files_directory, "symbol_map.pickle"), "wb"
                 ) as f_out:
                     dill.dump(symbol_cuid_pairs, f_out)
+                print(
+                    "...symbol map with {:,} symbols written in {:,.0f} "
+                    "seconds".format(
+                        len(symbol_cuid_pairs), time.time() - symbol_map_start
+                    )
+                )
 
                 print("Problem file written to {}".format(prob_sol_files_directory))
                 sys.exit()
@@ -514,6 +544,8 @@ def run_optimization_for_subproblem_stage(
         # Return the objective function value (in the testing suite, the value
         # gets checked against the expected value, but this is the only place
         # this is actually used)
+        # An infeasible or otherwise non-optimal solve was already flagged
+        # loudly by save_results
         if results.solver.termination_condition != "infeasible":
             if parsed_arguments.testing:
                 if len(results.solution) > 0:
@@ -524,8 +556,6 @@ def run_optimization_for_subproblem_stage(
                         f"termination condition: "
                         f"{results.solver.termination_condition})!"
                     )
-        else:
-            warnings.warn("WARNING: the problem was infeasible!")
 
 
 def run_optimization_for_subproblem(
@@ -586,18 +616,20 @@ def is_subproblem_stage_complete(
     :param subproblem_directory: subproblem directory
     :param stage_directory: stage directory
     :return: True if the subproblem stage is complete, False otherwise
+
+    Complete means the results were COMPLETELY written: the check is for
+    the export-complete file, which the export writes last (the
+    termination condition file alone is written before the results files,
+    so its presence doesn't guarantee an uninterrupted export).
     """
-    termination_condition_file = os.path.join(
-        scenario_directory,
-        weather_iteration_directory,
-        hydro_iteration_directory,
-        availability_iteration_directory,
-        subproblem_directory,
-        stage_directory,
-        "results",
-        "termination_condition.txt",
+    return results_export_complete(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration_directory,
+        hydro_iteration=hydro_iteration_directory,
+        availability_iteration=availability_iteration_directory,
+        subproblem=subproblem_directory,
+        stage=stage_directory,
     )
-    return os.path.isfile(termination_condition_file)
 
 
 def run_optimization_for_subproblem_pool(pool_datum):
@@ -977,6 +1009,75 @@ def create_pass_through_inputs(
             )
 
 
+def describe_solve_cell(
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    """
+    Human-readable name for a subproblem/stage from its directory strings
+    (empty strings for levels the scenario doesn't have). The iteration
+    directory names are self-describing (e.g. 'weather_iteration_1');
+    subproblem/stage directories are bare numbers, so they get a label.
+    """
+    parts = [
+        level
+        for level in (weather_iteration, hydro_iteration, availability_iteration)
+        if level
+    ]
+    if subproblem:
+        parts.append(f"subproblem {subproblem}")
+    if stage:
+        parts.append(f"stage {stage}")
+
+    return ", ".join(parts) if parts else "the scenario's single subproblem"
+
+
+def print_solve_status_warning(
+    solver_status,
+    termination_condition,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+):
+    """
+    Print a warning -- deliberately regardless of the --quiet setting -- if
+    the solve did not end in an optimal solution. Non-optimal subproblems
+    are otherwise easy to miss: when the solver status is not 'ok', no
+    results CSVs are exported or imported, so the only durable record is
+    the termination condition in the results_scenario table. (A Python
+    warning would not do here: the default warnings filter deduplicates by
+    message and location, so in a run with many draws only the first
+    non-optimal solve would be flagged -- once per process.)
+    """
+    cell = describe_solve_cell(
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
+    if str(solver_status) == "ok":
+        if str(termination_condition) != "optimal":
+            print(
+                f"WARNING: the solution for {cell} is NOT OPTIMAL (solver "
+                f"termination condition: {termination_condition}). Results "
+                f"will still be exported and imported."
+            )
+    else:
+        print(
+            f"WARNING: no valid solution for {cell} (solver status: "
+            f"{solver_status}, termination condition: "
+            f"{termination_condition}). No results will be exported or "
+            f"imported for it; its termination condition is still recorded "
+            f"in the results_scenario table on import."
+        )
+
+
 def save_results(
     scenario_directory,
     weather_iteration,
@@ -1035,6 +1136,17 @@ def save_results(
     ) as f:
         f.write(str(results.solver.termination_condition))
 
+    # Flag any non-optimal solve loudly (regardless of the --quiet setting)
+    print_solve_status_warning(
+        solver_status=results.solver.status,
+        termination_condition=results.solver.termination_condition,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
+
     if results.solver.status == SolverStatus.ok:
         if not parsed_arguments.quiet:
             print(
@@ -1042,8 +1154,6 @@ def save_results(
                     results.solver.termination_condition
                 )
             )
-        if results.solver.termination_condition != TerminationCondition.optimal:
-            warnings.warn("   ...solution is not optimal!")
         # Continue with results export
         # Parse arguments to see if we're following a special rule for whether to
         # export results
@@ -1141,15 +1251,10 @@ def save_results(
             quiet=parsed_arguments.quiet,
             timing_summary_file_path=timing_summary_file_path,
         )
-    # If solver status is not ok, don't export results and print some
-    # messages for the user
+    # If solver status is not ok, don't export results (the warning was
+    # already printed above)
     else:
         if results.solver.termination_condition == TerminationCondition.infeasible:
-            if not parsed_arguments.quiet:
-                print(
-                    "Problem was infeasible. Results not exported for "
-                    "subproblem {}, stage {}.".format(subproblem, stage)
-                )
             # If subproblems are linked, exit since we don't have linked inputs
             # for the next subproblem; otherwise, move on to the next
             # subproblem
@@ -1160,6 +1265,19 @@ def save_results(
                     "Subproblem {}, stage {} was infeasible. "
                     "Exiting linked subproblem run.".format(subproblem, stage)
                 )
+
+    # Mark the subproblem/stage's results as completely written; this must
+    # be the LAST file written, so that its presence (checked by
+    # --incomplete_only and by the results import) guarantees the export
+    # was not interrupted partway
+    write_results_export_complete_file(
+        scenario_directory=scenario_directory,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
 
 
 def create_abstract_model(
@@ -1313,6 +1431,128 @@ def view_loaded_data(loaded_modules, instance):
             m.view_loaded_data(instance)
 
 
+def warn_on_unsupported_solver_file_arguments(
+    solver_name, new_interface, in_memory_interface, parsed_arguments
+):
+    """
+    :param solver_name: the name of the solver we are using
+    :param new_interface: boolean, True if the solver uses one of Pyomo's
+        new (contrib.solver) interfaces
+    :param in_memory_interface: boolean, True if the solver exchanges the
+        model with the solver in memory instead of through files
+    :param parsed_arguments: the user-defined arguments (parsed)
+
+    Warn the user if they requested solver files that the chosen solver
+    cannot produce. The solver-file arguments (--write_solver_files_to_logs_dir,
+    --keepfiles, --symbolic) only mean something for solvers that
+    communicate with the model through files: Pyomo's persistent interfaces
+    (e.g. HiGHS, GridPath's default solver) pass the model to the solver in
+    memory and read the solution back the same way, so they never write a
+    problem or solution file, and Pyomo's new interfaces take a working
+    directory instead of *keepfiles*.
+    """
+    if in_memory_interface:
+        requested_arguments = [
+            argument
+            for argument, requested in (
+                (
+                    "--write_solver_files_to_logs_dir",
+                    parsed_arguments.write_solver_files_to_logs_dir,
+                ),
+                ("--keepfiles", parsed_arguments.keepfiles),
+                ("--symbolic", parsed_arguments.symbolic),
+            )
+            if requested
+        ]
+        if requested_arguments:
+            message = (
+                f"WARNING: {', '.join(requested_arguments)} requested, but "
+                f"the {solver_name} interface passes the model to the solver "
+                f"in memory (Pyomo's persistent solver interface), so no "
+                f"problem or solution files are created and these arguments "
+                f"have no effect. Use --create_lp_problem_file_only (with "
+                f"--symbolic for Pyomo component names) to write the problem "
+                f"file, or set the solver's own file-writing options in the "
+                f"scenario's solver_options.csv file."
+            )
+            if solver_name.lower() == "highs":
+                message += (
+                    " For HiGHS, those options are 'write_solution_to_file' "
+                    "and 'solution_file' for the solution, and "
+                    "'write_model_to_file' and 'write_model_file' for the "
+                    "model -- but note that HiGHS writes the model instead "
+                    "of solving it, and labels it with its own internal "
+                    "column and row numbers (the model reaches it without "
+                    "any names), so --create_lp_problem_file_only "
+                    "--symbolic is the way to get a readable problem file."
+                )
+            warnings.warn(message)
+    elif new_interface and parsed_arguments.keepfiles:
+        warnings.warn(
+            f"WARNING: --keepfiles has no effect with {solver_name}, which "
+            f"uses one of Pyomo's new solver interfaces: those take a "
+            f"working directory instead of keeping temporary files. Use "
+            f"--write_solver_files_to_logs_dir to write the solver files to "
+            f"the scenario's logs directory."
+        )
+
+
+# HiGHS's HiPO (parallel interior-point) algorithm needs the BLAS/AMD/METIS
+# libraries shipped by the separate highspy-extras package. When those are
+# unavailable (package missing, or its version not an exact match for
+# highspy's), HiGHS *silently* ignores the requested algorithm and solves with
+# its default one instead: the setOptionValue() error is swallowed by the
+# solver interface, so a run that was meant to use HiPO can spend hours in
+# simplex with nothing in GridPath's output to say so. Check explicitly.
+HIGHS_SOLVER_NAMES = ["highs", "appsi_highs"]
+HIPO_SOLVER_OPTION_VALUE = "hipo"
+HIGHS_EXTRAS_LOADED_STATUS_PREFIX = "Extras: Successfully loaded"
+
+
+def check_hipo_availability(solver_name, solver_options):
+    """
+    :param solver_name: the name of the solver GridPath was asked to use
+    :param solver_options: dict of the scenario's solver options
+    :return:
+
+    If the scenario's solver options request HiGHS's HiPO algorithm, confirm
+    that highspy actually loaded the highspy-extras library it needs, and
+    raise if it did not (HiGHS would otherwise fall back to its default
+    algorithm without telling us).
+    """
+    if solver_name is None or solver_name.lower() not in HIGHS_SOLVER_NAMES:
+        return
+    requested_algorithm = str(solver_options.get("solver", "")).strip().lower()
+    if requested_algorithm != HIPO_SOLVER_OPTION_VALUE:
+        return
+
+    try:
+        from highspy._core import getExtrasLoadStatus
+
+        extras_load_status = getExtrasLoadStatus()
+    except Exception as e:
+        raise UserWarning(
+            f"ERROR! The scenario's solver options request the HiGHS HiPO "
+            f"algorithm, but GridPath was unable to check whether the "
+            f"highspy-extras library HiPO requires is available "
+            f"({type(e).__name__}: {e}). HiGHS would silently solve with its "
+            f"default algorithm instead. Install a highspy-extras version "
+            f"that matches your highspy version, or remove the 'solver, "
+            f"{HIPO_SOLVER_OPTION_VALUE}' solver option."
+        )
+
+    if not extras_load_status.startswith(HIGHS_EXTRAS_LOADED_STATUS_PREFIX):
+        raise UserWarning(
+            f"ERROR! The scenario's solver options request the HiGHS HiPO "
+            f"algorithm, but the highspy-extras library HiPO requires was not "
+            f"loaded (highspy reports: '{extras_load_status}'). HiGHS would "
+            f"silently solve with its default algorithm instead. Install a "
+            f"highspy-extras version that matches your highspy version "
+            f"exactly -- the ABI check requires an exact match -- or remove "
+            f"the 'solver, {HIPO_SOLVER_OPTION_VALUE}' solver option."
+        )
+
+
 def solve(instance, parsed_arguments):
     """
     :param instance: the compiled problem instance
@@ -1367,6 +1607,10 @@ def solve(instance, parsed_arguments):
         if parsed_arguments.solver is None:
             solver_name = "highs"
 
+    # If HiPO was requested, fail loudly if it is not actually available
+    # (HiGHS would otherwise silently use its default algorithm)
+    check_hipo_availability(solver_name=solver_name, solver_options=solver_options)
+
     # Get solver
     # If a solver executable is specified, pass it to Pyomo
     if parsed_arguments.solver_executable is not None:
@@ -1377,6 +1621,23 @@ def solve(instance, parsed_arguments):
     # executable in the PATH
     else:
         optimizer = SolverFactory(solver_name)
+
+    # Figure out which kind of interface the solver uses, as that determines
+    # which of the solver-file arguments it can honor: the legacy interfaces
+    # (e.g. Cbc, CPLEX) write the problem and solution files that
+    # --keepfiles saves and --write_solver_files_to_logs_dir redirects,
+    # whereas Pyomo's new interfaces take a working directory instead of
+    # *keepfiles* and, when they are persistent (e.g. HiGHS), exchange the
+    # model with the solver in memory and never write any files at all
+    new_interface = isinstance(optimizer, LegacySolverWrapper)
+    in_memory_interface = new_interface and isinstance(optimizer, PersistentSolverBase)
+
+    warn_on_unsupported_solver_file_arguments(
+        solver_name=solver_name,
+        new_interface=new_interface,
+        in_memory_interface=in_memory_interface,
+        parsed_arguments=parsed_arguments,
+    )
 
     # Solve
     # Apply the solver options (if any)
@@ -1437,9 +1698,25 @@ def solve(instance, parsed_arguments):
 
         solve_kwargs = {
             "tee": not parsed_arguments.mute_solver_output,
-            "keepfiles": parsed_arguments.keepfiles,
             "symbolic_solver_labels": parsed_arguments.symbolic,
         }
+
+        # On the legacy interfaces, keeping the solver files is a solve
+        # argument and they are written to the temporary file directory
+        # (which --write_solver_files_to_logs_dir points at the logs
+        # directory). On the new interfaces, *keepfiles* is deprecated in
+        # favor of a working directory: passing it would both warn and
+        # silently point the solver's files at the current working directory
+        # instead of the logs directory, so set the working directory
+        # ourselves instead
+        if new_interface:
+            if (
+                parsed_arguments.write_solver_files_to_logs_dir
+                and "working_dir" in optimizer.config
+            ):
+                optimizer.config.working_dir = TempfileManager.tempdir
+        else:
+            solve_kwargs["keepfiles"] = parsed_arguments.keepfiles
 
         # If we are logging, pass the log file and the terminal as separate
         # tee streams to solvers on Pyomo's new solver interface (e.g.
@@ -1755,6 +2032,19 @@ def parse_arguments(args):
         ],
     )
 
+    parser.add_argument(
+        "--ignore_cleanup_marker",
+        default=False,
+        action="store_true",
+        help="Run even if the scenario directory was cleaned after its "
+        "results were imported (the cleanup marker file is present). The "
+        "scenario structure is inferred from whatever is on disk, so use "
+        "this to solve a subset re-materialized with gridpath_get_inputs -- "
+        "a single draw (its --single_draw option) or an arbitrary subset "
+        "(its --temporal_structure_csv_overwrite option); do NOT use it on "
+        "a tree you expect to be complete.",
+    )
+
     # Flip order of argument groups so "required arguments" show first
     # https://stackoverflow.com/questions/39047075/reorder-python-argparse-argument-groups
     # Note: hacky fix; preferred answer of creating an explicit optional group
@@ -1768,6 +2058,82 @@ def parse_arguments(args):
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
     return parsed_arguments
+
+
+def warn_on_non_optimal_solves(scenario_directory, scenario_structure):
+    """
+    :param scenario_directory: the scenario directory path
+    :param scenario_structure: the ScenarioStructure object describing which
+        subproblems/stages to check
+    :return: dictionary of {(weather_iteration, hydro_iteration,
+        availability_iteration, subproblem, stage): termination_condition}
+        for the cells that did not solve to optimality (empty if all did)
+
+    Scan the termination conditions the solves wrote to disk and print a
+    summary warning -- deliberately regardless of the --quiet setting -- if
+    any subproblem/stage did not solve to optimality. The per-cell warnings
+    printed at solve time interleave with other output and scroll away in
+    runs with many subproblems (especially with parallel solves), and no
+    results CSVs are exported/imported for cells whose solver status was
+    not 'ok', so without this summary a non-optimal subproblem is easy to
+    miss: the only durable record is the termination condition in the
+    results_scenario table. Reading the termination-condition files rather
+    than collecting in-memory state keeps this correct across the
+    sequential and parallel solve paths.
+    """
+    n_total = 0
+    non_optimal_cells = {}
+    for structure_cell in iterate_directory_structure(
+        ScenarioDirectoryStructure(scenario_structure).SCENARIO_DIRECTORY_STRUCTURE
+    ):
+        n_total += 1
+        termination_condition_file = os.path.join(
+            scenario_directory,
+            structure_cell.weather_iteration_str,
+            structure_cell.hydro_iteration_str,
+            structure_cell.availability_iteration_str,
+            structure_cell.subproblem_str,
+            structure_cell.stage_str,
+            "results",
+            "termination_condition.txt",
+        )
+        try:
+            with open(termination_condition_file, "r") as f:
+                termination_condition = f.read()
+        except FileNotFoundError:
+            termination_condition = "not solved (no termination condition file)"
+        if termination_condition != "optimal":
+            cell = (
+                structure_cell.weather_iteration,
+                structure_cell.hydro_iteration,
+                structure_cell.availability_iteration,
+                structure_cell.subproblem,
+                structure_cell.stage,
+            )
+            non_optimal_cells[cell] = termination_condition
+
+    if non_optimal_cells:
+        cells_by_condition = {}
+        for cell, condition in non_optimal_cells.items():
+            cells_by_condition.setdefault(condition, []).append(cell)
+
+        lines = [
+            f"WARNING: {len(non_optimal_cells)} of {n_total} "
+            f"subproblems/stages did not solve to optimality."
+        ]
+        max_examples = 10
+        for condition, cells in cells_by_condition.items():
+            examples = ", ".join(str(cell) for cell in cells[:max_examples])
+            if len(cells) > max_examples:
+                examples += f", ... and {len(cells) - max_examples} more"
+            lines.append(
+                f"  {condition}: {len(cells)} subproblem/stage(s) "
+                f"(weather_iteration, hydro_iteration, availability_iteration, "
+                f"subproblem, stage): {examples}"
+            )
+        print("\n".join(lines))
+
+    return non_optimal_cells
 
 
 def main(args=None):
@@ -1797,6 +2163,23 @@ def main(args=None):
             )
         )
 
+    # Refuse to run from a cleaned scenario directory: the scenario
+    # structure is inferred from the directory tree below, so a partially
+    # cleaned tree would yield a silently wrong structure (and the inputs
+    # are gone). --ignore_cleanup_marker overrides this, for deliberately
+    # solving a subset of the tree (e.g. a single re-materialized draw)
+    if not parsed_args.ignore_cleanup_marker:
+        check_scenario_directory_not_cleaned(
+            scenario_directory=scenario_directory,
+            attempted_action=(
+                "Running the scenario would infer a wrong scenario structure "
+                "from the cleaned directory tree. (If you deliberately want "
+                "to solve just what is on disk -- e.g. a single draw "
+                "re-materialized with gridpath_get_inputs -- pass "
+                "--ignore_cleanup_marker.)"
+            ),
+        )
+
     scenario_structure = get_scenario_structure_from_disk(
         scenario_directory=scenario_directory
     )
@@ -1815,8 +2198,30 @@ def main(args=None):
         parsed_arguments=parsed_args,
     )
 
+    # End-of-run summary of any subproblems that did not solve to
+    # optimality (the per-cell warnings printed at solve time scroll away
+    # in runs with many subproblems)
+    warn_on_non_optimal_solves(
+        scenario_directory=scenario_directory,
+        scenario_structure=scenario_structure,
+    )
+
     # Return the objective function values (used in testing)
     return expected_objective_values
+
+
+def cli(args=None):
+    """
+    Console-script entry point for gridpath_run.
+
+    This discards the objective function values that main() returns for
+    programmatic callers (tests, run_end_to_end). The console-script shim
+    generated at install time wraps the entry point as sys.exit(main()),
+    and sys.exit() of a non-integer value prints that value to stderr and
+    exits with status 1, i.e., every successful solve would report failure
+    without this. Exceptions still propagate and exit nonzero.
+    """
+    main(args=args)
 
 
 def _export_rule(instance, quiet):
@@ -1866,12 +2271,20 @@ def _summarize_rule(
 #####
 
 
-def write_problem_file(instance, prob_sol_files_directory, problem_format="lp"):
+def write_problem_file(
+    instance,
+    prob_sol_files_directory,
+    problem_format="lp",
+    symbolic_solver_labels=False,
+):
     """
 
     :param instance:
     :param prob_sol_files_directory:
     :param problem_format:
+    :param symbolic_solver_labels: boolean, whether to name the problem
+        file's variables and constraints after the Pyomo components they
+        come from instead of using generic labels (e.g. x1, c_e_x1_)
     :return:
 
     """
@@ -1894,10 +2307,35 @@ def write_problem_file(instance, prob_sol_files_directory, problem_format="lp"):
             prob_sol_files_directory, "problem_file.{}".format(problem_format)
         ),
         format=formats[problem_format],
-        io_options=[],
+        io_options={"symbolic_solver_labels": symbolic_solver_labels},
     )
 
     return smap_id
+
+
+def build_symbol_cuid_pairs(symbol_map, include_constraints=True):
+    """
+    :param symbol_map: the Pyomo SymbolMap created by the problem-file write
+    :param include_constraints: whether to include constraint symbols;
+        these are only needed to load duals from the solution file, so
+        callers should pass False if the instance has no dual suffix
+    :return: tuple of (symbol, ComponentUID) pairs
+
+    Convert the problem file's symbol map to picklable (symbol,
+    ComponentUID) pairs that load_problem_info() can resolve against the
+    unpickled instance when loading a solution.
+
+    A single cuid_buffer must be shared across all ComponentUID calls: when
+    a buffer is passed, Pyomo populates it by iterating every index of the
+    component's parent, so a fresh buffer per call would make this loop
+    quadratic in component size.
+    """
+    cuid_buffer = {}
+    return tuple(
+        (symbol, ComponentUID(component, cuid_buffer=cuid_buffer))
+        for symbol, component in symbol_map.bySymbol.items()
+        if include_constraints or component.ctype is not Constraint
+    )
 
 
 def load_cplex_xml_solution(

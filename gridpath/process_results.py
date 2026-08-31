@@ -88,49 +88,52 @@ def main(args=None):
     scenario_name_arg = parsed_arguments.scenario
     scenario_location = parsed_arguments.scenario_location
 
+    # Close the connection on any raise: a connection left open by an error
+    # keeps the database file locked on Windows
     conn = connect_to_database(db_path=db_path)
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    if not parsed_arguments.quiet:
-        print(
-            "Processing results, started on {}... (connected to database {})".format(
-                datetime.datetime.now(), db_path
+        if not parsed_arguments.quiet:
+            print(
+                "Processing results, started on {}... (connected to database {})".format(
+                    datetime.datetime.now(), db_path
+                )
             )
+
+        scenario_id, scenario_name = get_scenario_id_and_name(
+            scenario_id_arg=scenario_id_arg,
+            scenario_name_arg=scenario_name_arg,
+            c=c,
+            script="process_results",
         )
 
-    scenario_id, scenario_name = get_scenario_id_and_name(
-        scenario_id_arg=scenario_id_arg,
-        scenario_name_arg=scenario_name_arg,
-        c=c,
-        script="process_results",
-    )
+        # Determine scenario directory
+        scenario_directory = determine_scenario_directory(
+            scenario_location=scenario_location, scenario_name=scenario_name
+        )
 
-    # Determine scenario directory
-    scenario_directory = determine_scenario_directory(
-        scenario_location=scenario_location, scenario_name=scenario_name
-    )
+        # Go through modules
+        modules_to_use = determine_modules(scenario_directory=scenario_directory)
+        loaded_modules = load_modules(modules_to_use)
 
-    # Go through modules
-    modules_to_use = determine_modules(scenario_directory=scenario_directory)
-    loaded_modules = load_modules(modules_to_use)
+        # Subscenarios
+        subscenarios = SubScenarios(conn=conn, scenario_id=scenario_id)
 
-    # Subscenarios
-    subscenarios = SubScenarios(conn=conn, scenario_id=scenario_id)
+        process_results(
+            loaded_modules=loaded_modules,
+            db=conn,
+            cursor=c,
+            scenario_id=scenario_id,
+            subscenarios=subscenarios,
+            quiet=parsed_arguments.quiet,
+        )
 
-    process_results(
-        loaded_modules=loaded_modules,
-        db=conn,
-        cursor=c,
-        scenario_id=scenario_id,
-        subscenarios=subscenarios,
-        quiet=parsed_arguments.quiet,
-    )
+        update_db_last_modified(conn=conn, modification_type="results_process")
 
-    update_db_last_modified(conn=conn, modification_type="results_process")
-
-    # Close the database connection
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
