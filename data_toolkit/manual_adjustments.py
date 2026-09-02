@@ -21,7 +21,7 @@ import sys
 import pandas as pd
 
 from db.common_functions import connect_to_database
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 from data_toolkit.project.project_data_filters_common import (
     get_eia860_sql_filter_string,
     DISAGG_PROJECT_NAME_STR,
