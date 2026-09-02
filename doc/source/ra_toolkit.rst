@@ -4,13 +4,6 @@ GridPath RA Toolkit
 
 .. automodule:: ra_toolkit
 
-Obtaining Raw Data
-##################
-
-.. automodule:: ra_toolkit.raw_data
-.. automodule:: ra_toolkit.raw_data.get_ra_toolkit_data
-
-
 Using the GridPath RA Toolkit
 #############################
 

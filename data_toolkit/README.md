@@ -46,19 +46,6 @@ This will create the following files in the user-specified raw data directory:
 * pudl_eiaaeo_fuel_prices.csv
 * pudl_ra_toolkit_var_profiles.csv
 
-### Get other GridPath RA Toolkit data not yet on PUDL
-
-```bash
-gridpath_get_ra_toolkit_data_raw
-
-```
-Also get the load data and hydro data from the GridPath RA Toolkit dataset. 
-Note that this is the same dataset but in a changed format from what is on the 
-GridLab RA Toolkit website and is currently stored on Blue Marble's Google Drive.
-* ra_toolkit_load.csv
-* ra_toolkit_hydro.csv
-
-
 ### Process the data with the GridPath Data Toolkit
 
 ```bash

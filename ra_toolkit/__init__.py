@@ -15,5 +15,6 @@ Toolkit's counterpart).
 Not to be confused with the `GridPath RA Toolkit
 <https://gridlab.org/gridpathratoolkit/>`__ *datasets*, developed to
 support the 2026 Western US resource adequacy study — those are input
-data this package (and PUDL) can download, not this software package.
+data (one possible source for this package's raw tables, provided by the
+user via the ``load_raw_data`` manifest), not this software package.
 """
