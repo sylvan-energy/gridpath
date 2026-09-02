@@ -25,7 +25,7 @@ running this module, you will need to create weather draws with the
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_monte_carlo_weather_derate_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_monte_carlo_weather_derate_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -56,7 +56,7 @@ import os.path
 import sys
 
 from db.common_functions import connect_to_database
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 from ra_toolkit.project.stochastic.monte_carlo_gen_common import (
     get_monte_carlo_timeseries_project_pool_and_make_profile_csvs,
 )

@@ -1,4 +1,3 @@
-# Copyright 2016-2025 Blue Marble Analytics LLC.
 # Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +13,13 @@
 # limitations under the License.
 
 """
-Run GridPath Data Toolkit steps per a settings CSV (the
-``gridpath_run_data_toolkit`` command). The steps are resolved by name
-from the 'gridpath.data_toolkit_steps' entry-point group (declared in
+Run GridPath RA Toolkit steps per a settings CSV (the
+``gridpath_run_ra_toolkit`` command). The steps are resolved by name from
+the 'gridpath.ra_toolkit_steps' entry-point group (declared in
 pyproject.toml), not from a hardcoded import list — see
-:mod:`gridpath.step_runner` for the generic engine. The RA Toolkit's steps
-live in their own entry-point group and are run with the RA Toolkit's own
-``gridpath_run_ra_toolkit`` command.
+:mod:`gridpath.step_runner` for the generic engine. The Data Toolkit's
+steps live in their own entry-point group and are run with the Data
+Toolkit's own ``gridpath_run_data_toolkit`` command.
 """
 
 import sys
@@ -28,14 +27,12 @@ import sys
 from gridpath import step_runner
 from gridpath.step_runner import get_setting  # noqa: F401  (re-exported)
 
-# TODO: add checks if files exists, tell user to delete before running
-
-STEP_ENTRY_POINT_GROUP = "gridpath.data_toolkit_steps"
+STEP_ENTRY_POINT_GROUP = "gridpath.ra_toolkit_steps"
 
 
 def get_registered_steps():
     """
-    Return {step_name: EntryPoint} for every registered Data Toolkit step.
+    Return {step_name: EntryPoint} for every registered RA Toolkit step.
     """
     return step_runner.get_registered_steps(
         entry_point_group=STEP_ENTRY_POINT_GROUP,

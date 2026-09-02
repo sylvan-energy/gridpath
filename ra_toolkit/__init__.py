@@ -5,10 +5,12 @@ weather draws, load profiles, variable generation profiles,
 weather-dependent generator derates, hydro conditions, and thermal-outage
 availability iterations — each in synchronous (historical weather years
 used directly) or Monte Carlo (draws assembled from weather bins) flavors
-where applicable. It works off the raw data database built with the
-GridPath Data Toolkit (see :mod:`data_toolkit`), and its steps run from
-the same ``gridpath_run_data_toolkit`` settings CSV as the Data Toolkit
-steps.
+where applicable. It works off its own raw data database (created from
+``ra_toolkit/raw_data_db_schema.sql`` and loaded with the RA Toolkit's
+``load_raw_data`` step), separate from the GridPath Data Toolkit's raw
+database, and its steps run from their own settings CSV via the
+``gridpath_run_ra_toolkit`` command (see :mod:`data_toolkit` for the Data
+Toolkit's counterpart).
 
 Not to be confused with the `GridPath RA Toolkit
 <https://gridlab.org/gridpathratoolkit/>`__ *datasets*, developed to

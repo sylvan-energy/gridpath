@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,14 +19,17 @@ import unittest
 
 from data_toolkit import run_data_toolkit
 
-RA_SETTINGS_CSV = "../tests/test_data/data_toolkit_ra_settings.csv"
-RA_SETTINGS_STEPS_CSV = "../tests/test_data/data_toolkit_ra_settings_steps.csv"
 OPEN_DATA_SETTINGS_CSV = "../tests/test_data/data_toolkit_open_data_settings.csv"
 
 
 class TestDataToolkit(unittest.TestCase):
     """
-    Check if the database is created with no errors.
+    Run the Data Toolkit steps end to end against the open-data test
+    fixture (builds the Data Toolkit raw database from
+    data_toolkit/raw_data_db_schema.sql, loads it, and runs the steps).
+    The RA Toolkit steps that used to share this settings CSV run against
+    their own raw database in tests/test_run_ra_toolkit.py
+    (ra_toolkit_open_data_settings.csv).
     """
 
     @classmethod
@@ -41,41 +45,28 @@ class TestDataToolkit(unittest.TestCase):
             if os.path.exists(p):
                 os.remove(p)
 
-    def test_data_toolkit_ra_steps(self):
-        os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
-        for step in [
-            "create_database",
-            "load_raw_data",
-            "create_sync_load_input_csvs",
-            "create_sync_var_gen_input_csvs",
-            "create_monte_carlo_weather_draws",
-            "create_monte_carlo_weather_draw_profiles",
-            "create_monte_carlo_load_input_csvs",
-            "create_monte_carlo_var_gen_input_csvs",
-            "create_hydro_iteration_input_csvs",
-            "create_availability_iteration_input_csvs",
-            "create_sync_gen_weather_derate_input_csvs",
-            "create_monte_carlo_gen_weather_derate_input_csvs",
-            "create_temporal_scenarios",
-        ]:
-            # print(step)
-            run_data_toolkit.main(
-                [
-                    "--settings_csv",
-                    RA_SETTINGS_STEPS_CSV,
-                    "--quiet",
-                    "--single_step_only",
-                    step,
-                ]
-            )
-
-    def test_data_toolkit_ra(self):
-        os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
-        run_data_toolkit.main(["--settings_csv", RA_SETTINGS_CSV, "--quiet"])
-
     def test_data_toolkit_open_data(self):
         os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
         run_data_toolkit.main(["--settings_csv", OPEN_DATA_SETTINGS_CSV, "--quiet"])
+
+    def test_ra_toolkit_step_in_settings_csv_fails_loudly(self):
+        # A settings CSV naming a step from the other toolkit's registry
+        # must fail upfront (before any step has run and had side
+        # effects), pointing at the right command — not run the steps it
+        # does know
+        os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
+        with self.assertRaisesRegex(
+            ValueError,
+            "Unknown step 'create_temporal_scenarios' in the "
+            "'gridpath.data_toolkit_steps' entry-point group",
+        ):
+            run_data_toolkit.main(
+                [
+                    "--settings_csv",
+                    "../tests/test_data/ra_toolkit_open_data_settings.csv",
+                    "--quiet",
+                ]
+            )
 
     @classmethod
     def tearDownClass(cls):
@@ -91,24 +82,7 @@ class TestDataToolkit(unittest.TestCase):
 
 
 def get_temp_db_paths():
-    ra_settings_df = pd.read_csv(RA_SETTINGS_CSV)
-    ra_settings_df.set_index(["script", "setting"])
-    settings_db_path = os.path.join(
-        os.getcwd(),
-        run_data_toolkit.get_setting(ra_settings_df, "create_database", "database"),
-    )
-
-    ra_settings_steps_df = pd.read_csv(RA_SETTINGS_STEPS_CSV)
-    ra_settings_steps_df.set_index(["script", "setting"])
-    settings_steps_db_path = os.path.join(
-        os.getcwd(),
-        run_data_toolkit.get_setting(
-            ra_settings_steps_df, "create_database", "database"
-        ),
-    )
-
     open_data_settings_df = pd.read_csv(OPEN_DATA_SETTINGS_CSV)
-    open_data_settings_df.set_index(["script", "setting"])
     open_data_settings_db_path = os.path.join(
         os.getcwd(),
         run_data_toolkit.get_setting(
@@ -116,13 +90,7 @@ def get_temp_db_paths():
         ),
     )
 
-    temp_db_paths = [
-        settings_db_path,
-        settings_steps_db_path,
-        open_data_settings_db_path,
-    ]
-
-    return temp_db_paths
+    return [open_data_settings_db_path]
 
 
 if __name__ == "__main__":

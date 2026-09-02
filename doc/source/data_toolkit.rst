@@ -35,8 +35,8 @@ temporal scenarios from weather draws, synchronous or Monte Carlo load,
 variable generation, and generator weather-derate profiles, hydro
 conditions, and thermal-outage availability iterations — are part of the
 GridPath RA Toolkit package and are documented on the :doc:`ra_toolkit`
-page. They run from the same ``gridpath_run_data_toolkit`` command and
-settings CSV as the steps below.
+page. They run from the RA Toolkit's own ``gridpath_run_ra_toolkit``
+command and settings CSV, against the RA Toolkit's own raw data database.
 
 ******************************
 Building the Raw Data Database

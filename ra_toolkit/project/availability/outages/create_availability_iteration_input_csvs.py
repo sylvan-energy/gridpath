@@ -109,7 +109,7 @@ is set. Caution advised when seeding.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_availability_iteration_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_availability_iteration_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -156,7 +156,7 @@ import pandas as pd
 import sys
 
 from db.common_functions import connect_to_database
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 
 
 def parse_arguments(args):
@@ -169,7 +169,7 @@ def parse_arguments(args):
     """
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
-    parser.add_argument("-db", "--database", default="../../io.db")
+    parser.add_argument("-db", "--database")
     parser.add_argument(
         "-o_csv",
         "--outage_params_input_csv",

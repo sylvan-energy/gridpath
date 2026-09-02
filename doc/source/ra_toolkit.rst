@@ -14,14 +14,20 @@ Obtaining Raw Data
 Using the GridPath RA Toolkit
 #############################
 
-RA Toolkit steps run from the same ``gridpath_run_data_toolkit`` command —
-and, if desired, the same settings CSV — as the GridPath Data Toolkit
-steps (see :doc:`data_toolkit`). They work off the raw data database built
-with the Data Toolkit: create it and load the RA-related raw data (system
-load, unit-level variable generation and availability profiles, hydro
-conditions, unit availability parameters, and the user-defined weather
-bins and unit mappings) with the Data Toolkit's ``create_database`` and
-``load_raw_data`` steps before running the steps below.
+RA Toolkit steps run from their own ``gridpath_run_ra_toolkit`` command
+and settings CSV — the RA Toolkit counterpart to the GridPath Data
+Toolkit's ``gridpath_run_data_toolkit`` (see :doc:`data_toolkit`); steps
+are resolved from the ``gridpath.ra_toolkit_steps`` entry-point group. The
+RA Toolkit works off its own raw data database, separate from the Data
+Toolkit's: create it with the ``create_database`` step pointing
+``db_schema`` at ``ra_toolkit/raw_data_db_schema.sql``, then load the
+RA-related raw data (system load, unit-level variable generation and
+availability profiles, hydro conditions, unit availability parameters, and
+the user-defined weather bins and unit mappings) with the RA Toolkit's
+``load_raw_data`` step before running the steps below.
+
+.. automodule:: ra_toolkit.run_ra_toolkit
+.. automodule:: ra_toolkit.load_raw_data
 
 Note that the RA Toolkit steps take their project names from user-provided
 mapping tables (e.g. ``raw_data_var_project_units``,

@@ -16,22 +16,18 @@ import os
 import unittest
 
 from db.create_database import main as create_database_main
-from ra_toolkit.project.availability.weather_derates.create_sync_gen_weather_derate_input_csvs import (
-    main as create_sync_gen_weather_derate_input_csvs_main,
-)
+from ra_toolkit.load_raw_data import main as load_raw_data_main
 
 
-class TestCreateSyncGenWeatherDerateInputCsvs(unittest.TestCase):
+class TestLoadRawData(unittest.TestCase):
     """
-    Test create_sync_gen_weather_derate_input_csvs script
+    Test load_raw_data script
     """
 
     @classmethod
     def setUpClass(cls):
         """Set up test environment"""
-        os.chdir(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "db")
-        )
+        os.chdir(os.path.join(os.path.dirname(__file__), "..", "..", "db"))
         cls.db_path = "ra_toolkit_test_steps_temp.db"
 
         # Clean up temp database if it exists
@@ -48,27 +44,16 @@ class TestCreateSyncGenWeatherDerateInputCsvs(unittest.TestCase):
         ]
         create_database_main(create_db_args)
 
-    def test_create_sync_gen_weather_derate_input_csvs(self):
-        """Test create_sync_gen_weather_derate_input_csvs with hardcoded arguments"""
+    def test_load_raw_data(self):
+        """Test load_raw_data with hardcoded arguments"""
         args = [
             "--database",
             self.db_path,
-            "--availability_profile_input_csv",
-            "./csvs_test_examples/raw_data_ra_toolkit/project/availability/user_defined_weather_derates.csv",
-            "--units_input_csv",
-            "./csvs_test_examples/raw_data_ra_toolkit/project/availability/user_defined_unit_availability_params.csv",
-            "--output_directory",
-            "./csvs_test_examples/project/availability/exogenous_weather",
-            "--exogenous_availability_weather_scenario_id",
-            "6",
-            "--exogenous_availability_weather_scenario_name",
-            "ra_toolkit_module_tests_sync",
-            "--n_parallel_projects",
-            "4",
+            "--csv_location",
+            "./csvs_test_examples/raw_data_ra_toolkit/",
             "--quiet",
-            "--overwrite",
         ]
-        create_sync_gen_weather_derate_input_csvs_main(args)
+        load_raw_data_main(args)
 
     @classmethod
     def tearDownClass(cls):

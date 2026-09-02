@@ -42,7 +42,7 @@ class TestCreateTemporalScenarios(unittest.TestCase):
             "--database",
             cls.db_path,
             "--db_schema",
-            "../data_toolkit/raw_data_db_schema.sql",
+            "../ra_toolkit/raw_data_db_schema.sql",
             "--quiet",
         ]
         create_database_main(create_db_args)

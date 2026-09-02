@@ -58,7 +58,7 @@ writing; without it, output is appended to existing files.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_monte_carlo_var_gen_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_monte_carlo_var_gen_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -92,7 +92,7 @@ from gridpath.common_functions import get_version_parser
 import os.path
 import sys
 
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 from ra_toolkit.project.stochastic.monte_carlo_gen_common import (
     get_monte_carlo_timeseries_project_pool_and_make_profile_csvs,
 )

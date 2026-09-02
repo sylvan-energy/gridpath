@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,39 +14,39 @@
 # limitations under the License.
 
 """
-Load data into the GridPath raw data database. See the documentation of each
-GridPath Data Toolkit module for data prerequisites. Use the
-``files_to_import.csv`` file to tell GridPath which CSV files should be loaded
-into which database table.
+Load data into the GridPath RA Toolkit raw data database (a separate
+database from the GridPath Data Toolkit's raw database, created from the
+``ra_toolkit/raw_data_db_schema.sql`` schema). See the documentation of
+each GridPath RA Toolkit module for data prerequisites. Use the
+``files_to_import.csv`` file to tell GridPath which CSV files should be
+loaded into which database table.
 
 ===================
 What this step does
 ===================
 
-This module is a generic bulk loader for raw CSV data into the GridPath
-database. It reads a  file named ``files_to_import.csv`` located in the
-directory given by ``--csv_location``. Each row of that file describes one
-CSV file: an import flag (whether the file should be loaded), the CSV
+This module is a generic bulk loader for raw CSV data into the RA Toolkit
+raw data database. It reads a file named ``files_to_import.csv`` located in
+the directory given by ``--csv_location``. Each row of that file describes
+one CSV file: an import flag (whether the file should be loaded), the CSV
 filename (relative to ``--csv_location``), and the database table the file
 should be loaded into.
 
-The loader iterates over the CSV file rows and, for each row whose import flag
-is True, reads the corresponding CSV from ``--csv_location`` and appends its
-contents to the named database table (existing rows are preserved; data is
-inserted with ``if_exists="append"``). Rows whose import flag is False are
-skipped.
+The loader iterates over the CSV file rows and, for each row whose import
+flag is True, reads the corresponding CSV from ``--csv_location`` and
+appends its contents to the named database table (existing rows are
+preserved; data is inserted with ``if_exists="append"``). Rows whose import
+flag is False are skipped.
 
-This generic loader is used throughout the Data Toolkit workflow to populate
-``raw_data`` tables (e.g., the EIA-860 generators and EIA-930 hourly
-interchange data and the user-defined mapping tables) that later Data
-Toolkit steps depend on. The RA Toolkit's raw database has its own
-counterpart of this step (:mod:`ra_toolkit.load_raw_data`).
+This generic loader is used to populate the ``raw_data`` tables (e.g., the
+historical load, VER, and availability profiles and their unit mappings,
+hydro operating characteristics) that the RA Toolkit steps depend on.
 
 =====
 Usage
 =====
 
->>> python -m data_toolkit.load_raw_data --database PATH/TO/DATABASE --csv_location PATH/TO/CSV/DIRECTORY
+>>> python -m ra_toolkit.load_raw_data --database PATH/TO/DATABASE --csv_location PATH/TO/CSV/DIRECTORY
 
 =========
 Settings

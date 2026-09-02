@@ -120,7 +120,7 @@ caution.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_monte_carlo_weather_draw_profiles --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_monte_carlo_weather_draw_profiles --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -148,7 +148,7 @@ from gridpath.common_functions import get_version_parser
 
 import numpy as np
 
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 from db.common_functions import spin_on_database_lock_generic, connect_to_database
 
 TIMESERIES_TYPE = {

@@ -22,7 +22,7 @@ Create GridPath sync load profile inputs.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_sync_load_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_sync_load_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -54,7 +54,7 @@ from ra_toolkit.load.common_methods import (
     create_load_components_scenario_csv,
 )
 from db.common_functions import connect_to_database
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 
 LOAD_SCENARIO_ID_DEFAULT = 1  # it's 6 in the test examples
 LOAD_SCENARIO_NAME_DEFAULT = "ra_toolkit"

@@ -89,7 +89,7 @@ lower in warming months and higher in cooling months).
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_monte_carlo_weather_draws --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_monte_carlo_weather_draws --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -122,7 +122,7 @@ import numpy as np
 import pandas as pd
 
 from db.common_functions import spin_on_database_lock_generic, connect_to_database
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 
 
 def parse_arguments(args):

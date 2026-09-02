@@ -89,7 +89,7 @@ is rebuilt for the full ensemble rather than truncated mid-write.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_monte_carlo_load_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_monte_carlo_load_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites

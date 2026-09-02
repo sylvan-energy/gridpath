@@ -41,7 +41,7 @@ from gridpath.common_functions import get_version_parser
 import os.path
 import sys
 
-from data_toolkit.raw_data.common_functions import download_file_from_gdrive
+from ra_toolkit.raw_data.common_functions import download_file_from_gdrive
 
 RAW_DATA_DIRECTORY_DEFAULT = "./raw_data"
 

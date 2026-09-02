@@ -22,7 +22,7 @@ Create GridPath sync variable generation profile inputs.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_sync_var_gen_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_sync_var_gen_input_csvs --settings_csv PATH/TO/SETTINGS/CSV
 
 ===================
 Input prerequisites
@@ -50,7 +50,7 @@ import os.path
 import sys
 
 from db.common_functions import connect_to_database
-from data_toolkit.load_raw_data import read_and_import_csv
+from db.common_functions import read_and_import_csv
 from ra_toolkit.project.stochastic.sync_gen_common import (
     get_sync_project_pool_and_make_profile_csvs,
 )

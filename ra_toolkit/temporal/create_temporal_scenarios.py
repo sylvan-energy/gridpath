@@ -25,7 +25,7 @@ specified in a settings file you can point to with the ``--csv_path`` argument.
 Usage
 =====
 
->>> gridpath_run_data_toolkit --single_step create_temporal_scenarios --settings_csv PATH/TO/SETTINGS/CSV
+>>> gridpath_run_ra_toolkit --single_step create_temporal_scenarios --settings_csv PATH/TO/SETTINGS/CSV
 
 =========
 Settings
