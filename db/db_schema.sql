@@ -2202,6 +2202,7 @@ CREATE TABLE inputs_project_operational_chars
     losses_factor_in_energy_target                        FLOAT,
     losses_factor_curtailment                             FLOAT,
     upward_reserves_to_soc_depletion                      FLOAT,
+    reserves_setpoint_duration_hours                      FLOAT,   -- hours the new setpoint must be sustainable if reserves are called; default: timepoint duration
     PRIMARY KEY (project_operational_chars_scenario_id, project),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),

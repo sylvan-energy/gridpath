@@ -201,6 +201,17 @@ def add_model_components(
     | If not specified, the state of charge is endogenously determined by the |
     | optimization subject to the rest of the constraints.                    |
     +-------------------------------------------------------------------------+
+    | | :code:`stor_reserves_setpoint_duration_hours`                         |
+    | | *Defined over*: :code:`STOR`                                          |
+    | | *Within*: :code:`NonNegativeReals`                                    |
+    |                                                                         |
+    | The number of hours for which the project must be able to sustain the   |
+    | new setpoint if its reserves are called, i.e., the duration over which  |
+    | the upward (downward) reserves must be backed by energy (room) in       |
+    | storage in the headroom (footroom) energy constraints. If not           |
+    | specified, the timepoint duration is used, i.e., the new setpoint must  |
+    | be sustainable for the full timepoint.                                  |
+    +-------------------------------------------------------------------------+
 
     |
 
@@ -302,14 +313,16 @@ def add_model_components(
     | | :code:`Stor_Max_Headroom_Energy_Constraint`                           |
     | | *Defined over*: :code:`STOR_OPR_TMPS`                                 |
     |                                                                         |
-    | Can't provide more upward reserves (times sustained duration required)  |
-    | than available energy in storage in that timepoint.                     |
+    | Can't provide more upward reserves (times the reserves setpoint         |
+    | duration, the timepoint duration by default) than available energy in   |
+    | storage in that timepoint.                                              |
     +-------------------------------------------------------------------------+
     | | :code:`Stor_Max_Footroom_Energy_Constraint`                           |
     | | *Defined over*: :code:`STOR_OPR_TMPS`                                 |
     |                                                                         |
-    | Can't provide more downard reserves (times sustained duration required) |
-    | than available capacity to store energy in that timepoint.              |
+    | Can't provide more downward reserves (times the reserves setpoint       |
+    | duration, the timepoint duration by default) than available capacity to |
+    | store energy in that timepoint.                                         |
     +-------------------------------------------------------------------------+
 
     """
@@ -387,6 +400,11 @@ def add_model_components(
     m.stor_exogenous_starting_state_of_charge = Param(
         m.STOR_EXOG_SOC_TMPS, within=NonNegativeReals
     )
+
+    # No default: when not specified for a project, the headroom/footroom
+    # energy rules fall back to the timepoint duration (see
+    # reserves_setpoint_duration_hours below)
+    m.stor_reserves_setpoint_duration_hours = Param(m.STOR, within=NonNegativeReals)
 
     m.stor_max_losses_in_hrz_frac_stor_energy_capacity = Param(
         m.STOR, within=NonNegativeReals, default=float("inf")
@@ -683,8 +701,6 @@ def max_footroom_power_rule(mod, s, tmp):
 
 
 # Headroom and footroom energy constraints
-# TODO: allow different sustained duration requirements; assumption here is
-#  that if reserves are called, new setpoint must be sustained for 1 hour
 # TODO: allow derate of the net energy in the current timepoint in the
 #  headroom and footroom energy rules; in reality, reserves could be
 #  called at the very beginning or the very end of the timepoint (e.g.
@@ -694,6 +710,21 @@ def max_footroom_power_rule(mod, s, tmp):
 #  none of it would be available
 
 
+def reserves_setpoint_duration_hours(mod, s, tmp):
+    """
+    The number of hours for which the new setpoint must be sustainable if
+    reserves are called: the project's
+    :code:`stor_reserves_setpoint_duration_hours` if specified, otherwise
+    the duration of the timepoint.
+    """
+    # Sparse membership check: the param has no default, so a project is
+    # only "in" it when a value was loaded
+    if s in mod.stor_reserves_setpoint_duration_hours:
+        return mod.stor_reserves_setpoint_duration_hours[s]
+    else:
+        return mod.hrs_in_tmp[tmp]
+
+
 def max_headroom_energy_rule(mod, s, tmp):
     """
     **Constraint Name**: Stor_Max_Headroom_Energy_Constraint
@@ -701,13 +732,13 @@ def max_headroom_energy_rule(mod, s, tmp):
 
     Can't provide more reserves (times sustained duration required) than
     available energy in storage in that timepoint. Said differently,
-    must have enough energy available to be at the new set point (for
-    the full duration of the timepoint).
+    must have enough energy available to be at the new set point for the
+    required setpoint duration (the timepoint duration by default).
     """
     hrs_in_tmp = mod.hrs_in_tmp[tmp]
     return (
         mod.Stor_Upward_Reserves_MW[s, tmp]
-        * hrs_in_tmp
+        * reserves_setpoint_duration_hours(mod, s, tmp)
         / mod.stor_discharging_efficiency[s]
         <= mod.Stor_Starting_Energy_in_Storage_MWh[s, tmp]
         + mod.Stor_Charge_MW[s, tmp] * hrs_in_tmp * mod.stor_charging_efficiency[s]
@@ -725,12 +756,13 @@ def max_footroom_energy_rule(mod, s, tmp):
     Can't provide more reserves (times sustained duration required) than
     available capacity to store energy in that timepoint. Said differently,
     must have enough 'room left in the tank' (remaining energy capacity)
-    to be at the new set point (for the full duration of the timepoint).
+    to be at the new set point for the required setpoint duration (the
+    timepoint duration by default).
     """
     hrs_in_tmp = mod.hrs_in_tmp[tmp]
     return (
         mod.Stor_Downward_Reserves_MW[s, tmp]
-        * hrs_in_tmp
+        * reserves_setpoint_duration_hours(mod, s, tmp)
         * mod.stor_charging_efficiency[s]
         <= mod.Energy_Storage_Capacity_MWh[s, mod.period[tmp]]
         * mod.Availability_Derate[s, tmp]
