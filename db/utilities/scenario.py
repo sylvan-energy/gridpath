@@ -82,6 +82,15 @@ def parse_arguments(args):
     parser.add_argument(
         "--quiet", default=False, action="store_true", help="Don't print output."
     )
+    parser.add_argument(
+        "--yes",
+        default=False,
+        action="store_true",
+        help="Don't ask for confirmation before deleting a scenario's data "
+        "(with --delete, or when re-loading a scenario that already exists). "
+        "For non-interactive use; the prompts otherwise hang or raise "
+        "EOFError when there is no stdin.",
+    )
 
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
@@ -431,6 +440,7 @@ def main(args=None):
     scenario = parsed_args.scenario
     delete_flag = parsed_args.delete
     quiet = parsed_args.quiet
+    skip_confirmation = parsed_args.yes
 
     # Check if database exists
     if not os.path.isfile(db_path):
@@ -450,7 +460,7 @@ def main(args=None):
                 "delete with the '--delete' flag."
             )
         else:
-            proceed = confirm(
+            proceed = skip_confirmation or confirm(
                 prompt="""WARNING: Would you like to delete all data associated 
                 with scenario '{}'? If you select 'yes' all prior results 
                 associated with scenario '{}' will be deleted.""".format(
@@ -491,7 +501,7 @@ def main(args=None):
             # prior data associated with this scenario and re-load the scenario
             # info
             else:
-                proceed = confirm(
+                proceed = skip_confirmation or confirm(
                     prompt="""There is already a scenario named '{}' in the 
                     database. Would you like to delete all data associated 
                     with this scenario and re-load the scenario definition info? 

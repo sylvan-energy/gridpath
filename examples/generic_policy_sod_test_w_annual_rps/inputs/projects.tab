@@ -3,3 +3,4 @@ Wind	gen_spec	.	gen_var	day	0	0.0	Wind	Zone1	0.0	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.
 Solar	gen_spec	.	gen_var	day	0	0.0	Solar	Zone1	0.0	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.
 Month_Block	gen_new_lin	.	gen_simple_no_load_balance_power	day	0	0.0	Market_Hedge	Zone1	0.0	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.
 Battery	stor_new_lin	.	stor	day	0	0.0	Battery	Zone1	0.0	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	0.9	0.9	.	.	1.0	99.0	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.
+Geothermal_Late	gen_spec	.	gen_must_run	day	0	0.0	Geothermal	Zone1	0.0	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.	.
