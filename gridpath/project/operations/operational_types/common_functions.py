@@ -1239,6 +1239,7 @@ def get_optype_inputs_from_db(scenario_id, subscenarios, conn, op_type):
         "losses_factor_in_energy_target",
         "losses_factor_curtailment",
         "upward_reserves_to_soc_depletion",
+        "reserves_setpoint_duration_hours",
     ]
 
     sql = """SELECT {}

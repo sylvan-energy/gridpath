@@ -394,6 +394,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_w_storage"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_w_storage_w_reserves_setpoint_duration(self):
+        """
+        Check validation and objective function value of
+        "test_w_storage_w_reserves_setpoint_duration" example: the battery's
+        reserves must be sustainable for a 4-hour setpoint duration instead
+        of the (1-hour) timepoint duration
+        :return:
+        """
+        scenario_name = "test_w_storage_w_reserves_setpoint_duration"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2horizons(self):
         """
         Check validation and objective function value of "2horizons" example
