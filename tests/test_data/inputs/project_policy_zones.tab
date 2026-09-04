@@ -7,3 +7,4 @@ Battery	RPS	RPSZone1	stor_losses	.	.	.	.
 Wind	SLICE_OF_DAY	SODZone1	sod_exceedance	.	.	.	.
 Gas_CCGT	SLICE_OF_DAY	SODZone1	sod_flat_block	.	.	.	.
 Battery	SLICE_OF_DAY	SODZone1	sod_stor	.	.	.	0.7
+Nuclear_Flexible	SLICE_OF_DAY	SODZone1	sod_flat_block	.	.	.	.

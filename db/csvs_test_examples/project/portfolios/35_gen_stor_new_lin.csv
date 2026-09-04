@@ -3,3 +3,4 @@ Wind,,,gen_spec
 Solar,,,gen_spec
 Month_Block,,,gen_new_lin
 Battery,,,stor_new_lin
+Geothermal_Late,,,gen_spec

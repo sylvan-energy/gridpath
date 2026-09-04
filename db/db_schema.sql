@@ -8126,6 +8126,9 @@ CREATE TABLE results_system_month_hour_policy_requirements
     policy_month                  INTEGER,
     policy_hour                   INTEGER,
     policy_month_hour_requirement FLOAT,
+    policy_month_hour_requirement_shortage FLOAT,
+    dual FLOAT,
+    policy_month_hour_requirement_marginal_cost_per_unit FLOAT,
     PRIMARY KEY (scenario_id, policy_name, policy_zone, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id, period, policy_month, policy_hour)

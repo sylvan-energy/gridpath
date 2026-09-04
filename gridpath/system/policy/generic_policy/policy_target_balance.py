@@ -26,7 +26,7 @@ from gridpath.common_functions import (
     none_dual_type_error_wrapper,
     update_results_df,
 )
-from gridpath.system.policy.generic_policy import POLICY_ZONE_PRD_DF
+from gridpath.system.policy.generic_policy import POLICY_ZONE_PRD_DF, POLICY_MH_DF
 
 
 def add_model_components(
@@ -148,9 +148,17 @@ def export_results(
     :return:
     """
 
-    if not m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ:
-        return
+    if m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ:
+        export_horizon_results(m, d)
 
+    if m.POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ:
+        export_month_hour_results(m, d)
+
+
+def export_horizon_results(m, d):
+    """
+    Shortage, dual, and marginal cost of the horizon-based requirements.
+    """
     results_columns = [
         "pre_load_modifier_load_in_hrz",
         "post_load_modifier_load_in_hrz",
@@ -227,6 +235,60 @@ def export_results(
     )
 
     update_results_df(getattr(d, POLICY_ZONE_PRD_DF), results_df)
+
+
+def export_month_hour_results(m, d):
+    """
+    Shortage, dual, and marginal cost of the month-hour (slice-of-day)
+    requirements. The dual is per period, so the marginal cost per unit of
+    requirement is the dual divided by the period objective coefficient
+    (discount factor x number of years represented).
+    """
+    constraint = m.Policy_Month_Hour_Requirement_Constraint
+    results_columns = [
+        "policy_month_hour_requirement_shortage",
+        "dual",
+        "policy_month_hour_requirement_marginal_cost_per_unit",
+    ]
+    data = [
+        [
+            p,
+            z,
+            prd,
+            mn,
+            hr,
+            value(
+                m.Policy_Month_Hour_Requirement_Shortage_Expression[p, z, prd, mn, hr]
+            ),
+            (
+                duals_wrapper(m, constraint[p, z, prd, mn, hr])
+                if (p, z, prd, mn, hr) in constraint
+                else None
+            ),
+            (
+                none_dual_type_error_wrapper(
+                    duals_wrapper(m, constraint[p, z, prd, mn, hr]),
+                    m.period_objective_coefficient[prd],
+                )
+                if (p, z, prd, mn, hr) in constraint
+                else None
+            ),
+        ]
+        for (p, z, prd, mn, hr) in m.POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ
+    ]
+    results_df = create_results_df(
+        index_columns=[
+            "policy_name",
+            "policy_zone",
+            "period",
+            "policy_month",
+            "policy_hour",
+        ],
+        results_columns=results_columns,
+        data=data,
+    )
+
+    update_results_df(getattr(d, POLICY_MH_DF), results_df)
 
 
 def save_duals(
