@@ -22,6 +22,7 @@ reliability constraints, etc. The module also adds transmission costs which
 again depend on the line's *capacity_type*.
 """
 
+import math
 import os.path
 import pandas as pd
 from pyomo.environ import Set, Expression, value
@@ -79,13 +80,28 @@ def add_model_components(
     | | :code:`TX_OPR_TMPS`                                                   |
     |                                                                         |
     | Two-dimensional set of the transmission lines and their operational     |
-    | timepoints, derived from :code:`TX_OPR_PRDS` and the timepoitns in each |
+    | timepoints, derived from :code:`TX_OPR_PRDS` and the timepoints in each |
     | period.                                                                 |
     +-------------------------------------------------------------------------+
     | | :code:`TX_LINES_OPR_IN_TMP`                                           |
     | | *Defined over*: :code:`TIMEPOINTS`                                    |
     |                                                                         |
-    | Indexed set of transmission lines operatoinal in each timepoint.        |
+    | Indexed set of transmission lines operational in each timepoint.        |
+    +-------------------------------------------------------------------------+
+    | | :code:`TX_OPR_PRDS_W_MIN_LIMIT`                                       |
+    |                                                                         |
+    | Subset of :code:`TX_OPR_PRDS` for line-periods that have a lower flow   |
+    | limit. A capacity type may declare a line-period unconstrained (no      |
+    | limit) via :code:`min_limit_is_unconstrained_rule`; capacity types      |
+    | without that method are always constrained (the default). The           |
+    | operational types build their minimum-flow constraints over this        |
+    | subset, so unconstrained line-periods get no such constraint.           |
+    +-------------------------------------------------------------------------+
+    | | :code:`TX_OPR_PRDS_W_MAX_LIMIT`                                       |
+    |                                                                         |
+    | Subset of :code:`TX_OPR_PRDS` for line-periods that have an upper flow  |
+    | limit (analogous to :code:`TX_OPR_PRDS_W_MIN_LIMIT`, via                |
+    | :code:`max_limit_is_unconstrained_rule`).                               |
     +-------------------------------------------------------------------------+
 
     |
@@ -186,6 +202,47 @@ def add_model_components(
 
     m.Tx_Max_Capacity_MW = Expression(m.TX_OPR_PRDS, rule=tx_max_capacity_rule)
 
+    # Sets of line-periods that have a lower / upper flow limit. A capacity
+    # type may declare a line-period "unconstrained" (no flow limit) by
+    # defining min_limit_is_unconstrained_rule / max_limit_is_unconstrained_rule
+    # and returning True; capacity types without those methods are always
+    # constrained (the default), so no line is ever silently left unbounded.
+    # The operational types build their min/max flow constraints over these
+    # subsets, skipping unconstrained line-periods entirely.
+    def tx_min_limit_is_unconstrained(mod, tx, p):
+        cap_type = mod.tx_capacity_type[tx]
+        module = imported_tx_capacity_modules[cap_type]
+        if hasattr(module, "min_limit_is_unconstrained_rule"):
+            return module.min_limit_is_unconstrained_rule(mod, tx, p)
+        return False
+
+    def tx_max_limit_is_unconstrained(mod, tx, p):
+        cap_type = mod.tx_capacity_type[tx]
+        module = imported_tx_capacity_modules[cap_type]
+        if hasattr(module, "max_limit_is_unconstrained_rule"):
+            return module.max_limit_is_unconstrained_rule(mod, tx, p)
+        return False
+
+    m.TX_OPR_PRDS_W_MIN_LIMIT = Set(
+        dimen=2,
+        within=m.TX_OPR_PRDS,
+        initialize=lambda mod: [
+            (tx, p)
+            for (tx, p) in mod.TX_OPR_PRDS
+            if not tx_min_limit_is_unconstrained(mod, tx, p)
+        ],
+    )
+
+    m.TX_OPR_PRDS_W_MAX_LIMIT = Set(
+        dimen=2,
+        within=m.TX_OPR_PRDS,
+        initialize=lambda mod: [
+            (tx, p)
+            for (tx, p) in mod.TX_OPR_PRDS
+            if not tx_max_limit_is_unconstrained(mod, tx, p)
+        ],
+    )
+
 
 # Set Rules
 ###############################################################################
@@ -255,12 +312,17 @@ def export_results(
         "max_mw",
     ]
 
+    # An unconstrained line-period has an infinite capacity; report it as
+    # NULL rather than the literal "inf" so the results stay numeric.
+    def _finite_or_none(v):
+        return None if math.isinf(v) else v
+
     data = [
         [
             tx_line,
             prd,
-            value(m.Tx_Min_Capacity_MW[tx_line, prd]),
-            value(m.Tx_Max_Capacity_MW[tx_line, prd]),
+            _finite_or_none(value(m.Tx_Min_Capacity_MW[tx_line, prd])),
+            _finite_or_none(value(m.Tx_Max_Capacity_MW[tx_line, prd])),
         ]
         for (tx_line, prd) in m.TX_OPR_PRDS
     ]

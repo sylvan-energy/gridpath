@@ -85,6 +85,21 @@ def add_model_components(
     | Two-dimensional set with transmission lines of the :code:`tx_dcopf`     |
     | operational type and their operational timepoints.                      |
     +-------------------------------------------------------------------------+
+    | | :code:`TX_DCOPF_OPR_TMPS_W_MIN_CONSTRAINT`                            |
+    |                                                                         |
+    | Subset of :code:`TX_DCOPF_OPR_TMPS` restricted to line-timepoints whose |
+    | line-period has a lower flow limit (i.e. is in the transmission         |
+    | capacity module's :code:`TX_OPR_PRDS_W_MIN_LIMIT`). The minimum-flow    |
+    | constraint is built over this subset, so a line left unconstrained by   |
+    | its capacity type gets no such constraint.                              |
+    +-------------------------------------------------------------------------+
+    | | :code:`TX_DCOPF_OPR_TMPS_W_MAX_CONSTRAINT`                            |
+    |                                                                         |
+    | Subset of :code:`TX_DCOPF_OPR_TMPS` restricted to line-timepoints whose |
+    | line-period has an upper flow limit (analogous to                       |
+    | :code:`TX_DCOPF_OPR_TMPS_W_MIN_CONSTRAINT`); scopes the maximum-flow    |
+    | constraint.                                                             |
+    +-------------------------------------------------------------------------+
 
     |
 
@@ -211,6 +226,30 @@ def add_model_components(
         ),
     )
 
+    # Operational timepoints whose line-period has a lower / upper flow limit;
+    # lines left unconstrained by their capacity type are excluded so no
+    # min/max flow constraint is built for them (see the transmission
+    # capacity module's TX_OPR_PRDS_W_MIN_LIMIT / _W_MAX_LIMIT).
+    m.TX_DCOPF_OPR_TMPS_W_MIN_CONSTRAINT = Set(
+        dimen=2,
+        within=m.TX_DCOPF_OPR_TMPS,
+        initialize=lambda mod: [
+            (tx, tmp)
+            for (tx, tmp) in mod.TX_DCOPF_OPR_TMPS
+            if (tx, mod.period[tmp]) in mod.TX_OPR_PRDS_W_MIN_LIMIT
+        ],
+    )
+
+    m.TX_DCOPF_OPR_TMPS_W_MAX_CONSTRAINT = Set(
+        dimen=2,
+        within=m.TX_DCOPF_OPR_TMPS,
+        initialize=lambda mod: [
+            (tx, tmp)
+            for (tx, tmp) in mod.TX_DCOPF_OPR_TMPS
+            if (tx, mod.period[tmp]) in mod.TX_OPR_PRDS_W_MAX_LIMIT
+        ],
+    )
+
     # Derived Sets
     ###########################################################################
 
@@ -263,11 +302,11 @@ def add_model_components(
     ###########################################################################
 
     m.TxDcopf_Min_Transmit_Constraint = Constraint(
-        m.TX_DCOPF_OPR_TMPS, rule=min_transmit_rule
+        m.TX_DCOPF_OPR_TMPS_W_MIN_CONSTRAINT, rule=min_transmit_rule
     )
 
     m.TxDcopf_Max_Transmit_Constraint = Constraint(
-        m.TX_DCOPF_OPR_TMPS, rule=max_transmit_rule
+        m.TX_DCOPF_OPR_TMPS_W_MAX_CONSTRAINT, rule=max_transmit_rule
     )
 
     m.TxDcopf_Kirchhoff_Voltage_Law_Constraint = Constraint(

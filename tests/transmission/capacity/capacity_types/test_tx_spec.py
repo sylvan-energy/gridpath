@@ -16,7 +16,9 @@
 from collections import OrderedDict
 from importlib import import_module
 import os.path
+import shutil
 import sys
+import tempfile
 import unittest
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
@@ -190,6 +192,59 @@ class TestSpecifiedTransmission(unittest.TestCase):
             )
         )
         self.assertDictEqual(expected_fixed_cost, actual_fixed_cost)
+
+    def test_blank_caps_are_unconstrained(self):
+        """A blank min/max leaves the line-period in TX_SPEC_OPR_PRDS but sets
+        the capacity param to its +/-inf default (i.e. no flow limit)."""
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            staged = os.path.join(tmp_dir, "test_data")
+            shutil.copytree(TEST_DATA_DIRECTORY, staged)
+            cap_file = os.path.join(
+                staged, "inputs", "specified_transmission_line_capacities.tab"
+            )
+            # Blank Tx1's max (2020) and Tx2's min (2020); leave the rows in place.
+            rows = open(cap_file).read().split("\n")
+            out = []
+            for r in rows:
+                f = r.split("\t")
+                if f[0] == "Tx1" and f[1] == "2020":
+                    f[3] = "."  # specified_tx_max_mw -> no upper limit
+                    r = "\t".join(f)
+                elif f[0] == "Tx2" and f[1] == "2020":
+                    f[2] = "."  # specified_tx_min_mw -> no lower limit
+                    r = "\t".join(f)
+                out.append(r)
+            open(cap_file, "w").write("\n".join(out))
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=staged,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
+
+            # Row still present (so the line stays operational / in TX_OPR_PRDS).
+            self.assertIn(("Tx1", 2020), list(instance.TX_SPEC_OPR_PRDS))
+            self.assertIn(("Tx2", 2020), list(instance.TX_SPEC_OPR_PRDS))
+
+            # Blank cells fall back to the +/-inf defaults.
+            self.assertEqual(
+                instance.tx_spec_max_cap_mw["Tx1", 2020], float("inf")
+            )
+            self.assertEqual(
+                instance.tx_spec_min_cap_mw["Tx2", 2020], float("-inf")
+            )
+            # The non-blank direction on each line is unaffected.
+            self.assertEqual(instance.tx_spec_min_cap_mw["Tx1", 2020], -10)
+            self.assertEqual(instance.tx_spec_max_cap_mw["Tx2", 2020], 10)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
