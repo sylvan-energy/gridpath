@@ -737,21 +737,14 @@ def validate_inputs(
         conn,
     )
 
-    c = conn.cursor()
-
-    builtin_hrz_types_list = ", ".join(f"'{h}'" for h in BUILTIN_HORIZON_TYPES)
-
-    periods_horizons = c.execute(f"""
-        SELECT balancing_type_horizon, period, horizon
-        FROM periods_horizons
-        WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-        AND stage_id = {stage}
-        AND balancing_type_horizon NOT IN ({builtin_hrz_types_list})
-        """)
-
+    # NOTE: this validator used to also query the periods_horizons view here
+    # and never used the result. That query took ~30 s per call on an
+    # 8760-hour scenario (the view's join could not use the horizon-timepoints
+    # index -- see the view definition in db_schema.sql), and the validator
+    # runs once per iteration x subproblem x stage, so it dominated
+    # input-validation time for weather-year ensembles.
     df_hrzs = cursor_to_df(hrzs)
     df_hrz_tmps = cursor_to_df(hrz_tmps)
-    df_periods_hrzs = cursor_to_df(periods_horizons)
 
     # Get expected dtypes
     expected_dtypes = get_expected_dtypes(
