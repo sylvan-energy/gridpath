@@ -9129,7 +9129,13 @@ SELECT DISTINCT temporal_scenario_id,
 FROM inputs_temporal
          INNER JOIN
      inputs_temporal_horizon_timepoints
-     USING (temporal_scenario_id, stage_id, timepoint)
+-- subproblem_id is part of both tables' keys: joining on it keeps a
+-- timepoint's horizons within its own subproblem and, because it is the
+-- second column of inputs_temporal_horizon_timepoints' primary key, lets
+-- SQLite use that index (without it the join scanned every horizon-timepoint
+-- row of the temporal scenario for every timepoint: ~30 s for one 8760-hour
+-- subproblem, 0.05 s with it, identical rows)
+     USING (temporal_scenario_id, subproblem_id, stage_id, timepoint)
 ;
 
 -- This view shows the possible operational horizons for each project based
