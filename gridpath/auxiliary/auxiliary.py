@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +22,9 @@ import os.path
 import pandas as pd
 import traceback
 
+# GridPath's marker for an unspecified value in a .tab file
+UNSPECIFIED = "."
+
 
 def get_required_subtype_modules(
     scenario_directory,
@@ -33,7 +37,15 @@ def get_required_subtype_modules(
     filename="projects",
 ):
     """
-    Get a list of unique types from projects.tab.
+    Get a list of unique types from the {filename}.tab file (projects.tab by
+    default).
+
+    GridPath's marker for an unspecified value in a .tab file is "."; it is
+    returned as-is (types with a model default treat it as the default,
+    see e.g. the availability type modules; for required types,
+    load_subtype_modules raises an informative error). A blank cell, on the
+    other hand, is malformed input and raises here, where we still know
+    which entities are affected.
     """
     df = pd.read_csv(
         os.path.join(
@@ -48,6 +60,21 @@ def get_required_subtype_modules(
         ),
         sep="\t",
     )
+
+    is_blank = df[which_type].isna() | (df[which_type].astype(str).str.strip() == "")
+    if is_blank.any():
+        entity_col = df.columns[0]
+        raise ValueError(
+            "Blank {which_type} in {filename}.tab for {entity_col}(s) "
+            "{entities}. A blank cell is malformed input: an unspecified "
+            "value is written as '.' and a specified one must be a valid "
+            "{which_type}.".format(
+                which_type=which_type,
+                filename=filename,
+                entity_col=entity_col,
+                entities=", ".join(str(e) for e in df.loc[is_blank, entity_col]),
+            )
+        )
 
     required_modules = df[which_type].unique()
 
@@ -71,6 +98,29 @@ def load_subtype_modules(required_subtype_modules, package, required_attributes)
     """
     imported_subtype_modules = dict()
     for m in required_subtype_modules:
+        # An unspecified type ("." in the .tab file) reaching this point
+        # means an entity has no type where one is required. Catch it here:
+        # import_module("..") is a relative import of the PARENT package,
+        # which succeeds silently and fails much later with a confusing
+        # AttributeError (e.g. "module 'gridpath.project.operations' has no
+        # attribute 'power_delta_rule'").
+        if m == UNSPECIFIED:
+            raise ValueError(
+                "Unspecified type ('.') among the {type_group} to load: every "
+                "entity must have its type specified in the .tab file that "
+                "defines it (e.g. the operational_type column of "
+                "projects.tab). If the inputs were generated from the "
+                "database, check that each entity has a row in the input "
+                "table that defines the type for the subscenario the scenario "
+                "uses (e.g. inputs_project_operational_chars for the "
+                "scenario's project_operational_chars_scenario_id); "
+                "gridpath_validate flags this as a High-severity "
+                "error.".format(type_group=package.rsplit(".", 1)[-1])
+            )
+        if not str(m).isidentifier():
+            raise ValueError(
+                "Invalid subtype module name {!r} for package {}.".format(m, package)
+            )
         try:
             imp_m = import_module("." + m, package=package)
             imported_subtype_modules[m] = imp_m
