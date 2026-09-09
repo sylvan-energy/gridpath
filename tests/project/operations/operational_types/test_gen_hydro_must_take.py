@@ -220,6 +220,99 @@ class TestGenHydroMustTake(unittest.TestCase):
         )
         self.assertDictEqual(expected_ramp_down, actual_ramp_down)
 
+        # Sets: GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS
+        expected_alloc_bt_hrzs = sorted(
+            [
+                ("Hydro_NonCurtailable", "day", 202001),
+                ("Hydro_NonCurtailable", "day", 202002),
+                ("Hydro_NonCurtailable", "day", 203001),
+                ("Hydro_NonCurtailable", "day", 203002),
+            ]
+        )
+        actual_alloc_bt_hrzs = sorted(
+            [idx for idx in instance.GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS]
+        )
+        self.assertListEqual(expected_alloc_bt_hrzs, actual_alloc_bt_hrzs)
+
+        # Param: gen_hydro_must_take_budget_alloc_min_fraction (sparse: only
+        # specified limits are loaded)
+        expected_min_frac = OrderedDict(
+            sorted(
+                {
+                    ("Hydro_NonCurtailable", "day", 202001): 0.4,
+                    ("Hydro_NonCurtailable", "day", 202002): 0.4,
+                    ("Hydro_NonCurtailable", "day", 203002): 0.45,
+                }.items()
+            )
+        )
+        actual_min_frac = OrderedDict(
+            sorted(
+                {
+                    idx: instance.gen_hydro_must_take_budget_alloc_min_fraction[idx]
+                    for idx in instance.GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS
+                    if idx in instance.gen_hydro_must_take_budget_alloc_min_fraction
+                }.items()
+            )
+        )
+        self.assertDictEqual(expected_min_frac, actual_min_frac)
+
+        # Param: gen_hydro_must_take_budget_alloc_max_fraction
+        expected_max_frac = OrderedDict(
+            sorted(
+                {
+                    ("Hydro_NonCurtailable", "day", 202001): 0.6,
+                    ("Hydro_NonCurtailable", "day", 203001): 0.55,
+                    ("Hydro_NonCurtailable", "day", 203002): 0.55,
+                }.items()
+            )
+        )
+        actual_max_frac = OrderedDict(
+            sorted(
+                {
+                    idx: instance.gen_hydro_must_take_budget_alloc_max_fraction[idx]
+                    for idx in instance.GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS
+                    if idx in instance.gen_hydro_must_take_budget_alloc_max_fraction
+                }.items()
+            )
+        )
+        self.assertDictEqual(expected_max_frac, actual_max_frac)
+
+        # Param: gen_hydro_must_take_budget_alloc_parent_hrz (the day
+        # horizons nest within the project's year horizons)
+        expected_parent_hrz = OrderedDict(
+            sorted(
+                {
+                    ("Hydro_NonCurtailable", "day", 202001): 2020,
+                    ("Hydro_NonCurtailable", "day", 202002): 2020,
+                    ("Hydro_NonCurtailable", "day", 203001): 2030,
+                    ("Hydro_NonCurtailable", "day", 203002): 2030,
+                }.items()
+            )
+        )
+        actual_parent_hrz = OrderedDict(
+            sorted(
+                {
+                    idx: instance.gen_hydro_must_take_budget_alloc_parent_hrz[idx]
+                    for idx in instance.GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS
+                }.items()
+            )
+        )
+        self.assertDictEqual(expected_parent_hrz, actual_parent_hrz)
+
+        # Constraints are built only where a limit is specified
+        self.assertListEqual(
+            sorted(expected_min_frac.keys()),
+            sorted(
+                idx for idx in instance.GenHydroMustTake_Budget_Alloc_Min_Constraint
+            ),
+        )
+        self.assertListEqual(
+            sorted(expected_max_frac.keys()),
+            sorted(
+                idx for idx in instance.GenHydroMustTake_Budget_Alloc_Max_Constraint
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
