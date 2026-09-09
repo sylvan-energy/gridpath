@@ -310,6 +310,12 @@ def export_results(
     :param d:
     :return:
     """
+    # This module is always loaded, but most scenarios define no groups;
+    # write nothing rather than a header-only file in every results
+    # directory (a Monte Carlo run has one per draw per subproblem)
+    if len(m.POWER_OUTPUT_GROUP_TMPS) == 0:
+        return
+
     with open(
         os.path.join(
             scenario_directory,
