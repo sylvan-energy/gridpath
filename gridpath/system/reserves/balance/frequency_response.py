@@ -17,7 +17,6 @@ from pyomo.environ import Var, Constraint, NonNegativeReals
 from .reserve_balance import (
     generic_add_model_components,
     generic_export_results,
-    generic_save_duals,
     generic_import_results_to_database,
 )
 
@@ -118,25 +117,6 @@ def export_results(
         total_reserve_provision_expression="Total_Partial_Frequency_Response_Provision_MW",
         reserve_violation_expression="Frequency_Response_Partial_Violation_MW",
     )
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    """
-
-    :param m:
-    :return:
-    """
-    generic_save_duals(instance, "Meet_Frequency_Response_Constraint")
-    generic_save_duals(instance, "Meet_Frequency_Response_Partial_Constraint")
 
 
 def import_results_into_database(

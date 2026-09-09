@@ -332,22 +332,4 @@ def export_results(
     )
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Elevation_Volume_Relationship_Constraint"] = [
-        "water_node",
-        "segment",
-        "timepoint",
-        "dual",
-    ]
-
-
 # TODO: results import

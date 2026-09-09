@@ -838,29 +838,6 @@ def write_model_inputs(
             writer.writerow(replace_nulls)
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["TxNewLin_Min_Cum_Build_Constraint"] = [
-        "capacity_group",
-        "period",
-        "dual",
-    ]
-
-    instance.constraint_indices["TxNewLin_Max_Cum_Build_Constraint"] = [
-        "capacity_group",
-        "period",
-        "dual",
-    ]
-
-
 # Validation
 ###############################################################################
 

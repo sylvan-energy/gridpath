@@ -16,7 +16,6 @@
 from .reserve_balance import (
     generic_add_model_components,
     generic_export_results,
-    generic_save_duals,
     generic_import_results_to_database,
 )
 
@@ -86,24 +85,6 @@ def export_results(
         total_reserve_provision_expression="Total_Spinning_Reserves_Provision_MW",
         reserve_violation_expression="Spinning_Reserves_Violation_MW_Expression",
     )
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    """
-
-    :param m:
-    :return:
-    """
-    generic_save_duals(instance, "Meet_Spinning_Reserves_Constraint")
 
 
 def import_results_into_database(

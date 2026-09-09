@@ -220,25 +220,6 @@ def export_results(
             writer.writerow([s, z, p, value(m.Dynamic_ELCC_MW[s, z, p])])
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Dynamic_ELCC_Constraint"] = [
-        "surface_name",
-        "prm_zone",
-        "period",
-        "facet",
-        "dual",
-    ]
-
-
 def get_inputs_from_database(
     scenario_id,
     subscenarios,
