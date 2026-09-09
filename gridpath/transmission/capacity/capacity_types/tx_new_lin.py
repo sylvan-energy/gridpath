@@ -59,7 +59,7 @@ from gridpath.auxiliary.validations import (
     validate_row_monotonicity,
     validate_column_monotonicity,
 )
-from gridpath.common_functions import create_results_df
+from gridpath.common_functions import create_results_df, constraint_dual
 from gridpath.project.capacity.capacity_types.common_methods import (
     relevant_periods_by_project_vintage,
     project_relevant_periods,
@@ -678,9 +678,19 @@ def add_to_tx_period_results(
     :return:
     """
 
-    results_columns = ["new_build_capacity_mw"]
+    results_columns = [
+        "new_build_capacity_mw",
+        "min_cum_build_dual",
+        "max_cum_build_dual",
+    ]
     data = [
-        [tx, prd, value(m.TxNewLin_Build_MW[tx, prd])]
+        [
+            tx,
+            prd,
+            value(m.TxNewLin_Build_MW[tx, prd]),
+            constraint_dual(m, m.TxNewLin_Min_Cum_Build_Constraint, (tx, prd)),
+            constraint_dual(m, m.TxNewLin_Max_Cum_Build_Constraint, (tx, prd)),
+        ]
         for (tx, prd) in m.TX_NEW_LIN_VNTS
     ]
     captype_df = create_results_df(

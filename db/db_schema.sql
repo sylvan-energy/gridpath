@@ -6659,6 +6659,32 @@ CREATE TABLE results_project_period
                  availability_iteration, period, subproblem_id, stage_id)
 );
 
+-- Total power output of a group of projects in each timepoint, with the
+-- limits and the duals of the constraints enforcing them
+DROP TABLE IF EXISTS results_project_group_power;
+CREATE TABLE results_project_group_power
+(
+    scenario_id                          INTEGER,
+    weather_iteration                    INTEGER,
+    hydro_iteration                      INTEGER,
+    availability_iteration               INTEGER,
+    subproblem_id                        INTEGER,
+    stage_id                             INTEGER,
+    power_output_group                   VARCHAR(64),
+    timepoint                            INTEGER,
+    period                               INTEGER,
+    group_power_mw                       FLOAT,
+    power_output_group_power_output_min  FLOAT,
+    power_output_group_power_output_max  FLOAT,
+    power_output_group_max_dual          FLOAT,
+    power_output_group_min_dual          FLOAT,
+    power_output_group_max_marginal_cost FLOAT,
+    power_output_group_min_marginal_cost FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 power_output_group, timepoint)
+);
+
 DROP TABLE IF EXISTS results_project_group_capacity;
 CREATE TABLE results_project_group_capacity
 (
@@ -7301,6 +7327,8 @@ CREATE TABLE results_transmission_period
     capacity_cost                        FLOAT,
     fixed_cost                           FLOAT,
     capacity_cost_wo_spinup_or_lookahead FLOAT,
+    min_cum_build_dual                   FLOAT,
+    max_cum_build_dual                   FLOAT,
     PRIMARY KEY (scenario_id, transmission_line, period, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id)
@@ -7321,6 +7349,8 @@ CREATE TABLE results_transmission_group_capacity
     group_new_capacity                           FLOAT,
     transmission_capacity_group_new_capacity_min FLOAT,
     transmission_capacity_group_new_capacity_max FLOAT,
+    transmission_capacity_group_new_max_dual     FLOAT,
+    transmission_capacity_group_new_min_dual     FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
                  transmission_capacity_group, period)
@@ -7964,6 +7994,8 @@ CREATE TABLE results_system_performance_standard
     performance_standard_project_capacity_mw    FLOAT,
     performance_standard_energy_overage_tco2    FLOAT,
     performance_standard_power_overage_tco2     FLOAT,
+    performance_standard_energy_unit_dual       FLOAT,
+    performance_standard_power_unit_dual        FLOAT,
     PRIMARY KEY (scenario_id, performance_standard_zone,
                  weather_iteration, hydro_iteration, availability_iteration,
                  subproblem_id, stage_id, period)
