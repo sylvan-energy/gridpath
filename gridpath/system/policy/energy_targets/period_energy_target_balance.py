@@ -181,20 +181,3 @@ def export_results(
     )
 
     update_results_df(getattr(d, ENERGY_TARGET_ZONE_PRD_DF), results_df)
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Period_Energy_Target_Constraint"] = [
-        "energy_target_zone",
-        "period",
-        "dual",
-    ]

@@ -157,20 +157,3 @@ def export_results(
     )
 
     update_results_df(getattr(d, WATER_NODE_TMP_DF), results_df)
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Water_Node_Outflow_Constraint"] = [
-        "water_node",
-        "timepoint",
-        "dual",
-    ]

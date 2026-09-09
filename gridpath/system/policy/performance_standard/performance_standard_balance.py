@@ -200,25 +200,3 @@ def export_results(
     )
 
     update_results_df(getattr(d, PERFORMANCE_STANDARD_Z_PRD_DF), results_df)
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Performance_Standard_Energy_Unit_Constraint"] = [
-        "performance_standard_zone",
-        "period",
-        "dual",
-    ]
-    instance.constraint_indices["Performance_Standard_Power_Unit_Constraint"] = [
-        "performance_standard_zone",
-        "period",
-        "dual",
-    ]

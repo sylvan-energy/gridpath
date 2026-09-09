@@ -395,26 +395,3 @@ def write_model_inputs(
             fname="power_output_group_projects.tab",
             data=pwr_grp_prj,
         )
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Max_Group_Total_Power_in_Tmp_Constraint"] = [
-        "power_output_group",
-        "period",
-        "dual",
-    ]
-
-    instance.constraint_indices["Min_Group_Total_Power_in_Tmp_Constraint"] = [
-        "power_output_group",
-        "period",
-        "dual",
-    ]

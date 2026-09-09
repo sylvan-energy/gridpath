@@ -218,33 +218,6 @@ def export_results(
             )
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    """
-
-    :param m:
-    :return:
-    """
-    instance.constraint_indices["Meet_Instantaneous_Penetration_min_Constraint"] = [
-        "zone",
-        "timepoint",
-        "dual_instantaneous_penetration_min",
-    ]
-    instance.constraint_indices["Meet_Instantaneous_Penetration_max_Constraint"] = [
-        "zone",
-        "timepoint",
-        "dual_instantaneous_penetration_min",
-    ]
-
-
 def import_results_into_database(
     scenario_id,
     weather_iteration,

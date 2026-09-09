@@ -264,7 +264,7 @@ def get_run_scenario_parser():
         help="Don't import or save constraint duals. Duals are imported "
         "for every constraint in the model, which adds significant memory "
         "and solution-load time; skip them if you don't need shadow prices "
-        "(e.g. LMPs). Dual-based results files will not be written.",
+        "(e.g. LMPs). The dual columns of the results will be empty.",
     )
     # Solver options
     parser.add_argument(

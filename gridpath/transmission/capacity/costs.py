@@ -314,57 +314,6 @@ def export_results(
     update_results_df(getattr(d, TX_PERIOD_DF), cost_df2)
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    # Save module-specific duals
-    # Capacity type modules
-    df = pd.read_csv(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "transmission_lines.tab",
-        ),
-        sep="\t",
-        usecols=["transmission_line", "tx_capacity_type", "tx_operational_type"],
-    )
-
-    # Required capacity modules are the unique set of tx capacity types
-    # This list will be used to know which capacity modules to load
-    required_tx_capacity_modules = df.tx_capacity_type.unique()
-
-    # Import needed transmission capacity type modules for expression rules
-    imported_tx_capacity_modules = load_tx_capacity_type_modules(
-        required_tx_capacity_modules
-    )
-
-    # Add any components specific to the operational modules
-    for op_m in required_tx_capacity_modules:
-        if hasattr(imported_tx_capacity_modules[op_m], "save_duals"):
-            imported_tx_capacity_modules[op_m].save_duals(
-                scenario_directory,
-                weather_iteration,
-                hydro_iteration,
-                availability_iteration,
-                subproblem,
-                stage,
-                instance,
-                dynamic_components,
-            )
-
-
 # Database
 ###############################################################################
 

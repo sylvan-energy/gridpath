@@ -428,23 +428,6 @@ def export_results(
     )
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Generator_Water_Allocation_Constraint"] = [
-        "powerhouse",
-        "timepoint",
-        "dual",
-    ]
-
-
 def import_results_into_database(
     scenario_id,
     weather_iteration,

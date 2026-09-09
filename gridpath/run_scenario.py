@@ -1107,7 +1107,6 @@ def save_results(
     Export results.
     Export pass through imports.
     Save objective function value.
-    Save constraint duals.
     """
     step_start_time = start_step(step="Saving results", quiet=parsed_arguments.quiet)
 
@@ -1226,20 +1225,6 @@ def save_results(
             stage=stage,
             instance=instance,
         )
-
-        if not parsed_arguments.skip_duals:
-            save_duals(
-                scenario_directory=scenario_directory,
-                weather_iteration=weather_iteration,
-                hydro_iteration=hydro_iteration,
-                availability_iteration=availability_iteration,
-                subproblem=subproblem,
-                stage=stage,
-                multi_stage=multi_stage,
-                instance=instance,
-                dynamic_components=dynamic_components,
-                verbose=parsed_arguments.verbose,
-            )
 
         # Force garbage collection to release file descriptors immediately
         # This prevents "too many open files" errors when processing many iterations
@@ -1942,54 +1927,6 @@ def save_objective_function_value(
         newline="",
     ) as objective_file:
         objective_file.write(str(objective_function_value))
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    multi_stage,
-    instance,
-    dynamic_components,
-    verbose,
-):
-    """
-    :param scenario_directory:
-    :param subproblem:
-    :param stage:
-    :param instance:
-    :param dynamic_components:
-    :param verbose:
-    :return:
-
-    Save the duals of various constraints.
-    """
-    # Determine/load modules and dynamic components
-    modules_to_use, loaded_modules = set_up_gridpath_modules(
-        scenario_directory=scenario_directory, multi_stage=multi_stage
-    )
-
-    instance.constraint_indices = {}
-
-    n = 0
-    for m in loaded_modules:
-        if verbose:
-            print(f"... {modules_to_use[n]}")
-        if hasattr(m, "save_duals"):
-            m.save_duals(
-                scenario_directory,
-                weather_iteration,
-                hydro_iteration,
-                availability_iteration,
-                subproblem,
-                stage,
-                instance,
-                dynamic_components,
-            )
-        n += 1
 
 
 def set_up_gridpath_modules(scenario_directory, multi_stage):

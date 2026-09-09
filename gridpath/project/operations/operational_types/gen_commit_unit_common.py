@@ -4005,32 +4005,6 @@ def export_linked_subproblem_inputs(
                             )
 
 
-def save_duals(m, bin_or_lin):
-    m.constraint_indices["GenCommit{}_Ramp_Up_Constraint".format(bin_or_lin)] = [
-        "project",
-        "timepoint",
-        "dual",
-    ]
-
-    m.constraint_indices["GenCommit{}_Ramp_Down_Constraint".format(bin_or_lin)] = [
-        "project",
-        "timepoint",
-        "dual",
-    ]
-
-    m.constraint_indices["GenCommit{}_Min_Up_Time_Constraint".format(bin_or_lin)] = [
-        "project",
-        "timepoint",
-        "dual",
-    ]
-
-    m.constraint_indices["GenCommit{}_Min_Down_Time_Constraint".format(bin_or_lin)] = [
-        "project",
-        "timepoint",
-        "dual",
-    ]
-
-
 def generic_constraint_column_dict(Bin_or_Lin):
     constraint_column_dict = {
         "GenCommit{}_Ramp_Up_Constraint".format(Bin_or_Lin): "ramp_up_dual",

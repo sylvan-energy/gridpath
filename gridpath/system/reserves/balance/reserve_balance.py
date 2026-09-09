@@ -193,16 +193,6 @@ def generic_export_results(
             )
 
 
-def generic_save_duals(m, reserve_constraint_name):
-    """
-
-    :param m:
-    :param reserve_constraint_name:
-    :return:
-    """
-    m.constraint_indices[reserve_constraint_name] = ["zone", "timepoint", "dual"]
-
-
 def generic_import_results_to_database(
     scenario_id,
     weather_iteration,

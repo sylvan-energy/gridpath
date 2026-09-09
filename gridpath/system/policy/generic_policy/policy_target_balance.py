@@ -289,30 +289,3 @@ def export_month_hour_results(m, d):
     )
 
     update_results_df(getattr(d, POLICY_MH_DF), results_df)
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Policy_Requirement_Constraint"] = [
-        "policy_name",
-        "policy_zone",
-        "balancing_type",
-        "horizon",
-        "dual",
-    ]
-    instance.constraint_indices["Policy_Month_Hour_Requirement_Constraint"] = [
-        "policy_name",
-        "policy_zone",
-        "period",
-        "policy_month",
-        "policy_hour",
-        "dual",
-    ]
