@@ -252,6 +252,33 @@ class TestValidations(unittest.TestCase):
             )
             self.assertListEqual(expected_list, actual_list)
 
+    def test_validate_values_multi_column_index(self):
+        """
+        A list-valued idx_col (a multi-column index, e.g. project plus
+        balancing type and horizon) formats the offending indices as a flat
+        string rather than raising.
+        """
+        df = pd.DataFrame(
+            columns=["project", "balancing_type_horizon", "horizon", "share"],
+            data=[
+                ["Hydro", "day", 202001, 0.5],
+                ["Hydro", "day", 202002, 1.5],
+            ],
+        )
+        self.assertListEqual(
+            [
+                "['project', 'balancing_type_horizon', 'horizon'](s) "
+                "'Hydro-day-202002': Expected 0 <= 'share' <= 1"
+            ],
+            module_to_test.validate_values(
+                df=df,
+                col=["share"],
+                idx_col=["project", "balancing_type_horizon", "horizon"],
+                min=0,
+                max=1,
+            ),
+        )
+
     def test_validate_req_cols(self):
         """
 

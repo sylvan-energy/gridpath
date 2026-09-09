@@ -153,11 +153,17 @@ def import_csv(
     quiet,
     results_directory,
     which_results,
+    results_table=None,
 ):
     # First import the capacity_all results; the capacity type modules will
     # then update the database tables rather than insert (all projects
     # should have been inserted here)
     # Delete prior results and create temporary import table for ordering
+    # The results table is named after the CSV unless the caller passes one
+    # explicitly, which lets several modules writing their own CSV (e.g. the
+    # hydro operational types) import into a single shared table
+    if results_table is None:
+        results_table = f"results_{which_results}"
     if not quiet:
         print(which_results)
 
@@ -186,7 +192,7 @@ def import_csv(
 
         spin_on_database_lock_generic(
             command=df.to_sql(
-                name=f"results_{which_results}",
+                name=results_table,
                 con=conn,
                 if_exists="append",
                 index=False,

@@ -2162,6 +2162,8 @@ CREATE TABLE inputs_project_operational_chars
     curtailment_cost_scenario_id                          INTEGER,
     hydro_operational_chars_scenario_id                   INTEGER, -- determines hydro MWa, min, max
     hydro_operational_chars_hrz_map_scenario_id           INTEGER, -- optional horizon map for hydro opchars
+    hydro_budget_allocation_scenario_id                   INTEGER, -- optional sub-horizon shares of the hydro energy budget
+    hydro_budget_allocation_hrz_map_scenario_id           INTEGER, -- optional horizon map for hydro budget allocation
     energy_profile_scenario_id                            INTEGER,
     energy_profile_tmp_map_scenario_id                    INTEGER, -- optional timepoint map for energy profiles
     energy_hrz_shaping_scenario_id                        INTEGER,
@@ -2246,6 +2248,9 @@ CREATE TABLE inputs_project_operational_chars
     FOREIGN KEY (project, hydro_operational_chars_scenario_id) REFERENCES
         subscenarios_project_hydro_operational_chars
             (project, hydro_operational_chars_scenario_id),
+    FOREIGN KEY (project, hydro_budget_allocation_scenario_id) REFERENCES
+        subscenarios_project_hydro_budget_allocation
+            (project, hydro_budget_allocation_scenario_id),
     FOREIGN KEY (project, energy_profile_scenario_id) REFERENCES
         subscenarios_project_energy_profiles
             (project, energy_profile_scenario_id),
@@ -2298,6 +2303,9 @@ CREATE TABLE inputs_project_operational_chars
         subscenarios_project_opchar_timepoint_map
             (opchar_timepoint_map_scenario_id),
     FOREIGN KEY (hydro_operational_chars_hrz_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id),
+    FOREIGN KEY (hydro_budget_allocation_hrz_map_scenario_id) REFERENCES
         subscenarios_project_opchar_horizon_map
             (opchar_horizon_map_scenario_id),
     FOREIGN KEY (energy_hrz_shaping_hrz_map_scenario_id) REFERENCES
@@ -2695,6 +2703,52 @@ CREATE TABLE inputs_project_hydro_operational_chars_iterations
     varies_by_weather_iteration         INTEGER,
     varies_by_hydro_iteration           INTEGER,
     PRIMARY KEY (project, hydro_operational_chars_scenario_id)
+);
+
+-- Hydro energy-budget allocation limits: the minimum/maximum share of a
+-- project's horizon energy budget (see the hydro operational chars) that
+-- must/may be produced in each sub-horizon of that horizon. Sub-horizons are
+-- horizons of another balancing type in the temporal scenario, nested
+-- within the project's balancing-type horizons (e.g. each half of a month
+-- for a project with monthly budgets). NULL = limit not enforced.
+DROP TABLE IF EXISTS subscenarios_project_hydro_budget_allocation;
+CREATE TABLE subscenarios_project_hydro_budget_allocation
+(
+    project                             VARCHAR(64),
+    hydro_budget_allocation_scenario_id INTEGER,
+    name                                VARCHAR(32),
+    description                         VARCHAR(128),
+    PRIMARY KEY (project, hydro_budget_allocation_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_project_hydro_budget_allocation;
+CREATE TABLE inputs_project_hydro_budget_allocation
+(
+    project                             VARCHAR(64),
+    hydro_budget_allocation_scenario_id INTEGER,
+    weather_iteration                   INTEGER NOT NULL,
+    hydro_iteration                     INTEGER DEFAULT 0 NOT NULL,
+    stage_id                            INTEGER NOT NULL,
+    balancing_type_horizon              VARCHAR(64), -- the SUB-horizon's balancing type
+    horizon                             INTEGER,
+    min_budget_fraction                 FLOAT,
+    max_budget_fraction                 FLOAT,
+    PRIMARY KEY (project, hydro_budget_allocation_scenario_id,
+                 weather_iteration, hydro_iteration, stage_id,
+                 balancing_type_horizon, horizon),
+    FOREIGN KEY (project, hydro_budget_allocation_scenario_id) REFERENCES
+        subscenarios_project_hydro_budget_allocation
+            (project, hydro_budget_allocation_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_project_hydro_budget_allocation_iterations;
+CREATE TABLE inputs_project_hydro_budget_allocation_iterations
+(
+    project                             TEXT,
+    hydro_budget_allocation_scenario_id INTEGER,
+    varies_by_weather_iteration         INTEGER,
+    varies_by_hydro_iteration           INTEGER,
+    PRIMARY KEY (project, hydro_budget_allocation_scenario_id)
 );
 
 -- Energy profiles
@@ -6854,6 +6908,37 @@ CREATE TABLE results_project_cap_factor_limits
     max_cap_factor         FLOAT,
     actual_power_provision_mwh,
     possible_power_provision_mwh,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id, project,
+                 balancing_type_horizon, horizon)
+);
+
+-- Hydro energy-budget allocation: the realized share of each parent
+-- horizon's energy budget in each sub-horizon with allocation limits, with
+-- the limits themselves and the duals of the constraints enforcing them (a
+-- limit that was not specified has no constraint and therefore no dual).
+-- Both hydro operational types write into this table.
+DROP TABLE IF EXISTS results_project_hydro_budget_allocation;
+CREATE TABLE results_project_hydro_budget_allocation
+(
+    scenario_id                   INTEGER,
+    weather_iteration             INTEGER,
+    hydro_iteration               INTEGER,
+    availability_iteration        INTEGER,
+    subproblem_id                 INTEGER,
+    stage_id                      INTEGER,
+    project                       VARCHAR(64),
+    balancing_type_horizon        VARCHAR(64),
+    horizon                       INTEGER,
+    parent_balancing_type_horizon VARCHAR(64),
+    parent_horizon                INTEGER,
+    min_budget_fraction           FLOAT,
+    max_budget_fraction           FLOAT,
+    energy_mwh                    FLOAT,
+    parent_budget_mwh             FLOAT,
+    budget_share                  FLOAT,
+    min_constraint_dual           FLOAT,
+    max_constraint_dual           FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id, project,
                  balancing_type_horizon, horizon)

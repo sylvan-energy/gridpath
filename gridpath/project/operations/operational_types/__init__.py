@@ -379,6 +379,52 @@ def write_model_inputs(
             )
 
 
+def import_results_into_database(
+    scenario_id,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    c,
+    db,
+    results_directory,
+    quiet,
+):
+    """
+    Import the results of the scenario's operational type modules. Only the
+    package is in the module list, so an operational type's own
+    import_results_into_database is dispatched from here (as its
+    export_results, validate_inputs and process_model_results are).
+
+    :param scenario_id:
+    :param c:
+    :param db:
+    :param results_directory:
+    :param quiet:
+    :return:
+    """
+    required_opchar_modules = get_required_opchar_modules(scenario_id, c)
+    imported_operational_modules = load_operational_type_modules(
+        required_opchar_modules
+    )
+
+    for op_m in required_opchar_modules:
+        if hasattr(imported_operational_modules[op_m], "import_results_into_database"):
+            imported_operational_modules[op_m].import_results_into_database(
+                scenario_id,
+                weather_iteration,
+                hydro_iteration,
+                availability_iteration,
+                subproblem,
+                stage,
+                c,
+                db,
+                results_directory,
+                quiet,
+            )
+
+
 def process_results(db, c, scenario_id, subscenarios, quiet):
     """
 

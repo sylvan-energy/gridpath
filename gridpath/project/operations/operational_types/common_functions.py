@@ -591,14 +591,24 @@ TIMEPOINT_INDEX_QUERY_PARAMS = {
     "map_join_condition": "{table}.timepoint = resolved_index.data_timepoint",
 }
 
-BT_HRZ_INDEX_QUERY_PARAMS = {
-    "select_columns": "balancing_type_project, horizon",
-    "index_columns": "balancing_type_project, horizon",
-    "index_join_table": "inputs_temporal_horizon_timepoints",
-    "index_columns_join_table": "balancing_type_horizon, horizon",
-    "map_column_suffix": "_hrz_map_scenario_id",
-    # DISTINCT, as relevant_temporal has one row per timepoint here
-    "map_resolved_index_cte": """,
+
+def get_bt_hrz_index_query_params(bt_column):
+    """
+    Build the opr_index_dict for balancing-type/horizon-indexed opchar
+    inputs whose data table stores the balancing type in column
+    *bt_column*: the hydro opchars tables use the (historical) column name
+    balancing_type_project, as the horizons are the project's own; tables
+    indexed by horizons of OTHER balancing types (e.g. the hydro budget
+    allocation limits) use the canonical balancing_type_horizon.
+    """
+    return {
+        "select_columns": f"{bt_column}, horizon",
+        "index_columns": f"{bt_column}, horizon",
+        "index_join_table": "inputs_temporal_horizon_timepoints",
+        "index_columns_join_table": "balancing_type_horizon, horizon",
+        "map_column_suffix": "_hrz_map_scenario_id",
+        # DISTINCT, as relevant_temporal has one row per timepoint here
+        "map_resolved_index_cte": """,
         resolved_index_{map_id} AS (
             SELECT DISTINCT rt.balancing_type_horizon AS balancing_type_horizon,
                 rt.horizon AS horizon,
@@ -609,12 +619,15 @@ BT_HRZ_INDEX_QUERY_PARAMS = {
                 AND m.balancing_type_horizon = rt.balancing_type_horizon
                 AND m.horizon = rt.horizon
         )""",
-    "map_select_columns": "resolved_index.balancing_type_horizon AS "
-    "balancing_type_project, resolved_index.horizon AS horizon",
-    "map_join_condition": "{table}.balancing_type_project = "
-    "resolved_index.balancing_type_horizon "
-    "AND {table}.horizon = resolved_index.data_horizon",
-}
+        "map_select_columns": f"resolved_index.balancing_type_horizon AS "
+        f"{bt_column}, resolved_index.horizon AS horizon",
+        "map_join_condition": f"{{table}}.{bt_column} = "
+        f"resolved_index.balancing_type_horizon "
+        f"AND {{table}}.horizon = resolved_index.data_horizon",
+    }
+
+
+BT_HRZ_INDEX_QUERY_PARAMS = get_bt_hrz_index_query_params("balancing_type_project")
 
 
 def get_prj_temporal_index_opr_inputs_from_db(

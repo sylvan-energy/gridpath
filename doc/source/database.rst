@@ -197,6 +197,12 @@ Hydro Operational Characteristics
 
 .. automodule:: db.csvs_test_examples.project.opchar.hydro_operational_chars.doc
 
+================================
+Hydro Energy-Budget Allocation
+================================
+
+.. automodule:: db.csvs_test_examples.project.opchar.hydro_budget_allocation.doc
+
 =====================
 Opchar Timepoint Maps
 =====================

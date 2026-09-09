@@ -453,6 +453,20 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro_w_balancing_types"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_hydro_w_budget_allocation(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_hydro_w_budget_allocation" example: the
+        '2horizons_w_hydro_w_balancing_types' example (yearly hydro budget)
+        with the allocation of the budget between the two days limited to
+        30-40% and 60-70% respectively; the unconstrained solution puts ~58%
+        in the first day, so the limits bind and the objective is worse
+        than the base example's.
+        :return:
+        """
+        scenario_name = "2horizons_w_hydro_w_budget_allocation"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2horizons_w_stor_stress_hrz(self):
         """
         Check validation and objective function value of
