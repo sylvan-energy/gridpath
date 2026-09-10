@@ -303,28 +303,18 @@ def import_results_into_database(
     """
     which_results = "project_cap_factor_limits"
 
-    if os.path.exists(
-        os.path.join(
-            results_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "results",
-            f"{which_results}.csv",
-        )
-    ):
-        import_csv(
-            conn=db,
-            cursor=c,
-            scenario_id=scenario_id,
-            weather_iteration=weather_iteration,
-            hydro_iteration=hydro_iteration,
-            availability_iteration=availability_iteration,
-            subproblem=subproblem,
-            stage=stage,
-            quiet=quiet,
-            results_directory=results_directory,
-            which_results=which_results,
-        )
+    # NOTE: results_directory already IS the scenario's results directory;
+    # import_csv skips quietly if the file isn't there
+    import_csv(
+        conn=db,
+        cursor=c,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        quiet=quiet,
+        results_directory=results_directory,
+        which_results=which_results,
+    )

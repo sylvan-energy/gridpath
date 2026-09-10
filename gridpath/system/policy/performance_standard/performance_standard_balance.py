@@ -23,7 +23,11 @@ from gridpath.auxiliary.dynamic_components import (
     performance_standard_balance_emission_components,
     performance_standard_balance_credit_components,
 )
-from gridpath.common_functions import create_results_df, update_results_df
+from gridpath.common_functions import (
+    create_results_df,
+    update_results_df,
+    constraint_dual,
+)
 from gridpath.system.policy.performance_standard import PERFORMANCE_STANDARD_Z_PRD_DF
 
 Infinity = float("inf")
@@ -183,6 +187,8 @@ def export_results(
     results_columns = [
         "performance_standard_energy_overage_tco2",
         "performance_standard_power_overage_tco2",
+        "performance_standard_energy_unit_dual",
+        "performance_standard_power_unit_dual",
     ]
     data = [
         [
@@ -190,6 +196,8 @@ def export_results(
             p,
             value(m.Performance_Standard_Energy_Unit_Overage_Expression[z, p]),
             value(m.Performance_Standard_Power_Unit_Overage_Expression[z, p]),
+            constraint_dual(m, m.Performance_Standard_Energy_Unit_Constraint, (z, p)),
+            constraint_dual(m, m.Performance_Standard_Power_Unit_Constraint, (z, p)),
         ]
         for (z, p) in m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD
     ]

@@ -803,6 +803,15 @@ def duals_wrapper(m, component, verbose=False):
         return None
 
 
+def constraint_dual(m, constraint, index):
+    """
+    The dual of *constraint* at *index*, or None where the constraint is not
+    defined there (a skipped or trivially feasible index), the instance has
+    no dual suffix (--skip_duals), or the solver returned no dual.
+    """
+    return duals_wrapper(m, constraint[index]) if index in constraint else None
+
+
 def none_dual_type_error_wrapper(component, coefficient):
     try:
         return component / coefficient

@@ -35,6 +35,7 @@ from pyomo.environ import (
     value,
 )
 
+from gridpath.common_functions import constraint_dual
 from gridpath.auxiliary.db_interface import import_csv, directories_to_db_values
 
 
@@ -322,11 +323,19 @@ def export_results(
                 "timepoint_weight",
                 "period",
                 "simultaneous_flow_mw",
+                "dual",
             ]
         )
         for g, tmp in m.SIM_FLOW_LMT_TMPS:
             writer.writerow(
-                [g, tmp, m.tmp_weight[tmp], m.period[tmp], value(m.Sim_Flow_MW[g, tmp])]
+                [
+                    g,
+                    tmp,
+                    m.tmp_weight[tmp],
+                    m.period[tmp],
+                    value(m.Sim_Flow_MW[g, tmp]),
+                    constraint_dual(m, m.Sim_Flow_Constraint, (g, tmp)),
+                ]
             )
 
 
