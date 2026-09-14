@@ -239,6 +239,26 @@ class TestLoadZones(unittest.TestCase):
             expected_export_penalty_cost_per_mwh, actual_export_penalty_cost_per_mwh
         )
 
+        # Param: unserved_energy_stats_threshold_mw
+        # Regression: this param was declared with default 0 but never read
+        # from load_zones.tab, so database values were silently ignored.
+        # Zone2 is unspecified (".") and must fall back to the default.
+        expected_unserved_energy_stats_threshold_mw = OrderedDict(
+            sorted({"Zone1": 1, "Zone2": 0, "Zone3": 5.5, "Zone4": 0}.items())
+        )
+        actual_unserved_energy_stats_threshold_mw = OrderedDict(
+            sorted(
+                {
+                    z: instance.unserved_energy_stats_threshold_mw[z]
+                    for z in instance.LOAD_ZONES
+                }.items()
+            )
+        )
+        self.assertDictEqual(
+            expected_unserved_energy_stats_threshold_mw,
+            actual_unserved_energy_stats_threshold_mw,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
