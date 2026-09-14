@@ -177,6 +177,18 @@ class TestGenVarStorHybOpType(unittest.TestCase):
         )
         self.assertDictEqual(expected_disch_eff, actual_disch_eff)
 
+        # Param: gen_var_stor_hyb_reserves_setpoint_duration_hours (sparse: no
+        # default, so only projects with a specified value are "in" the param)
+        expected_reserves_setpoint_duration = {"Wind_Battery_Hybrid": 2}
+        actual_reserves_setpoint_duration = {
+            prj: instance.gen_var_stor_hyb_reserves_setpoint_duration_hours[prj]
+            for prj in instance.GEN_VAR_STOR_HYB
+            if prj in instance.gen_var_stor_hyb_reserves_setpoint_duration_hours
+        }
+        self.assertDictEqual(
+            expected_reserves_setpoint_duration, actual_reserves_setpoint_duration
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +20,8 @@ import sqlite3
 import sys
 import time
 import traceback
+
+import pandas as pd
 
 # Python 3.12 deprecated sqlite3's implicit datetime/date adapters and the
 # TIMESTAMP/DATE converters used with detect_types=PARSE_DECLTYPES;
@@ -222,3 +225,25 @@ def spin_on_database_lock_generic(
         else:
             # print("...done.")
             break
+
+
+def read_and_import_csv(conn, f_path, table):
+    """
+    Read the CSV at *f_path* and APPEND its contents to *table* (existing
+    rows are preserved). The CSV's column names must be a subset of the
+    table's columns. Shared by the Data Toolkit's and the RA Toolkit's
+    raw-data loaders and by the steps that write their generated data back
+    into a raw database.
+    """
+    # Set low_memory to False to avoid dtype warning
+    # TODO: actually specify dtypes instead
+    df = pd.read_csv(f_path, delimiter=",", low_memory=False, on_bad_lines="warn")
+
+    spin_on_database_lock_generic(
+        command=df.to_sql(
+            name=table,
+            con=conn,
+            if_exists="append",
+            index=False,
+        )
+    )

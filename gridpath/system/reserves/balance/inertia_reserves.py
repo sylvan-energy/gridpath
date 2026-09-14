@@ -156,28 +156,6 @@ def export_results(
             )
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    """
-
-    :param instance:
-    :return:
-    """
-    instance.constraint_indices["Meet_Inertia_Reserves_Constraint"] = [
-        "zone",
-        "timepoint",
-        "dual",
-    ]
-
-
 def import_results_into_database(
     scenario_id,
     weather_iteration,

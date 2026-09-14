@@ -16,6 +16,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 from db import create_database
 from db.common_functions import update_db_last_modified
@@ -73,6 +74,33 @@ class TestCreateDatabase(unittest.TestCase):
             self.assertIsNone(scenarios_modified)
 
             conn.close()
+
+    def test_yes_recreates_existing_database_without_prompt(self):
+        """
+        With --yes an existing database file is deleted and recreated without
+        the interactive confirmation prompt (which hangs headless runs).
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            db_path = os.path.join(tmp_dir, "test.db")
+            create_database.main(["--database", db_path, "--omit_data"])
+            conn = sqlite3.connect(db_path)
+            conn.execute("CREATE TABLE marker (x INTEGER)")
+            conn.commit()
+            conn.close()
+
+            with mock.patch("builtins.input", side_effect=AssertionError("prompted")):
+                create_database.main(["--database", db_path, "--omit_data", "--yes"])
+
+            conn = sqlite3.connect(db_path)
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            conn.close()
+            self.assertNotIn("marker", tables)
+            self.assertIn("scenarios", tables)
 
     def test_raw_data_db_metadata(self):
         """

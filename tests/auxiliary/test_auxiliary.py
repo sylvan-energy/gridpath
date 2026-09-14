@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +14,8 @@
 # limitations under the License.
 
 from pyomo.environ import AbstractModel
+import os
+import tempfile
 import unittest
 
 import gridpath.auxiliary.auxiliary as auxiliary_module_to_test
@@ -90,6 +93,104 @@ class TestAuxiliary(unittest.TestCase):
         self.assertEqual(True, auxiliary_module_to_test.is_number(1))
         self.assertEqual(True, auxiliary_module_to_test.is_number(100.5))
         self.assertEqual(False, auxiliary_module_to_test.is_number("string"))
+
+    def _write_projects_tab(self, tmp_dir, rows):
+        os.makedirs(os.path.join(tmp_dir, "inputs"))
+        with open(os.path.join(tmp_dir, "inputs", "projects.tab"), "w") as f:
+            f.write("project\toperational_type\n")
+            for prj, op_type in rows:
+                f.write("{}\t{}\n".format(prj, op_type))
+
+    def test_get_required_subtype_modules(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._write_projects_tab(
+                tmp_dir,
+                [("Prj1", "gen_spec"), ("Prj2", "gen_var"), ("Prj3", "gen_spec")],
+            )
+            actual = auxiliary_module_to_test.get_required_subtype_modules(
+                scenario_directory=tmp_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+                which_type="operational_type",
+            )
+            self.assertListEqual(sorted(actual), ["gen_spec", "gen_var"])
+
+    def test_get_required_subtype_modules_unspecified_passes_through(self):
+        """
+        "." is GridPath's marker for an unspecified value and is returned
+        as-is; whether that is allowed is decided by the type's callers.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._write_projects_tab(
+                tmp_dir, [("Prj1", "binary"), ("Prj2", "."), ("Prj3", ".")]
+            )
+            actual = auxiliary_module_to_test.get_required_subtype_modules(
+                scenario_directory=tmp_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+                which_type="operational_type",
+            )
+            self.assertListEqual(sorted(actual), [".", "binary"])
+
+    def test_get_required_subtype_modules_blank_raises(self):
+        """
+        A blank cell (as opposed to ".") is malformed input; the reader
+        raises naming the affected entities.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._write_projects_tab(
+                tmp_dir, [("Prj1", "gen_simple"), ("Prj2", ""), ("Prj3", "")]
+            )
+            with self.assertRaises(ValueError) as cm:
+                auxiliary_module_to_test.get_required_subtype_modules(
+                    scenario_directory=tmp_dir,
+                    weather_iteration="",
+                    hydro_iteration="",
+                    availability_iteration="",
+                    subproblem="",
+                    stage="",
+                    which_type="operational_type",
+                )
+            self.assertIn("Blank operational_type", str(cm.exception))
+            self.assertIn("project(s) Prj2, Prj3", str(cm.exception))
+            self.assertNotIn("Prj1", str(cm.exception))
+
+    def test_load_subtype_modules_unspecified_raises(self):
+        """
+        "." reaching the loader means a required type is unspecified. It must
+        raise a clear error rather than import the parent package.
+        """
+        with self.assertRaises(ValueError) as cm:
+            auxiliary_module_to_test.load_subtype_modules(
+                required_subtype_modules=["gen_simple", "."],
+                package="gridpath.project.operations.operational_types",
+                required_attributes=[],
+            )
+        self.assertIn("Unspecified type ('.')", str(cm.exception))
+        self.assertIn("operational_types", str(cm.exception))
+
+    def test_load_subtype_modules_invalid_name_raises(self):
+        with self.assertRaises(ValueError) as cm:
+            auxiliary_module_to_test.load_subtype_modules(
+                required_subtype_modules=[""],
+                package="gridpath.project.operations.operational_types",
+                required_attributes=[],
+            )
+        self.assertIn("Invalid subtype module name", str(cm.exception))
+
+    def test_load_subtype_modules(self):
+        imported = auxiliary_module_to_test.load_subtype_modules(
+            required_subtype_modules=["gen_simple"],
+            package="gridpath.project.operations.operational_types",
+            required_attributes=["power_provision_rule"],
+        )
+        self.assertTrue(hasattr(imported["gen_simple"], "power_provision_rule"))
 
 
 if __name__ == "__main__":

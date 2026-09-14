@@ -4,3 +4,4 @@ Wind,SLICE_OF_DAY,SODZone1,sod_exceedance,,,1,
 Month_Block,SLICE_OF_DAY,SODZone1,sod_flat_block,,,,
 Battery,SLICE_OF_DAY,SODZone1,sod_stor,,,,0.8
 Solar,RPS,RPSZone1,f_output,1,0,,
+Geothermal_Late,SLICE_OF_DAY,SODZone1,sod_exceedance,,,1,

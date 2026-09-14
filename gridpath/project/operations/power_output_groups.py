@@ -22,7 +22,7 @@ import pandas as pd
 from pyomo.environ import Set, Param, Constraint, NonNegativeReals, Expression, value
 
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
-from gridpath.common_functions import duals_wrapper, none_dual_type_error_wrapper
+from gridpath.common_functions import constraint_dual, none_dual_type_error_wrapper
 from gridpath.project.operations.common_functions import (
     load_operational_type_modules,
 )
@@ -288,6 +288,127 @@ def load_model_data(
 ###############################################################################
 
 
+def export_results(
+    scenario_directory,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    m,
+    d,
+):
+    """
+    Export the group power output in each timepoint, the limits, and the
+    duals of the constraints enforcing them (a limit left at its default of
+    0 or infinity is not enforced and so has no dual).
+
+    :param scenario_directory:
+    :param subproblem:
+    :param stage:
+    :param m:
+    :param d:
+    :return:
+    """
+    # This module is always loaded, but most scenarios define no groups;
+    # write nothing rather than a header-only file in every results
+    # directory (a Monte Carlo run has one per draw per subproblem)
+    if len(m.POWER_OUTPUT_GROUP_TMPS) == 0:
+        return
+
+    with open(
+        os.path.join(
+            scenario_directory,
+            weather_iteration,
+            hydro_iteration,
+            availability_iteration,
+            subproblem,
+            stage,
+            "results",
+            "project_group_power.csv",
+        ),
+        "w",
+        newline="",
+    ) as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "power_output_group",
+                "timepoint",
+                "period",
+                "group_power_mw",
+                "power_output_group_power_output_min",
+                "power_output_group_power_output_max",
+                "power_output_group_max_dual",
+                "power_output_group_min_dual",
+                "power_output_group_max_marginal_cost",
+                "power_output_group_min_marginal_cost",
+            ]
+        )
+        for grp, tmp in sorted(m.POWER_OUTPUT_GROUP_TMPS):
+            prd = m.period[tmp]
+            max_dual = constraint_dual(
+                m, m.Max_Group_Total_Power_in_Tmp_Constraint, (grp, tmp)
+            )
+            min_dual = constraint_dual(
+                m, m.Min_Group_Total_Power_in_Tmp_Constraint, (grp, tmp)
+            )
+            # The duals are in the objective's NPV terms; normalize by the
+            # timepoint's objective coefficient to get a marginal cost per
+            # MW in the timepoint, as the load balance and reserve balance
+            # marginal costs do
+            coefficient = m.tmp_objective_coefficient[tmp]
+            writer.writerow(
+                [
+                    grp,
+                    tmp,
+                    prd,
+                    value(m.Group_Total_Power_in_Tmp[grp, tmp]),
+                    m.power_output_group_power_output_min[grp, prd],
+                    m.power_output_group_power_output_max[grp, prd],
+                    max_dual,
+                    min_dual,
+                    none_dual_type_error_wrapper(max_dual, coefficient),
+                    none_dual_type_error_wrapper(min_dual, coefficient),
+                ]
+            )
+
+
+def import_results_into_database(
+    scenario_id,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    c,
+    db,
+    results_directory,
+    quiet,
+):
+    """
+    :param scenario_id:
+    :param c:
+    :param db:
+    :param results_directory:
+    :param quiet:
+    :return:
+    """
+    import_csv(
+        conn=db,
+        cursor=c,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        quiet=quiet,
+        results_directory=results_directory,
+        which_results="project_group_power",
+    )
+
+
 def get_inputs_from_database(
     scenario_id,
     subscenarios,
@@ -395,26 +516,3 @@ def write_model_inputs(
             fname="power_output_group_projects.tab",
             data=pwr_grp_prj,
         )
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Max_Group_Total_Power_in_Tmp_Constraint"] = [
-        "power_output_group",
-        "period",
-        "dual",
-    ]
-
-    instance.constraint_indices["Min_Group_Total_Power_in_Tmp_Constraint"] = [
-        "power_output_group",
-        "period",
-        "dual",
-    ]

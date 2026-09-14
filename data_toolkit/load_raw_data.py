@@ -36,8 +36,10 @@ inserted with ``if_exists="append"``). Rows whose import flag is False are
 skipped.
 
 This generic loader is used throughout the Data Toolkit workflow to populate
-``raw_data`` tables (e.g., VER profiles and their unit mapping, hydro operating
-characteristics) that later Data Toolkit steps depend on.
+``raw_data`` tables (e.g., the EIA-860 generators and EIA-930 hourly
+interchange data and the user-defined mapping tables) that later Data
+Toolkit steps depend on. The RA Toolkit's raw database has its own
+counterpart of this step (:mod:`ra_toolkit.load_raw_data`).
 
 =====
 Usage
@@ -61,11 +63,10 @@ import sys
 from argparse import ArgumentParser
 from gridpath.common_functions import get_version_parser
 import os.path
-from sqlite3 import Connection
 
 import pandas as pd
 
-from db.common_functions import spin_on_database_lock_generic, connect_to_database
+from db.common_functions import connect_to_database, read_and_import_csv
 
 
 def parse_arguments(args):
@@ -113,23 +114,6 @@ def main(args=None):
 
     conn.commit()
     conn.close()
-
-
-def read_and_import_csv(conn: Connection, f_path: str, table):
-    # Set low_memory to False to avoid dtype warning
-    # TODO: actually specify dtypes instead
-    df = pd.read_csv(f_path, delimiter=",", low_memory=False, on_bad_lines="warn")
-
-    # print(f_path)
-    # print(df)
-    spin_on_database_lock_generic(
-        command=df.to_sql(
-            name=table,
-            con=conn,
-            if_exists="append",
-            index=False,
-        )
-    )
 
 
 if __name__ == "__main__":

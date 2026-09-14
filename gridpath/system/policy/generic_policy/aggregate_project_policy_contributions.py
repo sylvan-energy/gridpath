@@ -14,7 +14,7 @@
 
 """ """
 
-from pyomo.environ import Expression, value
+from pyomo.environ import Expression, Set, value
 
 from gridpath.auxiliary.dynamic_components import (
     policy_balance_contribution_components,
@@ -40,6 +40,26 @@ def add_model_components(
     :return:
     """
 
+    # Group the project-timepoint contribution indices by requirement
+    # (policy, zone, balancing type, horizon) in ONE pass over the big set,
+    # so the aggregation rules below don't rescan it for every requirement
+    # index (see the performance conventions in the developer docs).
+    def prj_tmps_by_policy_zone_bln_type_hrz_init(mod):
+        prj_tmps_by_req = {idx: [] for idx in mod.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ}
+        for prj, policy, zone, tmp in mod.PRJ_POLICY_ZONE_OPR_TMPS:
+            for bt in mod.BLN_TYPES:
+                idx = (policy, zone, bt, mod.horizon[tmp, bt])
+                if idx in prj_tmps_by_req:
+                    prj_tmps_by_req[idx].append((prj, tmp))
+
+        return prj_tmps_by_req
+
+    m.PRJ_TMPS_BY_POLICY_ZONE_BLN_TYPE_HRZ = Set(
+        m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ,
+        dimen=2,
+        initialize=prj_tmps_by_policy_zone_bln_type_hrz_init,
+    )
+
     def policy_target_total_tmp_contributions_rule(mod, policy, zone, bt, h):
         """
         :param mod:
@@ -49,13 +69,12 @@ def add_model_components(
         :return:
         """
         return sum(
-            (mod.Policy_Contribution_in_Timepoint[prj, policy, zone, tmp])
+            mod.Policy_Contribution_in_Timepoint[prj, policy, zone, tmp]
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
-            for (prj, _policy, _zone, tmp) in mod.PRJ_POLICY_ZONE_OPR_TMPS
-            if policy == _policy
-            and zone == _zone
-            and tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, h]
+            for (prj, tmp) in mod.PRJ_TMPS_BY_POLICY_ZONE_BLN_TYPE_HRZ[
+                policy, zone, bt, h
+            ]
         )
 
     m.Total_Project_Policy_Zone_Tmp_Contributions = Expression(
@@ -63,24 +82,25 @@ def add_model_components(
         rule=policy_target_total_tmp_contributions_rule,
     )
 
+    # Same one-pass grouping for the month-hour (slice-of-day) requirements.
+    def prjs_by_policy_zone_prd_month_hour_init(mod):
+        prjs_by_req = {idx: [] for idx in mod.POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ}
+        for prj, policy, zone, prd, mn, hr in mod.PRJ_POLICY_ZONE_PRDS_MONTH_HOURS:
+            prjs_by_req[policy, zone, prd, mn, hr].append(prj)
+
+        return prjs_by_req
+
+    m.PRJS_BY_POLICY_ZONE_PRD_MONTH_HOUR = Set(
+        m.POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ,
+        initialize=prjs_by_policy_zone_prd_month_hour_init,
+    )
+
     def policy_target_total_month_hour_contributions_rule(
         mod, policy, zone, prd, mn, hr
     ):
         return sum(
             mod.Policy_Contribution_in_Month_Hour[prj, policy, zone, prd, mn, hr]
-            for (
-                prj,
-                _policy,
-                _zone,
-                _prd,
-                _mn,
-                _hr,
-            ) in mod.PRJ_POLICY_ZONE_PRDS_MONTH_HOURS
-            if _policy == policy
-            and _zone == zone
-            and _prd == prd
-            and _mn == mn
-            and _hr == hr
+            for prj in mod.PRJS_BY_POLICY_ZONE_PRD_MONTH_HOUR[policy, zone, prd, mn, hr]
         )
 
     m.Total_Project_Policy_Zone_Month_Hour_Contributions = Expression(

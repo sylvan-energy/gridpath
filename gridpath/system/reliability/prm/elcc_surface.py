@@ -34,7 +34,11 @@ from gridpath.auxiliary.dynamic_components import (
     prm_balance_provision_components,
     cost_components,
 )
-from gridpath.common_functions import create_results_df, update_results_df
+from gridpath.common_functions import (
+    create_results_df,
+    update_results_df,
+    constraint_dual,
+)
 from gridpath.system.reliability.prm import PRM_ZONE_PRD_DF
 
 
@@ -214,29 +218,21 @@ def export_results(
         "w",
         newline="",
     ) as results_file:
+        # NOTE: this file has no results table and is not imported into the
+        # database (no example exercises the ELCC surface feature), so the
+        # dual is available on disk only
         writer = csv.writer(results_file)
-        writer.writerow(["elcc_surface_name", "prm_zone", "period", "elcc_mw"])
+        writer.writerow(["elcc_surface_name", "prm_zone", "period", "elcc_mw", "dual"])
         for s, z, p in m.ELCC_SURFACE_PRM_ZONE_PERIODS:
-            writer.writerow([s, z, p, value(m.Dynamic_ELCC_MW[s, z, p])])
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Dynamic_ELCC_Constraint"] = [
-        "surface_name",
-        "prm_zone",
-        "period",
-        "facet",
-        "dual",
-    ]
+            writer.writerow(
+                [
+                    s,
+                    z,
+                    p,
+                    value(m.Dynamic_ELCC_MW[s, z, p]),
+                    constraint_dual(m, m.Dynamic_ELCC_Constraint, (s, z, p)),
+                ]
+            )
 
 
 def get_inputs_from_database(

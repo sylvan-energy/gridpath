@@ -145,16 +145,3 @@ def export_results(
     )
 
     update_results_df(getattr(d, PRM_ZONE_PRD_DF), results_df)
-
-
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["PRM_Constraint"] = ["prm_zone", "period", "dual"]

@@ -264,7 +264,7 @@ def get_run_scenario_parser():
         help="Don't import or save constraint duals. Duals are imported "
         "for every constraint in the model, which adds significant memory "
         "and solution-load time; skip them if you don't need shadow prices "
-        "(e.g. LMPs). Dual-based results files will not be written.",
+        "(e.g. LMPs). The dual columns of the results will be empty.",
     )
     # Solver options
     parser.add_argument(
@@ -801,6 +801,15 @@ def duals_wrapper(m, component, verbose=False):
                 possibly other solvers), not otherwise.
                 """)
         return None
+
+
+def constraint_dual(m, constraint, index):
+    """
+    The dual of *constraint* at *index*, or None where the constraint is not
+    defined there (a skipped or trivially feasible index), the instance has
+    no dual suffix (--skip_duals), or the solver returned no dual.
+    """
+    return duals_wrapper(m, constraint[index]) if index in constraint else None
 
 
 def none_dual_type_error_wrapper(component, coefficient):

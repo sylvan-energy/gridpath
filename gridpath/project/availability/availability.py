@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +18,7 @@ from pyomo.environ import Expression, NonNegativeReals, Param, Set, value
 from gridpath.auxiliary.auxiliary import (
     get_required_subtype_modules,
     load_subtype_modules,
+    UNSPECIFIED,
 )
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_TIMEPOINT_DF, DEFAULT_AVAILABILITY_TYPE
@@ -402,8 +404,12 @@ def load_availability_type_modules(required_availability_types):
     :param required_availability_types:
     :return:
     """
+    # "." means the type is not specified, so the default (which the
+    # callers add to the list) applies; it is not a module to load
     return load_subtype_modules(
-        required_subtype_modules=required_availability_types,
+        required_subtype_modules=[
+            t for t in required_availability_types if t != UNSPECIFIED
+        ],
         package="gridpath.project.availability.availability_types",
         required_attributes=["availability_derate_cap_rule"],
     )

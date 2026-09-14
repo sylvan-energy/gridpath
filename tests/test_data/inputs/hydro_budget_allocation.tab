@@ -1,0 +1,5 @@
+project	balancing_type_horizon	horizon	min_budget_fraction	max_budget_fraction
+Hydro_NonCurtailable	day	202001	0.4	0.6
+Hydro_NonCurtailable	day	202002	0.4	.
+Hydro_NonCurtailable	day	203001	.	0.55
+Hydro_NonCurtailable	day	203002	0.45	0.55

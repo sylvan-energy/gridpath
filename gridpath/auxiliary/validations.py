@@ -353,8 +353,16 @@ def validate_values(
         max_invalids = (df[c] >= max) if strict_max else (df[c] > max)
         invalids = min_invalids | max_invalids
         if invalids.any():
-            bad_idxs = df[idx_col][invalids].astype(str).values
-            print_bad_idxs = ", ".join(bad_idxs)
+            bad_idxs = df[idx_col][invalids].astype(str)
+            # A list-valued idx_col (a multi-column index) yields a
+            # DataFrame; join each row's parts so the message stays a flat,
+            # readable string. A single idx_col is a Series and formats
+            # exactly as before.
+            print_bad_idxs = ", ".join(
+                bad_idxs.to_list()
+                if isinstance(bad_idxs, pd.Series)
+                else ["-".join(row) for row in bad_idxs.to_numpy()]
+            )
             exp_min = "{} <".format(min) if strict_min else "{} <=".format(min)
             exp_max = "< {}".format(max) if strict_max else "<= {}".format(max)
 

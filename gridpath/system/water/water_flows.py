@@ -1460,53 +1460,6 @@ def export_results(
     )
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Water_Link_Minimum_Flow_Constraint"] = [
-        "water_link",
-        "departure_timepoint",
-        "arrival_timepoint",
-        "dual",
-    ]
-
-    instance.constraint_indices["Water_Link_Maximum_Flow_Constraint"] = [
-        "water_link",
-        "departure_timepoint",
-        "arrival_timepoint",
-        "dual",
-    ]
-
-    instance.constraint_indices["Water_Link_Min_Total_Hrz_Flow_Constraint"] = [
-        "water_link",
-        "balancing_type",
-        "horizon",
-        "dual",
-    ]
-
-    instance.constraint_indices["Water_Link_Max_Total_Hrz_Flow_Constraint"] = [
-        "water_link",
-        "balancing_type",
-        "horizon",
-        "dual",
-    ]
-
-    instance.constraint_indices["Water_Link_Flow_Ramp_Constraint"] = [
-        "water_link",
-        "ramp_limit",
-        "timepoint",
-        "future_timepoint",
-        "dual",
-    ]
-
-
 def import_results_into_database(
     scenario_id,
     weather_iteration,

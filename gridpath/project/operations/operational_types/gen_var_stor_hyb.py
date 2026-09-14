@@ -152,6 +152,16 @@ def add_model_components(
     | Optional default value for gen_var_stor_hyb_cap_factor. Use with        |
     | caution.                                                                |
     +-------------------------------------------------------------------------+
+    | | :code:`gen_var_stor_hyb_reserves_setpoint_duration_hours`             |
+    | | *Defined over*: :code:`GEN_VAR_STOR_HYB`                              |
+    | | *Within*: :code:`NonNegativeReals`                                    |
+    |                                                                         |
+    | The number of hours for which the storage component must be able to     |
+    | sustain the new setpoint if its upward reserves are called, i.e., the   |
+    | duration over which the storage upward reserves must be backed by       |
+    | energy in storage in the headroom energy constraint. If not specified,  |
+    | the timepoint duration is used.                                         |
+    +-------------------------------------------------------------------------+
 
     |
 
@@ -333,6 +343,12 @@ def add_model_components(
 
     m.gen_var_stor_hyb_upward_reserves_to_soc_depletion = Param(
         m.GEN_VAR_STOR_HYB, default=0
+    )
+
+    # No default: when not specified for a project, the headroom energy rule
+    # falls back to the timepoint duration (see reserves_setpoint_duration_hours)
+    m.gen_var_stor_hyb_reserves_setpoint_duration_hours = Param(
+        m.GEN_VAR_STOR_HYB, within=NonNegativeReals
     )
 
     # Variables
@@ -739,16 +755,31 @@ def max_stor_headroom_power_rule(mod, s, tmp):
     )
 
 
+def reserves_setpoint_duration_hours(mod, s, tmp):
+    """
+    The number of hours for which the new setpoint must be sustainable if
+    reserves are called: the project's
+    :code:`gen_var_stor_hyb_reserves_setpoint_duration_hours` if specified,
+    otherwise the duration of the timepoint.
+    """
+    # Sparse membership check: the param has no default, so a project is
+    # only "in" it when a value was loaded
+    if s in mod.gen_var_stor_hyb_reserves_setpoint_duration_hours:
+        return mod.gen_var_stor_hyb_reserves_setpoint_duration_hours[s]
+    else:
+        return mod.hrs_in_tmp[tmp]
+
+
 def max_stor_headroom_energy_rule(mod, s, tmp):
     """
     Can't provide more reserves (times sustained duration required) than
     available energy in storage in that timepoint. Said differently,
-    must have enough energy available to be at the new set point (for
-    the full duration of the timepoint).
+    must have enough energy available to be at the new set point for the
+    required setpoint duration (the timepoint duration by default).
     """
     return (
         mod.GenVarStorHyb_Upward_Reserves_from_Stor_MW[s, tmp]
-        * mod.hrs_in_tmp[tmp]
+        * reserves_setpoint_duration_hours(mod, s, tmp)
         / mod.gen_var_stor_hyb_discharging_efficiency[s]
         <= mod.GenVarStorHyb_Starting_Energy_in_Storage_MWh[s, tmp]
         + mod.GenVarStorHyb_Charge_MW[s, tmp]

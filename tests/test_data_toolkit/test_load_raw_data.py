@@ -28,7 +28,7 @@ class TestLoadRawData(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment"""
         os.chdir(os.path.join(os.path.dirname(__file__), "..", "..", "db"))
-        cls.db_path = "ra_toolkit_test_steps_temp.db"
+        cls.db_path = "data_toolkit_load_raw_data_test_temp.db"
 
         # Clean up temp database if it exists
         if os.path.exists(cls.db_path):
@@ -50,7 +50,7 @@ class TestLoadRawData(unittest.TestCase):
             "--database",
             self.db_path,
             "--csv_location",
-            "./csvs_test_examples/raw_data_ra_toolkit/",
+            "./csvs_test_examples/raw_data_open_data/",
             "--quiet",
         ]
         load_raw_data_main(args)

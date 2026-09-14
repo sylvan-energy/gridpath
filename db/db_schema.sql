@@ -2162,6 +2162,8 @@ CREATE TABLE inputs_project_operational_chars
     curtailment_cost_scenario_id                          INTEGER,
     hydro_operational_chars_scenario_id                   INTEGER, -- determines hydro MWa, min, max
     hydro_operational_chars_hrz_map_scenario_id           INTEGER, -- optional horizon map for hydro opchars
+    hydro_budget_allocation_scenario_id                   INTEGER, -- optional sub-horizon shares of the hydro energy budget
+    hydro_budget_allocation_hrz_map_scenario_id           INTEGER, -- optional horizon map for hydro budget allocation
     energy_profile_scenario_id                            INTEGER,
     energy_profile_tmp_map_scenario_id                    INTEGER, -- optional timepoint map for energy profiles
     energy_hrz_shaping_scenario_id                        INTEGER,
@@ -2202,6 +2204,7 @@ CREATE TABLE inputs_project_operational_chars
     losses_factor_in_energy_target                        FLOAT,
     losses_factor_curtailment                             FLOAT,
     upward_reserves_to_soc_depletion                      FLOAT,
+    reserves_setpoint_duration_hours                      FLOAT,   -- hours the new setpoint must be sustainable if reserves are called; default: timepoint duration
     PRIMARY KEY (project_operational_chars_scenario_id, project),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),
@@ -2245,6 +2248,9 @@ CREATE TABLE inputs_project_operational_chars
     FOREIGN KEY (project, hydro_operational_chars_scenario_id) REFERENCES
         subscenarios_project_hydro_operational_chars
             (project, hydro_operational_chars_scenario_id),
+    FOREIGN KEY (project, hydro_budget_allocation_scenario_id) REFERENCES
+        subscenarios_project_hydro_budget_allocation
+            (project, hydro_budget_allocation_scenario_id),
     FOREIGN KEY (project, energy_profile_scenario_id) REFERENCES
         subscenarios_project_energy_profiles
             (project, energy_profile_scenario_id),
@@ -2297,6 +2303,9 @@ CREATE TABLE inputs_project_operational_chars
         subscenarios_project_opchar_timepoint_map
             (opchar_timepoint_map_scenario_id),
     FOREIGN KEY (hydro_operational_chars_hrz_map_scenario_id) REFERENCES
+        subscenarios_project_opchar_horizon_map
+            (opchar_horizon_map_scenario_id),
+    FOREIGN KEY (hydro_budget_allocation_hrz_map_scenario_id) REFERENCES
         subscenarios_project_opchar_horizon_map
             (opchar_horizon_map_scenario_id),
     FOREIGN KEY (energy_hrz_shaping_hrz_map_scenario_id) REFERENCES
@@ -2358,8 +2367,8 @@ CREATE TABLE inputs_project_variable_om_cost_by_timepoint
 (
     project                                   VARCHAR(64),
     variable_om_cost_by_timepoint_scenario_id INTEGER,
-    weather_iteration                         INTEGER,
-    hydro_iteration                           INTEGER,
+    weather_iteration                         INTEGER NOT NULL,
+    hydro_iteration                           INTEGER NOT NULL,
     timepoint                                 INTEGER,
     variable_om_cost_by_timepoint             FLOAT,
     PRIMARY KEY (project, variable_om_cost_by_timepoint_scenario_id,
@@ -2609,9 +2618,9 @@ CREATE TABLE inputs_project_variable_generator_profiles
 (
     project                                VARCHAR(64),
     variable_generator_profile_scenario_id INTEGER,
-    weather_iteration                      INTEGER,
-    hydro_iteration                        INTEGER,
-    stage_id                               INTEGER,
+    weather_iteration                      INTEGER NOT NULL,
+    hydro_iteration                        INTEGER NOT NULL,
+    stage_id                               INTEGER NOT NULL,
     timepoint                              INTEGER,
     cap_factor                             FLOAT,
     PRIMARY KEY (project, variable_generator_profile_scenario_id,
@@ -2670,9 +2679,9 @@ CREATE TABLE inputs_project_hydro_operational_chars
 (
     project                             VARCHAR(64),
     hydro_operational_chars_scenario_id INTEGER,
-    weather_iteration                   INTEGER,
+    weather_iteration                   INTEGER NOT NULL,
     hydro_iteration                     INTEGER DEFAULT 0 NOT NULL,
-    stage_id                            INTEGER,
+    stage_id                            INTEGER NOT NULL,
     balancing_type_project              VARCHAR(64),
     horizon                             INTEGER,
     average_power_fraction              FLOAT,
@@ -2696,6 +2705,52 @@ CREATE TABLE inputs_project_hydro_operational_chars_iterations
     PRIMARY KEY (project, hydro_operational_chars_scenario_id)
 );
 
+-- Hydro energy-budget allocation limits: the minimum/maximum share of a
+-- project's horizon energy budget (see the hydro operational chars) that
+-- must/may be produced in each sub-horizon of that horizon. Sub-horizons are
+-- horizons of another balancing type in the temporal scenario, nested
+-- within the project's balancing-type horizons (e.g. each half of a month
+-- for a project with monthly budgets). NULL = limit not enforced.
+DROP TABLE IF EXISTS subscenarios_project_hydro_budget_allocation;
+CREATE TABLE subscenarios_project_hydro_budget_allocation
+(
+    project                             VARCHAR(64),
+    hydro_budget_allocation_scenario_id INTEGER,
+    name                                VARCHAR(32),
+    description                         VARCHAR(128),
+    PRIMARY KEY (project, hydro_budget_allocation_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_project_hydro_budget_allocation;
+CREATE TABLE inputs_project_hydro_budget_allocation
+(
+    project                             VARCHAR(64),
+    hydro_budget_allocation_scenario_id INTEGER,
+    weather_iteration                   INTEGER NOT NULL,
+    hydro_iteration                     INTEGER DEFAULT 0 NOT NULL,
+    stage_id                            INTEGER NOT NULL,
+    balancing_type_horizon              VARCHAR(64), -- the SUB-horizon's balancing type
+    horizon                             INTEGER,
+    min_budget_fraction                 FLOAT,
+    max_budget_fraction                 FLOAT,
+    PRIMARY KEY (project, hydro_budget_allocation_scenario_id,
+                 weather_iteration, hydro_iteration, stage_id,
+                 balancing_type_horizon, horizon),
+    FOREIGN KEY (project, hydro_budget_allocation_scenario_id) REFERENCES
+        subscenarios_project_hydro_budget_allocation
+            (project, hydro_budget_allocation_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_project_hydro_budget_allocation_iterations;
+CREATE TABLE inputs_project_hydro_budget_allocation_iterations
+(
+    project                             TEXT,
+    hydro_budget_allocation_scenario_id INTEGER,
+    varies_by_weather_iteration         INTEGER,
+    varies_by_hydro_iteration           INTEGER,
+    PRIMARY KEY (project, hydro_budget_allocation_scenario_id)
+);
+
 -- Energy profiles
 DROP TABLE IF EXISTS subscenarios_project_energy_profiles;
 CREATE TABLE subscenarios_project_energy_profiles
@@ -2716,9 +2771,9 @@ CREATE TABLE inputs_project_energy_profiles
 (
     project                    VARCHAR(64),
     energy_profile_scenario_id INTEGER,
-    weather_iteration          INTEGER,
-    hydro_iteration            INTEGER,
-    stage_id                   INTEGER,
+    weather_iteration          INTEGER NOT NULL,
+    hydro_iteration            INTEGER NOT NULL,
+    stage_id                   INTEGER NOT NULL,
     timepoint                  INTEGER,
     energy_fraction            FLOAT,
     PRIMARY KEY (project, energy_profile_scenario_id,
@@ -2766,9 +2821,9 @@ CREATE TABLE inputs_project_energy_hrz_shaping
 (
     project                        VARCHAR(64),
     energy_hrz_shaping_scenario_id INTEGER,
-    weather_iteration              INTEGER,
-    hydro_iteration                INTEGER,
-    stage_id                       INTEGER,
+    weather_iteration              INTEGER NOT NULL,
+    hydro_iteration                INTEGER NOT NULL,
+    stage_id                       INTEGER NOT NULL,
     balancing_type_project         TEXT,
     horizon                        INTEGER,
     hrz_energy_fraction            FLOAT,
@@ -2820,9 +2875,9 @@ CREATE TABLE inputs_project_energy_slice_hrz_shaping
 (
     project                              VARCHAR(64),
     energy_slice_hrz_shaping_scenario_id INTEGER,
-    weather_iteration                    INTEGER,
-    hydro_iteration                      INTEGER,
-    stage_id                             INTEGER,
+    weather_iteration                    INTEGER NOT NULL,
+    hydro_iteration                      INTEGER NOT NULL,
+    stage_id                             INTEGER NOT NULL,
     balancing_type_project               TEXT,
     horizon                              INTEGER,
     hrz_energy                           FLOAT,
@@ -2928,9 +2983,9 @@ CREATE TABLE inputs_project_load_modifier_profiles
 (
     project                           VARCHAR(64),
     load_modifier_profile_scenario_id INTEGER,
-    weather_iteration                 INTEGER,
-    hydro_iteration                   INTEGER,
-    stage_id                          INTEGER,
+    weather_iteration                 INTEGER NOT NULL,
+    hydro_iteration                   INTEGER NOT NULL,
+    stage_id                          INTEGER NOT NULL,
     timepoint                         INTEGER,
     fraction                          FLOAT,
     PRIMARY KEY (project, load_modifier_profile_scenario_id,
@@ -2968,8 +3023,8 @@ CREATE TABLE inputs_project_load_component_shift_bounds
 (
     project                                 VARCHAR(64),
     load_component_shift_bounds_scenario_id INTEGER,
-    weather_iteration                       INTEGER,
-    hydro_iteration                         INTEGER,
+    weather_iteration                       INTEGER NOT NULL,
+    hydro_iteration                         INTEGER NOT NULL,
     balancing_type_project                  VARCHAR(64), -- does not need to
     -- match project balancing type; column like this for legacy reasons
     horizon                                 INTEGER,
@@ -3011,9 +3066,9 @@ CREATE TABLE inputs_project_stor_exog_state_of_charge
 (
     project                               VARCHAR(64),
     stor_exog_state_of_charge_scenario_id INTEGER,
-    weather_iteration                     INTEGER,
-    hydro_iteration                       INTEGER,
-    stage_id                              INTEGER,
+    weather_iteration                     INTEGER NOT NULL,
+    hydro_iteration                       INTEGER NOT NULL,
+    stage_id                              INTEGER NOT NULL,
     timepoint                             INTEGER,
     exog_state_of_charge_mwh              FLOAT,
     PRIMARY KEY (project, stor_exog_state_of_charge_scenario_id,
@@ -6604,6 +6659,32 @@ CREATE TABLE results_project_period
                  availability_iteration, period, subproblem_id, stage_id)
 );
 
+-- Total power output of a group of projects in each timepoint, with the
+-- limits and the duals of the constraints enforcing them
+DROP TABLE IF EXISTS results_project_group_power;
+CREATE TABLE results_project_group_power
+(
+    scenario_id                          INTEGER,
+    weather_iteration                    INTEGER,
+    hydro_iteration                      INTEGER,
+    availability_iteration               INTEGER,
+    subproblem_id                        INTEGER,
+    stage_id                             INTEGER,
+    power_output_group                   VARCHAR(64),
+    timepoint                            INTEGER,
+    period                               INTEGER,
+    group_power_mw                       FLOAT,
+    power_output_group_power_output_min  FLOAT,
+    power_output_group_power_output_max  FLOAT,
+    power_output_group_max_dual          FLOAT,
+    power_output_group_min_dual          FLOAT,
+    power_output_group_max_marginal_cost FLOAT,
+    power_output_group_min_marginal_cost FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 power_output_group, timepoint)
+);
+
 DROP TABLE IF EXISTS results_project_group_capacity;
 CREATE TABLE results_project_group_capacity
 (
@@ -6853,6 +6934,37 @@ CREATE TABLE results_project_cap_factor_limits
     max_cap_factor         FLOAT,
     actual_power_provision_mwh,
     possible_power_provision_mwh,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id, project,
+                 balancing_type_horizon, horizon)
+);
+
+-- Hydro energy-budget allocation: the realized share of each parent
+-- horizon's energy budget in each sub-horizon with allocation limits, with
+-- the limits themselves and the duals of the constraints enforcing them (a
+-- limit that was not specified has no constraint and therefore no dual).
+-- Both hydro operational types write into this table.
+DROP TABLE IF EXISTS results_project_hydro_budget_allocation;
+CREATE TABLE results_project_hydro_budget_allocation
+(
+    scenario_id                   INTEGER,
+    weather_iteration             INTEGER,
+    hydro_iteration               INTEGER,
+    availability_iteration        INTEGER,
+    subproblem_id                 INTEGER,
+    stage_id                      INTEGER,
+    project                       VARCHAR(64),
+    balancing_type_horizon        VARCHAR(64),
+    horizon                       INTEGER,
+    parent_balancing_type_horizon VARCHAR(64),
+    parent_horizon                INTEGER,
+    min_budget_fraction           FLOAT,
+    max_budget_fraction           FLOAT,
+    energy_mwh                    FLOAT,
+    parent_budget_mwh             FLOAT,
+    budget_share                  FLOAT,
+    min_constraint_dual           FLOAT,
+    max_constraint_dual           FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id, project,
                  balancing_type_horizon, horizon)
@@ -7215,6 +7327,8 @@ CREATE TABLE results_transmission_period
     capacity_cost                        FLOAT,
     fixed_cost                           FLOAT,
     capacity_cost_wo_spinup_or_lookahead FLOAT,
+    min_cum_build_dual                   FLOAT,
+    max_cum_build_dual                   FLOAT,
     PRIMARY KEY (scenario_id, transmission_line, period, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id)
@@ -7235,6 +7349,8 @@ CREATE TABLE results_transmission_group_capacity
     group_new_capacity                           FLOAT,
     transmission_capacity_group_new_capacity_min FLOAT,
     transmission_capacity_group_new_capacity_max FLOAT,
+    transmission_capacity_group_new_max_dual     FLOAT,
+    transmission_capacity_group_new_min_dual     FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
                  transmission_capacity_group, period)
@@ -7878,6 +7994,8 @@ CREATE TABLE results_system_performance_standard
     performance_standard_project_capacity_mw    FLOAT,
     performance_standard_energy_overage_tco2    FLOAT,
     performance_standard_power_overage_tco2     FLOAT,
+    performance_standard_energy_unit_dual       FLOAT,
+    performance_standard_power_unit_dual        FLOAT,
     PRIMARY KEY (scenario_id, performance_standard_zone,
                  weather_iteration, hydro_iteration, availability_iteration,
                  subproblem_id, stage_id, period)
@@ -8126,6 +8244,9 @@ CREATE TABLE results_system_month_hour_policy_requirements
     policy_month                  INTEGER,
     policy_hour                   INTEGER,
     policy_month_hour_requirement FLOAT,
+    policy_month_hour_requirement_shortage FLOAT,
+    dual FLOAT,
+    policy_month_hour_requirement_marginal_cost_per_unit FLOAT,
     PRIMARY KEY (scenario_id, policy_name, policy_zone, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id, period, policy_month, policy_hour)
@@ -9125,7 +9246,13 @@ SELECT DISTINCT temporal_scenario_id,
 FROM inputs_temporal
          INNER JOIN
      inputs_temporal_horizon_timepoints
-     USING (temporal_scenario_id, stage_id, timepoint)
+-- subproblem_id is part of both tables' keys: joining on it keeps a
+-- timepoint's horizons within its own subproblem and, because it is the
+-- second column of inputs_temporal_horizon_timepoints' primary key, lets
+-- SQLite use that index (without it the join scanned every horizon-timepoint
+-- row of the temporal scenario for every timepoint: ~30 s for one 8760-hour
+-- subproblem, 0.05 s with it, identical rows)
+     USING (temporal_scenario_id, subproblem_id, stage_id, timepoint)
 ;
 
 -- This view shows the possible operational horizons for each project based

@@ -225,6 +225,11 @@ class TestGenHydro(unittest.TestCase):
         )
         self.assertDictEqual(expected_ramp_down, actual_ramp_down)
 
+        # Sets: GEN_HYDRO_BUDGET_ALLOC_BT_HRZS (the fixture file has no rows
+        # for gen_hydro projects; see test_gen_hydro_must_take for loaded
+        # limits)
+        self.assertListEqual([], list(instance.GEN_HYDRO_BUDGET_ALLOC_BT_HRZS))
+
 
 if __name__ == "__main__":
     unittest.main()

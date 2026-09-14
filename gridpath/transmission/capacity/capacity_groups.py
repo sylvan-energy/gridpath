@@ -23,6 +23,7 @@ import pandas as pd
 from pyomo.environ import Set, Param, Constraint, NonNegativeReals, Expression, value
 
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
+from gridpath.common_functions import constraint_dual
 from gridpath.auxiliary.db_interface import import_csv, directories_to_db_values
 import gridpath.transmission.capacity.capacity_types as cap_type_init
 from gridpath.transmission.capacity.common_functions import (
@@ -308,9 +309,11 @@ def export_results(
                 [
                     "transmission_capacity_group",
                     "period",
-                    "new_capacity",
+                    "group_new_capacity",
                     "transmission_capacity_group_new_capacity_min",
                     "transmission_capacity_group_new_capacity_max",
+                    "transmission_capacity_group_new_max_dual",
+                    "transmission_capacity_group_new_min_dual",
                 ]
             )
             for grp, prd in sorted(m.TX_CAPACITY_GROUP_PERIODS):
@@ -321,6 +324,12 @@ def export_results(
                         value(m.Tx_Group_New_Capacity_in_Period[grp, prd]),
                         m.tx_capacity_group_new_capacity_min[grp, prd],
                         m.tx_capacity_group_new_capacity_max[grp, prd],
+                        constraint_dual(
+                            m, m.Max_Tx_Group_Build_in_Period_Constraint, (grp, prd)
+                        ),
+                        constraint_dual(
+                            m, m.Min_Tx_Group_Build_in_Period_Constraint, (grp, prd)
+                        ),
                     ]
                 )
 
@@ -467,29 +476,6 @@ def write_model_inputs(
                 writer.writerow(row)
 
 
-def save_duals(
-    scenario_directory,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    instance,
-    dynamic_components,
-):
-    instance.constraint_indices["Max_Tx_Group_Build_in_Period_Constraint"] = [
-        "capacity_group",
-        "period",
-        "dual",
-    ]
-
-    instance.constraint_indices["Min_Tx_Group_Build_in_Period_Constraint"] = [
-        "capacity_group",
-        "period",
-        "dual",
-    ]
-
-
 def import_results_into_database(
     scenario_id,
     weather_iteration,
@@ -504,25 +490,18 @@ def import_results_into_database(
 ):
     which_results = "transmission_group_capacity"
 
-    if os.path.exists(
-        os.path.join(
-            results_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "results",
-            f"{which_results}.csv",
-        )
-    ):
-        import_csv(
-            conn=db,
-            cursor=c,
-            scenario_id=scenario_id,
-            subproblem=subproblem,
-            stage=stage,
-            quiet=quiet,
-            results_directory=results_directory,
-            which_results=which_results,
-        )
+    # NOTE: results_directory already IS the scenario's results directory;
+    # import_csv skips quietly if the file isn't there
+    import_csv(
+        conn=db,
+        cursor=c,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        quiet=quiet,
+        results_directory=results_directory,
+        which_results=which_results,
+    )

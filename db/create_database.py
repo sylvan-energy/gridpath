@@ -90,6 +90,14 @@ def parse_arguments(arguments):
         action="store_true",
         help="Ask the user for custom units.",
     )
+    parser.add_argument(
+        "--yes",
+        default=False,
+        action="store_true",
+        help="Delete and recreate an existing database file without asking "
+        "for confirmation. For non-interactive use; the prompt otherwise "
+        "hangs or raises EOFError when there is no stdin.",
+    )
 
     # Parse arguments
     parsed_arguments = parser.parse_known_args(args=arguments)[0]
@@ -312,14 +320,17 @@ def main(args=None):
     else:
         db_path = parsed_args.database
         if os.path.isfile(db_path):
-            response = (
-                input(
-                    f"Database file {os.path.abspath(db_path)} already exists. "
-                    "Delete and recreate? [y/N]: "
+            if parsed_args.yes:
+                response = "y"
+            else:
+                response = (
+                    input(
+                        f"Database file {os.path.abspath(db_path)} already "
+                        "exists. Delete and recreate? [y/N]: "
+                    )
+                    .strip()
+                    .lower()
                 )
-                .strip()
-                .lower()
-            )
             if response == "y" or response == "yes":
                 os.remove(db_path)
                 print(f"Deleted existing database: {os.path.abspath(db_path)}")

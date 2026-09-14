@@ -21,11 +21,13 @@ tests/test_examples.py):
 - Lane 1 (pytest-xdist): everything that is safe to run concurrently.
   Each worker gets its own copy of the unittest_examples database (see
   the PYTEST_XDIST_WORKER handling in tests/test_examples.py).
-- Lane 2 (serial): tests/test_data_toolkit and
-  tests/test_run_data_toolkit.py, which regenerate committed fixture CSVs
-  under db/csvs_test_examples/, some of which both file sets write — so
-  they must not overlap each other. Nothing else reads those CSVs while
-  tests run (the testing database is built from them beforehand).
+- Lane 2 (serial): tests/test_data_toolkit, tests/test_ra_toolkit,
+  tests/test_run_data_toolkit.py, and tests/test_run_ra_toolkit.py, which
+  regenerate committed fixture CSVs
+  under db/csvs_test_examples/, some of which several of these file sets
+  write — so they must not overlap each other. Nothing else reads those
+  CSVs while tests run (the testing database is built from them
+  beforehand).
 - Lane 3 (serial): tests/test_viz.py, which solves several example
   scenarios in one setUpClass. It is self-contained (template-database
   copy plus a temporary copy of the scenario directories) but gets its
@@ -60,7 +62,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # both excluded from the pytest-xdist lane (see module docstring)
 TOOLKIT_TEST_PATHS = [
     "tests/test_data_toolkit",
+    "tests/test_ra_toolkit",
     "tests/test_run_data_toolkit.py",
+    "tests/test_run_ra_toolkit.py",
 ]
 VIZ_TEST_PATH = "tests/test_viz.py"
 

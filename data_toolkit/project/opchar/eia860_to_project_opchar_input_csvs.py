@@ -350,6 +350,8 @@ def make_opchar_sql_str(
     curtailment_cost_scenario_id="NULL",
     hydro_operational_chars_scenario_id="NULL",
     hydro_operational_chars_hrz_map_scenario_id="NULL",
+    hydro_budget_allocation_scenario_id="NULL",
+    hydro_budget_allocation_hrz_map_scenario_id="NULL",
     energy_profile_scenario_id="NULL",
     energy_profile_tmp_map_scenario_id="NULL",
     energy_hrz_shaping_scenario_id="NULL",
@@ -390,6 +392,7 @@ def make_opchar_sql_str(
     losses_factor_in_energy_target="NULL",
     losses_factor_curtailment="NULL",
     upward_reserves_to_soc_depletion="NULL",
+    reserves_setpoint_duration_hours="NULL",
 ):
     """ """
 
@@ -459,6 +462,8 @@ def make_opchar_sql_str(
      {curtailment_cost_scenario_id} AS curtailment_cost_scenario_id,	
      {hydro_operational_chars_scenario_id} AS hydro_operational_chars_scenario_id,
      {hydro_operational_chars_hrz_map_scenario_id} AS hydro_operational_chars_hrz_map_scenario_id,
+     {hydro_budget_allocation_scenario_id} AS hydro_budget_allocation_scenario_id,
+     {hydro_budget_allocation_hrz_map_scenario_id} AS hydro_budget_allocation_hrz_map_scenario_id,
      {energy_profile_scenario_id} AS "energy_profile_scenario_id",
      {energy_profile_tmp_map_scenario_id} AS energy_profile_tmp_map_scenario_id,
      {energy_hrz_shaping_scenario_id} AS "energy_hrz_shaping_scenario_id",
@@ -501,7 +506,8 @@ def make_opchar_sql_str(
      {energy_requirement_factor} AS energy_requirement_factor,
      {losses_factor_in_energy_target} AS losses_factor_in_energy_target,
      {losses_factor_curtailment} AS losses_factor_curtailment,
-     {upward_reserves_to_soc_depletion} AS upward_reserves_to_soc_depletion
+     {upward_reserves_to_soc_depletion} AS upward_reserves_to_soc_depletion,
+     {reserves_setpoint_duration_hours} AS reserves_setpoint_duration_hours
     """
 
     return opchar_sql_str

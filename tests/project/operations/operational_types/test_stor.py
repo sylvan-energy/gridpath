@@ -162,6 +162,18 @@ class TestStor(unittest.TestCase):
         }
         self.assertDictEqual(expected_exog_soc, actual_exog_soc)
 
+        # Param: stor_reserves_setpoint_duration_hours (sparse: no default, so
+        # only projects with a specified value are "in" the param)
+        expected_reserves_setpoint_duration = {"Battery": 0.5}
+        actual_reserves_setpoint_duration = {
+            prj: instance.stor_reserves_setpoint_duration_hours[prj]
+            for prj in instance.STOR
+            if prj in instance.stor_reserves_setpoint_duration_hours
+        }
+        self.assertDictEqual(
+            expected_reserves_setpoint_duration, actual_reserves_setpoint_duration
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
