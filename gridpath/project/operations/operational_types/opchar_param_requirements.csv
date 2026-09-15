@@ -28,3 +28,4 @@ losses_factor_in_energy_target,float,,,,,,,,,,,,optional,,,,,,,,,,,,,
 losses_factor_curtailment,float,,,,,,,,,,,,optional,,,,,,,,,,,,,
 upward_reserves_to_soc_depletion,float,,,,,,,,,,,,optional,,optional,,,,,,,,,,,
 reserves_setpoint_duration_hours,float,,,,,,,,,,,,optional,,optional,,,,,,,,,,,
+energy_budget_balancing_type,str,,,,,,optional,optional,,,,,optional,,,,,,,,,,,optional,,optional

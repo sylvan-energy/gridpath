@@ -422,6 +422,19 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_hydro_w_energy_budget_balancing_type(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_hydro_w_energy_budget_balancing_type" example: as
+        "2horizons_w_hydro", but the Hydro project's balancing type is the
+        circular 'year' (so its ramp limits, added here, apply across the
+        day boundaries) while its energy budgets are specified by 'day' via
+        energy_budget_balancing_type.
+        :return:
+        """
+        scenario_name = "2horizons_w_hydro_w_energy_budget_balancing_type"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2horizons_w_hydro_and_nuclear_binary_availability(self):
         """
         Check validation and objective function value of
@@ -2197,6 +2210,20 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_w_hydro_as_energy_no_reserves"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_w_hydro_as_energy_no_reserves_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_as_energy_no_reserves_by_timepoint" example: as
+        "test_w_hydro_as_energy_no_reserves" on a temporal scenario that
+        also has a 'timepoint' balancing type; the Hydro project's horizon
+        energy shaping inputs are specified per timepoint via
+        energy_budget_balancing_type (40%/60% of its energy in the two
+        timepoints), while its balancing type remains 'day'.
+        :return:
+        """
+        scenario_name = "test_w_hydro_as_energy_no_reserves_by_timepoint"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_w_lf(self):
         """
         Check validation and objective function value of
@@ -2250,6 +2277,19 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "test_w_hydro_as_slice_candidate"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_w_hydro_as_slice_candidate_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_as_slice_candidate_by_timepoint" example: as
+        "test_w_hydro_as_slice_candidate" on a temporal scenario that also has
+        a 'timepoint' balancing type; the Hydro project's slice shaping
+        inputs are specified per timepoint via energy_budget_balancing_type
+        (40%/60% of its energy), while its balancing type remains 'day'.
+        :return:
+        """
+        scenario_name = "test_w_hydro_as_slice_candidate_by_timepoint"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_test_w_energy_products(self):
@@ -2454,6 +2494,21 @@ class TestExamples(unittest.TestCase):
         """
 
         scenario_name = "test_new_build_storage_losses_limit"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_build_storage_losses_limit_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_new_build_storage_losses_limit_by_timepoint" example: as
+        "test_new_build_storage_losses_limit" on a temporal scenario that
+        also has a 'timepoint' balancing type; the Battery's max-losses
+        limit applies per timepoint via energy_budget_balancing_type while
+        its state of charge is still tracked over the circular day. The
+        per-timepoint limit caps the charging hour's energy, so more
+        storage energy capacity is built than under the per-day limit.
+        :return:
+        """
+        scenario_name = "test_new_build_storage_losses_limit_by_timepoint"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_test_carbon_credits_purchase_limits(self):

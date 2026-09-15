@@ -20,6 +20,11 @@ associated with it based on which the slice will be determined. Operating
 cahractersitcs are based on the full potential. This type limits total energy
 over the period to the Energy_MWh for the project.
 
+The horizon energy budgets and min/max power apply over the horizons of the
+project's balancing type by default; the optional
+``energy_budget_balancing_type`` characteristic lets them follow the horizons
+of another balancing type of the temporal scenario instead.
+
 """
 
 import csv
@@ -40,6 +45,7 @@ from pyomo.environ import (
 import warnings
 
 from gridpath.auxiliary.auxiliary import (
+    cursor_to_df,
     subset_init_by_param_value,
     subset_init_by_set_membership,
 )
@@ -48,6 +54,7 @@ from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_v
 from gridpath.project.common_functions import (
     check_if_boundary_type_and_first_timepoint,
     check_if_first_timepoint,
+    get_energy_budget_balancing_type,
     check_boundary_type,
 )
 from gridpath.project.operations.operational_types.common_functions import (
@@ -58,6 +65,7 @@ from gridpath.project.operations.operational_types.common_functions import (
     validate_opchars,
     validate_hydro_opchars,
     get_prj_temporal_index_opr_inputs_from_db,
+    validate_energy_budget_balancing_type_rows,
     BT_HRZ_INDEX_QUERY_PARAMS,
 )
 from gridpath.common_functions import create_results_df
@@ -84,10 +92,14 @@ def add_model_components(
     | The set of generators of the :code:`energy_slice_hrz_shaping` operational    |
     | type.                                                                   |
     +-------------------------------------------------------------------------+
-    | | :code:`ENERGY_SLICE_HRZ_SHAPING_OPR_BT_HRZS`                                  |
+    | | :code:`ENERGY_SLICE_HRZ_SHAPING_OPR_BT_HRZS`                          |
     |                                                                         |
-    | Two-dimensional set with generators of the :code:`energy_slice_hrz_shaping`  |
-    | operational type and their operational horizons.                        |
+    | Three-dimensional set with generators of the                            |
+    | :code:`energy_slice_hrz_shaping` operational type and their operational |
+    | (balancing type, horizon)s, i.e. the horizons of their energy-budget    |
+    | balancing type (see the                                                 |
+    | :code:`energy_slice_hrz_shaping_energy_budget_balancing_type`           |
+    | param) over which their energy budgets apply.                           |
     +-------------------------------------------------------------------------+
     | | :code:`ENERGY_SLICE_HRZ_SHAPING_OPR_TMPS`                                  |
     |                                                                         |
@@ -123,6 +135,23 @@ def add_model_components(
     | | *Within*: :code:`NonNegativeReals`                                               |
     |                                                                         |
     | The project's avarage power output in each operational horizon.         |
+    +-------------------------------------------------------------------------+
+
+    |
+
+    +-------------------------------------------------------------------------+
+    | Optional Input Params                                                   |
+    +=========================================================================+
+    | | :code:`energy_slice_hrz_shaping_energy_budget_balancing_type`         |
+    | | *Defined over*: :code:`ENERGY_SLICE_HRZ_SHAPING`                      |
+    | | *Within*: :code:`BLN_TYPES`                                           |
+    | | *Default*: the project's :code:`balancing_type_project`               |
+    |                                                                         |
+    | The balancing type of the horizons over which the project's energy      |
+    | budgets and per-horizon min/max power apply. The project's              |
+    | :code:`balancing_type_project` continues to govern chronology           |
+    | (horizon-boundary handling, e.g. for the power delta used by tuning     |
+    | costs).                                                                 |
     +-------------------------------------------------------------------------+
 
     |
@@ -172,6 +201,15 @@ def add_model_components(
         initialize=lambda mod: subset_init_by_param_value(
             mod, "PROJECTS", "operational_type", "energy_slice_hrz_shaping"
         ),
+    )
+
+    # Declared right after the project set, before any component whose
+    # initializer might read it (Pyomo constructs components in declaration
+    # order; sparse membership in a not-yet-constructed Param is silently
+    # False). No default: unspecified means the project's
+    # balancing_type_project (see get_energy_budget_balancing_type).
+    m.energy_slice_hrz_shaping_energy_budget_balancing_type = Param(
+        m.ENERGY_SLICE_HRZ_SHAPING, within=m.BLN_TYPES
     )
 
     m.ENERGY_SLICE_HRZ_SHAPING_OPR_PRDS = Set(
@@ -264,31 +302,29 @@ def add_model_components(
     def max_power_rule(mod, prj, tmp):
         """
         **Constraint Name**: EnergySliceHrzShaping_Max_Power_Constraint
-        **Enforced Over**: ENERGY_SLICE_HRZ_SHAPING_OPR_BT_HRZS
+        **Enforced Over**: ENERGY_SLICE_HRZ_SHAPING_OPR_TMPS
         """
+        bt = get_energy_budget_balancing_type(
+            mod, prj, mod.energy_slice_hrz_shaping_energy_budget_balancing_type
+        )
         return (
             mod.EnergySliceHrzShaping_Provide_Power_MW[prj, tmp]
             <= mod.EnergySliceHrzShaping_Slice[prj, mod.period[tmp]]
-            * mod.energy_slice_hrz_shaping_max_power[
-                prj,
-                mod.balancing_type_project[prj],
-                mod.horizon[tmp, mod.balancing_type_project[prj]],
-            ]
+            * mod.energy_slice_hrz_shaping_max_power[prj, bt, mod.horizon[tmp, bt]]
         )
 
     def min_power_rule(mod, prj, tmp):
         """
         **Constraint Name**: EnergySliceHrzShaping_Min_Power_Constraint
-        **Enforced Over**: ENERGY_SLICE_HRZ_SHAPING_OPR_BT_HRZS
+        **Enforced Over**: ENERGY_SLICE_HRZ_SHAPING_OPR_TMPS
         """
+        bt = get_energy_budget_balancing_type(
+            mod, prj, mod.energy_slice_hrz_shaping_energy_budget_balancing_type
+        )
         return (
             mod.EnergySliceHrzShaping_Provide_Power_MW[prj, tmp]
             >= mod.EnergySliceHrzShaping_Slice[prj, mod.period[tmp]]
-            * mod.energy_slice_hrz_shaping_min_power[
-                prj,
-                mod.balancing_type_project[prj],
-                mod.horizon[tmp, mod.balancing_type_project[prj]],
-            ]
+            * mod.energy_slice_hrz_shaping_min_power[prj, bt, mod.horizon[tmp, bt]]
         )
 
     def energy_budget_rule(mod, prj, bt, h):
@@ -540,7 +576,7 @@ def get_model_inputs_from_database(
         weather_iteration, hydro_iteration, availability_iteration, subproblem, stage
     )
 
-    prj_bt_hrz_data = get_prj_temporal_index_opr_inputs_from_db(
+    return get_energy_slice_hrz_shaping_inputs_from_db(
         subscenarios=subscenarios,
         weather_iteration=db_weather_iteration,
         hydro_iteration=db_hydro_iteration,
@@ -548,14 +584,39 @@ def get_model_inputs_from_database(
         subproblem=db_subproblem,
         stage=db_stage,
         conn=conn,
+    )
+
+
+def get_energy_slice_hrz_shaping_inputs_from_db(
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    The (project, balancing type, horizon) shaping inputs; takes the
+    database values of the iterations, subproblem, and stage (not the
+    directory names).
+
+    :return: cursor object with query results
+    """
+    return get_prj_temporal_index_opr_inputs_from_db(
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        conn=conn,
         op_type="energy_slice_hrz_shaping",
         table="inputs_project_energy_slice_hrz_shaping",
         subscenario_id_column="energy_slice_hrz_shaping_scenario_id",
         data_column="hrz_energy, min_power, max_power",
         opr_index_dict=BT_HRZ_INDEX_QUERY_PARAMS,
     )
-
-    return prj_bt_hrz_data
 
 
 def write_model_inputs(
@@ -638,4 +699,30 @@ def validate_inputs(
         stage,
         conn,
         "energy_slice_hrz_shaping",
+    )
+
+    # The (balancing type, horizon) rows must be for horizons of each
+    # project's energy-budget balancing type
+    validate_energy_budget_balancing_type_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        op_type="energy_slice_hrz_shaping",
+        db_table="inputs_project_energy_slice_hrz_shaping",
+        df=cursor_to_df(
+            get_energy_slice_hrz_shaping_inputs_from_db(
+                subscenarios=subscenarios,
+                weather_iteration=weather_iteration,
+                hydro_iteration=hydro_iteration,
+                availability_iteration=availability_iteration,
+                subproblem=subproblem,
+                stage=stage,
+                conn=conn,
+            )
+        ),
     )

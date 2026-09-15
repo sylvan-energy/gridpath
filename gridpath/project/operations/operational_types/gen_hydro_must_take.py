@@ -18,6 +18,10 @@ projects and is like the *gen_hydro* operational type except that the power
 output is must-take, i.e. curtailment is not allowed. Negative output is
 allowed, i.e. this module can be used to model pumping.
 
+As for *gen_hydro*, the optional ``energy_budget_balancing_type``
+characteristic lets the energy budgets and per-horizon limits follow the
+horizons of a balancing type other than the project's own.
+
 """
 
 import csv
@@ -49,6 +53,7 @@ from gridpath.project.common_functions import (
     check_if_boundary_type_and_first_timepoint,
     check_if_first_timepoint,
     check_boundary_type,
+    get_energy_budget_balancing_type,
 )
 from gridpath.project.operations.operational_types.common_functions import (
     load_optype_model_data,
@@ -94,8 +99,12 @@ def add_model_components(
     +-------------------------------------------------------------------------+
     | | :code:`GEN_HYDRO_MUST_TAKE_OPR_BT_HRZS`                               |
     |                                                                         |
-    | Two-dimensional set with generators of the :code:`gen_hydro_must_take`  |
-    | operational type and their operational horizons.                        |
+    | Three-dimensional set with generators of the                            |
+    | :code:`gen_hydro_must_take` operational type and their                  |
+    | operational (balancing type, horizon)s, i.e. the horizons of their      |
+    | energy-budget balancing type (see the                                   |
+    | :code:`gen_hydro_must_take_energy_budget_balancing_type` param) over    |
+    | which their energy budgets apply.                                       |
     +-------------------------------------------------------------------------+
     | | :code:`GEN_HYDRO_MUST_TAKE_OPR_TMPS`                                  |
     |                                                                         |
@@ -116,7 +125,7 @@ def add_model_components(
     +-------------------------------------------------------------------------+
     | | :code:`GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_PARENT_BT_HRZS`               |
     |                                                                         |
-    | The horizons of the project's own balancing type that the               |
+    | The horizons of the project's energy-budget balancing type that the     |
     | energy-budget allocation limits above refer to.                         |
     +-------------------------------------------------------------------------+
 
@@ -169,6 +178,17 @@ def add_model_components(
     | The project's downward ramp rate limit during operations, defined as a  |
     | fraction of its capacity per minute.                                    |
     +-------------------------------------------------------------------------+
+    | | :code:`gen_hydro_must_take_energy_budget_balancing_type`              |
+    | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE`                           |
+    | | *Within*: :code:`BLN_TYPES`                                           |
+    | | *Default*: the project's :code:`balancing_type_project`               |
+    |                                                                         |
+    | The balancing type of the horizons over which the project's energy      |
+    | budgets and per-horizon min/max power fractions apply. The project's    |
+    | :code:`balancing_type_project` continues to govern chronology (ramps    |
+    | and horizon-boundary handling), so a project can e.g. be budgeted by    |
+    | month while ramping continuously across month boundaries.               |
+    +-------------------------------------------------------------------------+
     | | :code:`gen_hydro_must_take_aux_consumption_frac_capacity`             |
     | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE`                           |
     | | *Within*: :code:`PercentFraction`                                     |
@@ -208,9 +228,9 @@ def add_model_components(
     | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS`      |
     | | *Within*: :code:`PositiveIntegers`                                    |
     |                                                                         |
-    | The horizon of the project's own balancing type within which the        |
-    | sub-horizon is nested; construction fails if a sub-horizon straddles    |
-    | horizons of the project's balancing type.                               |
+    | The horizon of the project's energy-budget balancing type within which  |
+    | the sub-horizon is nested; construction fails if a sub-horizon          |
+    | straddles horizons of that balancing type.                              |
     +-------------------------------------------------------------------------+
 
     |
@@ -342,6 +362,15 @@ def add_model_components(
         initialize=lambda mod: subset_init_by_param_value(
             mod, "PROJECTS", "operational_type", "gen_hydro_must_take"
         ),
+    )
+
+    # Declared right after the project set: the budget-allocation components'
+    # initializers read it, and Pyomo constructs components in declaration
+    # order (sparse membership in a not-yet-constructed Param is silently
+    # False). No default: unspecified means the project's
+    # balancing_type_project (see get_energy_budget_balancing_type).
+    m.gen_hydro_must_take_energy_budget_balancing_type = Param(
+        m.GEN_HYDRO_MUST_TAKE, within=m.BLN_TYPES
     )
 
     m.GEN_HYDRO_MUST_TAKE_OPR_BT_HRZS = Set(dimen=3)
@@ -505,7 +534,7 @@ def add_model_components(
 def max_power_rule(mod, g, tmp):
     """
     **Constraint Name**: GenHydroMustTake_Max_Power_Constraint
-    **Enforced Over**: GEN_HYDRO_MUST_TAKE_OPR_BT_HRZS
+    **Enforced Over**: GEN_HYDRO_MUST_TAKE_OPR_TMPS
 
     Power plus upward reserves shall not exceed the maximum power output.
     The maximum power output (fraction) is a user input that is specified
@@ -517,14 +546,13 @@ def max_power_rule(mod, g, tmp):
     variable, depending on the capacity type) is 1,000 MW and the project is
     fully available, the project's maximum power output is 900 MW.
     """
+    bt = get_energy_budget_balancing_type(
+        mod, g, mod.gen_hydro_must_take_energy_budget_balancing_type
+    )
     return (
         mod.GenHydroMustTake_Gross_Power_MW[g, tmp]
         + mod.GenHydroMustTake_Upwards_Reserves_MW[g, tmp]
-        <= mod.gen_hydro_must_take_max_power_fraction[
-            g,
-            mod.balancing_type_project[g],
-            mod.horizon[tmp, mod.balancing_type_project[g]],
-        ]
+        <= mod.gen_hydro_must_take_max_power_fraction[g, bt, mod.horizon[tmp, bt]]
         * mod.Capacity_MW[g, mod.period[tmp]]
         * mod.Availability_Derate[g, tmp]
     )
@@ -533,7 +561,7 @@ def max_power_rule(mod, g, tmp):
 def min_power_rule(mod, g, tmp):
     """
     **Constraint Name**: GenHydroMustTake_Min_Power_Constraint
-    **Enforced Over**: GEN_HYDRO_MUST_TAKE_OPR_BT_HRZS
+    **Enforced Over**: GEN_HYDRO_MUST_TAKE_OPR_TMPS
 
     Power minus downward reserves must exceed the minimum power output.
     The minimum power output (fraction) is a user input that is specified
@@ -545,14 +573,13 @@ def min_power_rule(mod, g, tmp):
     variable, depending on the capacity type) is 1,000 MW and the project is
     fully available, the project's minimum power output is 300 MW.
     """
+    bt = get_energy_budget_balancing_type(
+        mod, g, mod.gen_hydro_must_take_energy_budget_balancing_type
+    )
     return (
         mod.GenHydroMustTake_Gross_Power_MW[g, tmp]
         - mod.GenHydroMustTake_Downwards_Reserves_MW[g, tmp]
-        >= mod.gen_hydro_must_take_min_power_fraction[
-            g,
-            mod.balancing_type_project[g],
-            mod.horizon[tmp, mod.balancing_type_project[g]],
-        ]
+        >= mod.gen_hydro_must_take_min_power_fraction[g, bt, mod.horizon[tmp, bt]]
         * mod.Capacity_MW[g, mod.period[tmp]]
         * mod.Availability_Derate[g, tmp]
     )
