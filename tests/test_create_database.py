@@ -113,7 +113,7 @@ class TestCreateDatabase(unittest.TestCase):
                     "--database",
                     db_path,
                     "--db_schema",
-                    "../data_toolkit/raw_data_db_schema.sql",
+                    "../open_data_toolkit/raw_data_db_schema.sql",
                     "--omit_data",
                 ]
             )

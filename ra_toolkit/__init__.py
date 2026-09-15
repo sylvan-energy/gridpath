@@ -9,7 +9,7 @@ where applicable. It works off its own raw data database (created from
 ``ra_toolkit/raw_data_db_schema.sql`` and loaded with the RA Toolkit's
 ``load_raw_data`` step), separate from the GridPath Data Toolkit's raw
 database, and its steps run from their own settings CSV via the
-``gridpath_run_ra_toolkit`` command (see :mod:`data_toolkit` for the Data
+``gridpath_run_ra_toolkit`` command (see :mod:`open_data_toolkit` for the Data
 Toolkit's counterpart).
 
 Not to be confused with the `GridPath RA Toolkit

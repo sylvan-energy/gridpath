@@ -32,6 +32,11 @@ This module assumes the following raw input database tables have been populated:
     * raw_data_system_load
     * user_defined_load_zone_units
 
+The load_zone values in user_defined_load_zone_units must use the same zone
+vocabulary as the rest of the scenario's inputs — i.e., match the
+load_zone_level (BA, EIA930 region, or interconnect) used for the eia930_load_zone and
+project-level steps.
+
 =========
 Settings
 =========
