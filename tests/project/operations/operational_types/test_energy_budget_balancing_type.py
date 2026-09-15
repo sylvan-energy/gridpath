@@ -98,9 +98,6 @@ ENERGY_SLICE_HRZ_SHAPING_MODULE = import_module(
     ".project.operations.operational_types.energy_slice_hrz_shaping",
     package="gridpath",
 )
-STOR_STRESS_HRZ_MODULE = import_module(
-    ".project.operations.operational_types.stor_stress_hrz", package="gridpath"
-)
 HYDRO_TAB_FILE = "hydro_conventional_horizon_params.tab"
 
 
@@ -450,65 +447,6 @@ class TestEnergyBudgetBalancingTypeModel(unittest.TestCase):
         self.assertIsNotNone(
             ENERGY_SLICE_HRZ_SHAPING_MODULE.power_delta_rule(
                 instance, "Energy_Slice_Hrz_Shaping", 20200202
-            )
-        )
-
-    @staticmethod
-    def tracked_from_tmps(instance, prj, tmp):
-        """
-        The other timepoints whose starting state of charge enters the
-        stress-horizon tracking constraint at *tmp*.
-        """
-        return {
-            v.index()[1]
-            for v in identify_variables(
-                instance.StorStressHrz_Stress_Hrz_Energy_Tracking_Constraint[
-                    prj, tmp
-                ].body
-            )
-            if v.parent_component().name
-            == "StorStressHrz_Starting_Energy_in_Storage_MWh"
-            and v.index()[1] != tmp
-        }
-
-    def test_stor_stress_hrz_horizons_by_day_with_year_chronology(self):
-        """
-        The fixture types day 202002 as a stress horizon. With the project
-        on the circular year, the horizon typing and the stress-horizon
-        state-of-charge chain still follow the days.
-        """
-        prj = "Battery_Stress_Hrz"
-        self.set_project_chars(
-            prj, balancing_type_project="year", energy_budget_balancing_type="day"
-        )
-        instance = self.build_instance(STOR_STRESS_HRZ_MODULE)
-        self.assertEqual(
-            {prj: "day"},
-            dict(instance.stor_stress_hrz_energy_budget_balancing_type.items()),
-        )
-        self.assertListEqual(
-            [(prj, "day", 202001), (prj, "day", 202002)],
-            sorted(instance.STOR_STRESS_HRZ_OPR_BT_HRZ),
-        )
-        self.assertListEqual(
-            [(prj, "day", 202002)], sorted(instance.STOR_STRESS_HRZ_STRESS_OPR_BT_HRZ)
-        )
-        # First stress-horizon timepoint is anchored (tracked from no other
-        # timepoint); the next one tracks from it
-        self.assertEqual(set(), self.tracked_from_tmps(instance, prj, 20200201))
-        self.assertEqual({20200201}, self.tracked_from_tmps(instance, prj, 20200202))
-        # The tuning-cost power delta follows the year: at the stress
-        # horizon's first timepoint it reaches back into the preceding
-        # average-condition day (which has no discharging variable)
-        self.assertIsNotNone(
-            STOR_STRESS_HRZ_MODULE.power_delta_rule(instance, prj, 20200201)
-        )
-
-    def test_stor_stress_hrz_default_power_delta_skips_linear_day_start(self):
-        instance = self.build_instance(STOR_STRESS_HRZ_MODULE)
-        self.assertIsNone(
-            STOR_STRESS_HRZ_MODULE.power_delta_rule(
-                instance, "Battery_Stress_Hrz", 20200201
             )
         )
 

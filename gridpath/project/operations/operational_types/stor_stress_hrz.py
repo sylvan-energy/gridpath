@@ -17,14 +17,8 @@ This operational type describes a storage resource whose state of charge
 is built up under "average" system conditions and then drawn down during
 "stress" conditions, e.g. multi-day or seasonal storage.
 
-The type distinguishes between two kinds of horizons, designated via the
-:code:`stor_stress_hrz_type` input. The horizons are those of the project's
-energy-budget balancing type: its :code:`balancing_type_project` unless the
-optional ``energy_budget_balancing_type`` characteristic names another
-balancing type of the temporal scenario. Because a stress horizon's state of
-charge is anchored to its start and bounded at its end, the state-of-charge
-tracking follows those horizons too, so :code:`balancing_type_project` then
-only governs the power delta used by tuning costs.
+The type distinguishes between two kinds of horizons (of the project's
+balancing type), designated via the :code:`stor_stress_hrz_type` input:
 
 * **Average-condition horizons**: the project can only charge (discharging
   is not allowed) and the state of charge is not tracked timepoint to
@@ -88,7 +82,6 @@ from gridpath.project import PROJECT_PERIOD_DF
 from gridpath.project.common_functions import (
     check_if_first_timepoint,
     check_if_last_timepoint,
-    get_energy_budget_balancing_type,
     check_boundary_type,
 )
 from gridpath.project.operations.operational_types.common_functions import (
@@ -126,9 +119,8 @@ def add_model_components(
     | | :code:`STOR_STRESS_HRZ_OPR_BT_HRZ`                                    |
     |                                                                         |
     | Three-dimensional set with projects of the :code:`stor_stress_hrz`      |
-    | operational type and the horizons of their energy-budget balancing      |
-    | type (see :code:`stor_stress_hrz_energy_budget_balancing_type`) in      |
-    | which all timepoints are operational timepoints of the project.         |
+    | operational type and the balancing type-horizons in which all           |
+    | timepoints are operational timepoints of the project.                   |
     +-------------------------------------------------------------------------+
     | | :code:`STOR_STRESS_HRZ_STRESS_OPR_BT_HRZ`                             |
     |                                                                         |
@@ -192,16 +184,6 @@ def add_model_components(
     |                                                                         |
     | The type of each balancing type-horizon for the purposes of this        |
     | operational type: "average" (average-condition) or "stress".            |
-    +-------------------------------------------------------------------------+
-    | | :code:`stor_stress_hrz_energy_budget_balancing_type`                  |
-    | | *Defined over*: :code:`STOR_STRESS_HRZ`                               |
-    | | *Within*: :code:`BLN_TYPES`                                           |
-    | | *Default*: the project's :code:`balancing_type_project`               |
-    |                                                                         |
-    | The balancing type whose horizons are typed average/stress and over     |
-    | which the stress-horizon state of charge is tracked. The project's      |
-    | :code:`balancing_type_project` then only governs the power delta used   |
-    | by tuning costs.                                                        |
     +-------------------------------------------------------------------------+
     | | :code:`stor_stress_hrz_storage_efficiency`                            |
     | | *Defined over*: :code:`STOR_STRESS_HRZ`                               |
@@ -350,17 +332,6 @@ def add_model_components(
         ),
     )
 
-    # The balancing type whose horizons are typed average/stress and over
-    # which the stress-horizon state of charge is tracked. Declared before
-    # STOR_STRESS_HRZ_OPR_BT_HRZ, whose initializer reads it (Pyomo constructs
-    # components in declaration order; sparse membership in a
-    # not-yet-constructed Param is silently False). No default: unspecified
-    # means the project's balancing_type_project (see
-    # get_energy_budget_balancing_type).
-    m.stor_stress_hrz_energy_budget_balancing_type = Param(
-        m.STOR_STRESS_HRZ, within=m.BLN_TYPES
-    )
-
     m.STOR_STRESS_HRZ_OPR_TMPS = Set(
         dimen=2,
         initialize=lambda mod: subset_init_by_set_membership(
@@ -374,9 +345,7 @@ def add_model_components(
     def stor_stress_hrz_opr_bt_hrz_set_init(mod):
         prj_bt_hrz = []
         for prj in mod.STOR_STRESS_HRZ:
-            bt = get_energy_budget_balancing_type(
-                mod, prj, mod.stor_stress_hrz_energy_budget_balancing_type
-            )
+            bt = mod.balancing_type_project[prj]
             for hrz in mod.HRZS_BY_BLN_TYPE[bt]:
                 # Add to the set if all timepoints in the horizon are in
                 # the project's operational timepoints
@@ -648,10 +617,7 @@ def stress_hrz_energy_tracking_rule(mod, s, tmp):
     timepoint duration) plus any charged power (adjusted for charging
     efficiency and timepoint duration).
     """
-    # The stress horizons are horizons of the energy-budget balancing type
-    bt = get_energy_budget_balancing_type(
-        mod, s, mod.stor_stress_hrz_energy_budget_balancing_type
-    )
+    bt = mod.balancing_type_project[s]
     if check_if_first_timepoint(mod=mod, tmp=tmp, balancing_type=bt):
         prd = mod.period[tmp]
         if (s, prd) not in mod.STOR_STRESS_HRZ_AVG_PRJ_PRDS:
@@ -808,11 +774,7 @@ def soc_last_tmp_penalty_cost_rule(mod, prj, tmp):
     charge is not tracked in average-condition horizons).
     """
     if (prj, tmp) in mod.STOR_STRESS_HRZ_STRESS_OPR_TMPS and check_if_last_timepoint(
-        mod=mod,
-        tmp=tmp,
-        balancing_type=get_energy_budget_balancing_type(
-            mod, prj, mod.stor_stress_hrz_energy_budget_balancing_type
-        ),
+        mod=mod, tmp=tmp, balancing_type=mod.balancing_type_project[prj]
     ):
         return mod.soc_last_tmp_penalty_cost_per_energyunit[prj] * (
             mod.Energy_Storage_Capacity_MWh[prj, mod.period[tmp]]
@@ -826,11 +788,8 @@ def soc_last_tmp_penalty_cost_rule(mod, prj, tmp):
 def power_delta_rule(mod, g, tmp):
     """
     This rule is only used in tuning costs, so fine to skip for linked
-    horizon's first timepoint. The delta follows the project's
-    balancing_type_project (chronology); the current and previous timepoint
-    may lie in horizons of different types if the energy-budget balancing
-    type differs from it, so the net power of each is evaluated by its own
-    horizon type.
+    horizon's first timepoint. The previous timepoint is in the same horizon
+    as the current one, so the two are always of the same horizon type.
     """
     bt = mod.balancing_type_project[g]
     if check_if_first_timepoint(mod=mod, tmp=tmp, balancing_type=bt) and (
@@ -842,20 +801,19 @@ def power_delta_rule(mod, g, tmp):
         pass
     else:
         prev = mod.prev_tmp[tmp, bt]
-        return net_power(mod, g, tmp) - net_power(mod, g, prev)
-
-
-def net_power(mod, g, tmp):
-    """
-    Discharging minus charging in stress-horizon timepoints; average-condition
-    horizons have no discharging variable.
-    """
-    if (g, tmp) in mod.STOR_STRESS_HRZ_STRESS_OPR_TMPS:
-        return (
-            mod.StorStressHrz_Discharge_MW[g, tmp] - mod.StorStressHrz_Charge_MW[g, tmp]
-        )
-    else:
-        return -mod.StorStressHrz_Charge_MW[g, tmp]
+        if (g, tmp) in mod.STOR_STRESS_HRZ_STRESS_OPR_TMPS:
+            return (
+                mod.StorStressHrz_Discharge_MW[g, tmp]
+                - mod.StorStressHrz_Charge_MW[g, tmp]
+            ) - (
+                mod.StorStressHrz_Discharge_MW[g, prev]
+                - mod.StorStressHrz_Charge_MW[g, prev]
+            )
+        else:
+            return (
+                -mod.StorStressHrz_Charge_MW[g, tmp]
+                + mod.StorStressHrz_Charge_MW[g, prev]
+            )
 
 
 # Input-Output

@@ -492,20 +492,6 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_stor_stress_hrz"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
-    def test_example_2horizons_w_stor_stress_hrz_w_energy_budget_balancing_type(self):
-        """
-        Check validation and objective function value of
-        "2horizons_w_stor_stress_hrz_w_energy_budget_balancing_type" example: as
-        "2horizons_w_stor_stress_hrz", but the storage project's balancing
-        type is the circular 'year' while its horizon typing (and hence its
-        stress-horizon state-of-charge tracking) follows 'day' via
-        energy_budget_balancing_type; the objective is identical to the
-        base example by construction.
-        :return:
-        """
-        scenario_name = "2horizons_w_stor_stress_hrz_w_energy_budget_balancing_type"
-        self.validate_and_test_example_generic(scenario_name=scenario_name)
-
     def test_example_2periods(self):
         """
         Check validation and objective function value of "2periods" example
