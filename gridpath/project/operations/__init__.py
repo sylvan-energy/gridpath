@@ -1019,7 +1019,8 @@ def get_inputs_from_database(
         powerhouse, generator_efficiency, linked_load_component,
         efficiency_factor, energy_requirement_factor, 
         losses_factor_in_energy_target, losses_factor_curtailment, 	
-        upward_reserves_to_soc_depletion, reserves_setpoint_duration_hours
+        upward_reserves_to_soc_depletion, reserves_setpoint_duration_hours,
+        energy_budget_balancing_type
         -- Get only the subset of projects in the portfolio with their 
         -- capacity types based on the project_portfolio_scenario_id 
         FROM
@@ -1446,6 +1447,7 @@ def write_model_inputs(
         "losses_factor_curtailment",
         "upward_reserves_to_soc_depletion",
         "reserves_setpoint_duration_hours",
+        "energy_budget_balancing_type",
     ]
 
     append_to_input_file(
@@ -1966,6 +1968,7 @@ def validate_inputs(
         "losses_factor_curtailment",
         "upward_reserves_to_soc_depletion",
         "reserves_setpoint_duration_hours",
+        "energy_budget_balancing_type",
     ]
 
     sql = """SELECT {}

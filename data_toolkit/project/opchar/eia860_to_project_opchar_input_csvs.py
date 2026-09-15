@@ -393,6 +393,7 @@ def make_opchar_sql_str(
     losses_factor_curtailment="NULL",
     upward_reserves_to_soc_depletion="NULL",
     reserves_setpoint_duration_hours="NULL",
+    energy_budget_balancing_type="NULL",
 ):
     """ """
 
@@ -507,7 +508,8 @@ def make_opchar_sql_str(
      {losses_factor_in_energy_target} AS losses_factor_in_energy_target,
      {losses_factor_curtailment} AS losses_factor_curtailment,
      {upward_reserves_to_soc_depletion} AS upward_reserves_to_soc_depletion,
-     {reserves_setpoint_duration_hours} AS reserves_setpoint_duration_hours
+     {reserves_setpoint_duration_hours} AS reserves_setpoint_duration_hours,
+     {energy_budget_balancing_type} AS energy_budget_balancing_type
     """
 
     return opchar_sql_str

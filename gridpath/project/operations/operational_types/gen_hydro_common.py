@@ -45,6 +45,7 @@ from gridpath.auxiliary.validations import (
     validate_column_monotonicity,
 )
 from gridpath.common_functions import duals_wrapper
+from gridpath.project.common_functions import get_energy_budget_balancing_type
 from gridpath.project.operations.operational_types.common_functions import (
     get_bt_hrz_index_query_params,
     get_prj_temporal_index_opr_inputs_from_db,
@@ -112,7 +113,7 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
     * :code:`{OP_TYPE}_BUDGET_ALLOC_BT_HRZS`: three-dimensional set of
       (project, sub-horizon balancing type, sub-horizon) with allocation
       limits; the sub-horizon's timepoints must all belong to a single
-      horizon of the project's own balancing type (the parent horizon).
+      horizon of the project's energy-budget balancing type (the parent horizon).
     * :code:`{op_type}_budget_alloc_min_fraction` /
       :code:`{op_type}_budget_alloc_max_fraction`: the minimum/maximum
       share of the parent horizon's energy budget that must/may be
@@ -124,7 +125,7 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
     * :code:`{op_type}_budget_alloc_parent_hrz`: the derived parent
       horizon of each sub-horizon; construction raises if a sub-horizon
       straddles parent horizons, has no parent horizon with a budget, or
-      is a horizon of the project's own balancing type.
+      is a horizon of the project's energy-budget balancing type.
     * :code:`{OP_TYPE}_BUDGET_ALLOC_PARENT_BT_HRZS`: the parent horizons
       the limits refer to, and
       :code:`{ComponentPrefix}_Parent_Hrz_Energy_Budget_MWh`, their energy
@@ -155,6 +156,13 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
     energy_name = f"{component_prefix}_Budget_Alloc_Energy_MWh"
     parent_bt_hrzs_name = f"{op_type_upper}_BUDGET_ALLOC_PARENT_BT_HRZS"
     budget_name = f"{component_prefix}_Parent_Hrz_Energy_Budget_MWh"
+    budget_bt_name = f"{op_type}_energy_budget_balancing_type"
+
+    def budget_bt(mod, prj):
+        """
+        The balancing type of the project's budget horizons (the parents).
+        """
+        return get_energy_budget_balancing_type(mod, prj, getattr(mod, budget_bt_name))
 
     setattr(
         m,
@@ -170,17 +178,17 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
 
     def parent_hrz_init(mod):
         """
-        Derive the parent horizon (of the project's own balancing type)
+        Derive the parent horizon (of the project's energy-budget balancing type)
         of each sub-horizon in a single pass, checking the nesting.
         """
         parent_hrzs = {}
         for prj, sub_bt, sub_hrz in getattr(mod, alloc_set_name):
-            bt = mod.balancing_type_project[prj]
+            bt = budget_bt(mod, prj)
             if sub_bt == bt:
                 raise ValueError(
                     f"Hydro budget allocation limits for project {prj} are "
                     f"specified for horizon {sub_hrz} of balancing type "
-                    f"{sub_bt}, which is the project's own balancing type; "
+                    f"{sub_bt}, which is the project's energy-budget balancing type; "
                     f"allocation limits must refer to sub-horizons of a "
                     f"different balancing type nested within the project's "
                     f"horizons."
@@ -193,7 +201,7 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
                 raise ValueError(
                     f"Hydro budget allocation sub-horizon {sub_hrz} of "
                     f"balancing type {sub_bt} for project {prj} is not nested "
-                    f"within a single horizon of the project's balancing type "
+                    f"within a single horizon of the project's energy-budget balancing type "
                     f"{bt} (horizons found: {sorted(parents, key=str)})."
                 )
             (parent_hrz,) = parents
@@ -218,7 +226,7 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
         parent_hrz = getattr(mod, parent_hrz_name)
         return sorted(
             {
-                (prj, mod.balancing_type_project[prj], parent_hrz[idx])
+                (prj, budget_bt(mod, prj), parent_hrz[idx])
                 for idx in getattr(mod, alloc_set_name)
                 for prj in [idx[0]]
             }
@@ -266,7 +274,7 @@ def add_hydro_budget_allocation_components(m, op_type, component_prefix, power_v
     def parent_budget(mod, prj, sub_bt, sub_hrz):
         return getattr(mod, budget_name)[
             prj,
-            mod.balancing_type_project[prj],
+            budget_bt(mod, prj),
             getattr(mod, parent_hrz_name)[prj, sub_bt, sub_hrz],
         ]
 
@@ -455,7 +463,7 @@ def validate_hydro_budget_allocation(
     Validate the *op_type* projects' hydro budget allocation limits:
     fractions within [0, 1] (Low), min <= max (Mid), every sub-horizon of a
     balancing type other than the project's own and nested within a single
-    horizon of the project's balancing type (High), and, per parent horizon,
+    horizon of the project's energy-budget balancing type (High), and, per parent horizon,
     sum of minimum shares <= 1 and sum of maximum shares >= 1 (Low --
     infeasible unless the project can produce negative output in some
     sub-horizon). The share sums are only checked for parent horizons whose
@@ -503,11 +511,12 @@ def validate_hydro_budget_allocation(
 
     # Nesting: each sub-horizon must be of a balancing type other than the
     # project's own, and its timepoints must map to exactly one horizon of
-    # the project's balancing type
+    # the project's energy-budget balancing type
     c = conn.cursor()
     parent_rows = c.execute(f"""
         SELECT sub.project, sub.balancing_type_horizon, sub.horizon,
-            opchar.balancing_type_project,
+            COALESCE(opchar.energy_budget_balancing_type,
+                opchar.balancing_type_project),
             COUNT(DISTINCT parent.horizon) AS n_parents,
             MIN(parent.horizon) AS parent_horizon,
             COUNT(DISTINCT sub_tmps.timepoint) AS n_sub_tmps
@@ -530,24 +539,26 @@ def validate_hydro_budget_allocation(
             AND parent.subproblem_id = sub_tmps.subproblem_id
             AND parent.stage_id = sub_tmps.stage_id
             AND parent.timepoint = sub_tmps.timepoint
-            AND parent.balancing_type_horizon = opchar.balancing_type_project
+            AND parent.balancing_type_horizon = COALESCE(opchar.energy_budget_balancing_type,
+                opchar.balancing_type_project)
         GROUP BY sub.project, sub.balancing_type_horizon, sub.horizon,
-            opchar.balancing_type_project
+            COALESCE(opchar.energy_budget_balancing_type,
+                opchar.balancing_type_project)
     """).fetchall()
     parent_df = pd.DataFrame(
         parent_rows,
         columns=idx_cols
-        + ["balancing_type_project", "n_parents", "parent_horizon", "n_sub_tmps"],
+        + ["energy_budget_balancing_type", "n_parents", "parent_horizon", "n_sub_tmps"],
     )
     df = df.merge(parent_df, on=idx_cols, how="left")
-    same_bt = df["balancing_type_horizon"] == df["balancing_type_project"]
+    same_bt = df["balancing_type_horizon"] == df["energy_budget_balancing_type"]
     write(
         "High",
         (
             [
                 f"project(s) {sorted(df[same_bt]['project'].unique())}: hydro budget "
                 f"allocation limits {df[same_bt][idx_cols].values.tolist()} are "
-                f"specified for horizons of the project's own balancing type; "
+                f"specified for horizons of the project's energy-budget balancing type; "
                 f"they must refer to sub-horizons of a different balancing type."
             ]
             if same_bt.any()
@@ -581,10 +592,12 @@ def validate_hydro_budget_allocation(
             AND stage_id = {stage}
             GROUP BY balancing_type_horizon, horizon
         """).fetchall(),
-        columns=["balancing_type_project", "parent_horizon", "n_parent_tmps"],
+        columns=["energy_budget_balancing_type", "parent_horizon", "n_parent_tmps"],
     )
     nested = df[~same_bt & (df["n_parents"] == 1)].merge(
-        parent_tmp_counts, on=["balancing_type_project", "parent_horizon"], how="left"
+        parent_tmp_counts,
+        on=["energy_budget_balancing_type", "parent_horizon"],
+        how="left",
     )
     share_sums = nested.groupby(["project", "parent_horizon"]).agg(
         min_sum=("min_budget_fraction", lambda x: x.fillna(0).sum()),
@@ -641,6 +654,7 @@ def export_hydro_budget_allocation_results(
     parent_hrz = getattr(mod, f"{op_type}_budget_alloc_parent_hrz")
     energy = getattr(mod, f"{component_prefix}_Budget_Alloc_Energy_MWh")
     budget = getattr(mod, f"{component_prefix}_Parent_Hrz_Energy_Budget_MWh")
+    budget_bt_param = getattr(mod, f"{op_type}_energy_budget_balancing_type")
     min_constraint = getattr(mod, f"{component_prefix}_Budget_Alloc_Min_Constraint")
     max_constraint = getattr(mod, f"{component_prefix}_Budget_Alloc_Max_Constraint")
 
@@ -659,7 +673,7 @@ def export_hydro_budget_allocation_results(
         writer.writerow(HYDRO_BUDGET_ALLOCATION_RESULTS_COLUMNS)
         for idx in sorted(alloc_set):
             prj, sub_bt, sub_hrz = idx
-            bt = mod.balancing_type_project[prj]
+            bt = get_energy_budget_balancing_type(mod, prj, budget_bt_param)
             energy_mwh = value(energy[idx])
             budget_mwh = value(budget[prj, bt, parent_hrz[idx]])
             writer.writerow(
