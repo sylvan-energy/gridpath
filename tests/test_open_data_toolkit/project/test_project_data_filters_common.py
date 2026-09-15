@@ -21,6 +21,9 @@ import tempfile
 import unittest
 
 from db.create_database import main as create_database_main
+from open_data_toolkit.geographic_scope import (
+    check_aggregation_level_refines_zone_level,
+)
 from open_data_toolkit.project.project_data_filters_common import (
     AGGREGATION_DIMENSIONS,
     ALL_KNOWN_STATUS_CODES,
@@ -604,6 +607,134 @@ class TestAggregationNaming(unittest.TestCase):
     def test_empty_dimensions_contribute_nothing(self):
         self.assertEqual(get_aggregation_dimensions_sql(aggregation_dimensions=""), "")
         self.assertEqual(get_aggregation_dimensions_sql(aggregation_dimensions=[]), "")
+
+    def test_unset_aggregation_level_is_the_zone_level(self):
+        # The default must stay byte-identical to pre-aggregation_level
+        # behavior: None resolves to the load-zone level
+        for load_zone_level in LOAD_ZONE_LEVEL_CHOICES:
+            self.assertEqual(
+                get_project_name_str(
+                    project_aggregation="all",
+                    load_zone_level=load_zone_level,
+                    footprint="western",
+                ),
+                get_project_name_str(
+                    project_aggregation="all",
+                    load_zone_level=load_zone_level,
+                    footprint="western",
+                    aggregation_level=load_zone_level,
+                ),
+                msg=load_zone_level,
+            )
+
+    def test_aggregation_level_replaces_the_name_zone_token(self):
+        # zone level 'custom' with per-BA aggregation: the NAME uses the
+        # baa column, not the custom_zone column
+        name_str = get_project_name_str(
+            project_aggregation="all",
+            load_zone_level="custom",
+            footprint="western",
+            aggregation_level="baa",
+        )
+        self.assertEqual(
+            name_str,
+            "COALESCE(agg_project, gridpath_technology)"
+            " || '_' || raw_data_eia_baa_codes.baa",
+        )
+        self.assertNotIn("custom_zone", name_str)
+
+
+class TestAggregationLevelRefinesZoneLevel(unittest.TestCase):
+    """
+    check_aggregation_level_refines_zone_level: an aggregation level must
+    refine the load-zone level over the in-footprint BAs — a value spanning
+    zones or a NULL value at the aggregation level raises.
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        db_path = os.path.join(self.tmp_dir.name, "agg_level_test_raw.db")
+        create_database_main(
+            ["--database", db_path, "--db_schema", RAW_DATA_DB_SCHEMA, "--quiet"]
+        )
+        self.conn = sqlite3.connect(db_path)
+        self.addCleanup(self.conn.close)
+        self.conn.executemany(
+            "INSERT INTO raw_data_eia_baa_codes "
+            "(baa, region, interconnect, custom_zone) VALUES (?, ?, ?, ?)",
+            [
+                ("BA1", "Region1", "Interconnect1", "CustomA"),
+                ("BA2", "Region1", "Interconnect1", "CustomA"),
+                ("BA3", "Region2", "Interconnect1", "CustomB"),
+                # out of footprint: its inconsistencies must not matter
+                ("BAX", "RegionX", "InterconnectX", "CustomA"),
+            ],
+        )
+        self.conn.commit()
+
+    def check(self, aggregation_level, load_zone_level, footprint="Interconnect1"):
+        return check_aggregation_level_refines_zone_level(
+            conn=self.conn,
+            aggregation_level=aggregation_level,
+            load_zone_level=load_zone_level,
+            footprint=footprint,
+        )
+
+    def test_noop_when_unset_or_equal(self):
+        self.assertEqual(self.check(None, "custom"), [])
+        self.assertEqual(self.check("custom", "custom"), [])
+
+    def test_baa_refines_every_level(self):
+        for load_zone_level in ("region", "interconnect", "custom", "all"):
+            self.assertEqual(self.check("baa", load_zone_level), [])
+
+    def test_region_under_custom_passes_here(self):
+        # In this fixture regions nest inside custom zones (Region1 ->
+        # CustomA, Region2 -> CustomB), so region-level aggregation under
+        # custom zones is valid
+        self.assertEqual(self.check("region", "custom"), [])
+
+    def test_coarser_level_raises(self):
+        # Interconnect1 spans CustomA and CustomB
+        with self.assertRaisesRegex(ValueError, "does not refine"):
+            self.check("interconnect", "custom")
+        # 'all' (one name token for the whole footprint) over multiple zones
+        with self.assertRaisesRegex(ValueError, "does not refine"):
+            self.check("all", "region")
+
+    def test_crosscutting_level_raises(self):
+        # Make CustomA cut across regions: BA3 (Region2) joins CustomA, so
+        # neither nests in the other
+        self.conn.execute(
+            "UPDATE raw_data_eia_baa_codes SET custom_zone = 'CustomA' "
+            "WHERE baa = 'BA3'"
+        )
+        self.conn.commit()
+        with self.assertRaisesRegex(ValueError, "does not refine"):
+            self.check("custom", "region")
+
+    def test_null_aggregation_level_value_raises(self):
+        # BA2 has a load zone (custom) but no region: its aggregated name
+        # would be NULL under region-level aggregation
+        self.conn.execute(
+            "UPDATE raw_data_eia_baa_codes SET region = NULL WHERE baa = 'BA2'"
+        )
+        self.conn.commit()
+        with self.assertRaisesRegex(ValueError, "no value at the aggregation level"):
+            self.check("region", "custom")
+
+    def test_out_of_footprint_inconsistencies_ignored(self):
+        # BAX crosses zones relative to the others but is out of footprint
+        self.assertEqual(self.check("region", "custom"), [])
+
+    def test_custom_aggregation_level_needs_the_column_ready(self):
+        # A custom AGGREGATION level gets the same readiness check as a
+        # custom zone level: no mapped in-footprint BA raises
+        self.conn.execute("UPDATE raw_data_eia_baa_codes SET custom_zone = NULL")
+        self.conn.commit()
+        with self.assertRaisesRegex(ValueError, "gridpath_apply_custom_zones"):
+            self.check("custom", "baa")
 
 
 class TestBAAssignmentPrecedence(unittest.TestCase):

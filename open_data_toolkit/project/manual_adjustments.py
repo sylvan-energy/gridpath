@@ -73,6 +73,7 @@ Settings
     * load_zone_level
     * project_aggregation
     * aggregation_dimensions
+    * aggregation_level
     * battery_duration
     * pumped_storage_duration
 """

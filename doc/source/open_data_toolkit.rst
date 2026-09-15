@@ -179,8 +179,10 @@ what gets modeled. They apply, in order:
    aggregate wind/solar/hydro and keep thermal units individual). The
    ``aggregation_dimensions`` setting splits aggregates finer by named
    unit characteristics (EIA technology description, vintage decade,
-   storage duration, operational status) — again see the portfolio
-   step's documentation for details.
+   storage duration, operational status), and the ``aggregation_level``
+   setting aggregates at a finer geographic level than the load zones
+   (e.g. per-BA projects assigned to custom zones) — again see the
+   portfolio step's documentation for details.
 
 Because these settings decide which units become which projects, every
 project-level step must run with the SAME values — a portfolio

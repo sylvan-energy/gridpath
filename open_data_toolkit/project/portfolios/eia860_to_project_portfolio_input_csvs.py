@@ -36,8 +36,20 @@ value for a unit contribute nothing (e.g. with the ``duration`` dimension,
 storage aggregates become ``Batteries_4h_<zone>`` while non-storage names
 are unchanged). See AGGREGATION_DIMENSIONS in
 ``open_data_toolkit.project.fleet.aggregation`` for the menu: technology_description,
-vintage_decade, duration, status. Both settings must be set consistently
-across the project-level steps.
+vintage_decade, duration, status.
+
+By default aggregation happens at the load-zone level itself; the
+``aggregation_level`` setting decouples the two, naming (and thereby
+aggregating) the aggregate projects at a FINER geographic level than the
+zones they are assigned to — e.g. ``load_zone_level custom`` with
+``aggregation_level baa`` yields per-BA projects like ``Gas_CT_BPAT``,
+each assigned its BA's custom zone. The aggregation level must refine the
+load-zone level over the in-footprint BAs (every aggregated project must
+belong to exactly one load zone); the steps verify this against the BA
+map before querying and fail loudly otherwise.
+
+All these settings must be set consistently across the project-level
+steps.
 
 .. note:: Hybrid projects are currently not treated separately by this
     module: their generation and storage components show up as individual
@@ -157,6 +169,7 @@ Settings
     * load_zone_level
     * project_aggregation
     * aggregation_dimensions
+    * aggregation_level
     * project_portfolio_scenario_id
     * project_portfolio_scenario_name
 

@@ -59,6 +59,7 @@ Settings
     * load_zone_level
     * project_aggregation
     * aggregation_dimensions
+    * aggregation_level
     * project_operational_chars_scenario_id
     * project_operational_chars_scenario_name
     * project_fuel_scenario_id

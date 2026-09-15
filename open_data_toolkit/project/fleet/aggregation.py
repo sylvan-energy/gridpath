@@ -26,7 +26,10 @@ steps' GROUP BY project then does the aggregation, with per-unit rows
 riding through as singleton groups in the keyed mode.
 """
 
-from open_data_toolkit.geographic_scope import get_load_zone_str
+from open_data_toolkit.geographic_scope import (
+    get_load_zone_str,
+    LOAD_ZONE_LEVEL_CHOICES,
+)
 from open_data_toolkit.project.fleet.ba_assignment import GENERATORS_TABLE_COLUMNS
 
 DISAGG_PROJECT_NAME_STR = (
@@ -116,6 +119,22 @@ def add_project_aggregation_arguments(parser):
         f"dimensions: {', '.join(AGGREGATION_DIMENSIONS)}. Must be set "
         "consistently across the project-level steps.",
     )
+    parser.add_argument(
+        "-agglvl",
+        "--aggregation_level",
+        default=None,
+        choices=list(LOAD_ZONE_LEVEL_CHOICES),
+        help="The geographic level at which aggregated projects are named "
+        "(and thereby aggregated), when it should be FINER than the "
+        "load-zone level — e.g. --load_zone_level custom "
+        "--aggregation_level baa aggregates per BA ('Gas_CT_BPAT') while "
+        "assigning each project its BA's custom zone. By default (unset) "
+        "aggregation happens at the load-zone level itself. The level must "
+        "refine the load-zone level over the in-footprint BAs — every "
+        "aggregated project must belong to exactly one load zone — which "
+        "the steps verify against the BA map before querying. Must be set "
+        "consistently across the project-level steps.",
+    )
 
 
 def get_aggregation_dimensions_sql(
@@ -163,15 +182,25 @@ def get_agg_project_name_str(
     footprint,
     aggregation_dimensions="",
     generators_table="raw_data_eia860_generators",
+    aggregation_level=None,
 ):
     """
     Aggregated projects are named
     <agg_project-or-technology>[_<dimension value>...]_<load_zone>, and are
     thereby aggregated at the chosen load-zone level (see get_load_zone_str
     for the 'all' level), split finer by any requested aggregation
-    dimensions (see AGGREGATION_DIMENSIONS).
+    dimensions (see AGGREGATION_DIMENSIONS). When *aggregation_level* is
+    set, the name's geographic token comes from THAT level instead —
+    decoupling how finely units are aggregated (e.g. per BA) from the load
+    zone the resulting projects are assigned to (e.g. a custom zone); the
+    level must refine the load-zone level, which
+    geographic_scope.check_aggregation_level_refines_zone_level verifies
+    against the BA map.
     """
-    load_zone_str = get_load_zone_str(load_zone_level, footprint)
+    load_zone_str = get_load_zone_str(
+        (load_zone_level if aggregation_level is None else aggregation_level),
+        footprint,
+    )
     dimensions_sql = get_aggregation_dimensions_sql(
         aggregation_dimensions=aggregation_dimensions,
         generators_table=generators_table,
@@ -190,6 +219,7 @@ def get_project_name_str(
     footprint,
     aggregation_dimensions="",
     generators_table="raw_data_eia860_generators",
+    aggregation_level=None,
 ):
     """
     The project-name SQL expression for the chosen *project_aggregation*
@@ -197,7 +227,9 @@ def get_project_name_str(
     whose key row has agg_project set get the aggregate name and everything
     else keeps its per-unit name — the aggregated queries' GROUP BY project
     then leaves the per-unit rows as singleton groups, so their SUMs/values
-    come through unchanged.
+    come through unchanged. *aggregation_level*, when set, names (and
+    thereby aggregates) the aggregated projects at that level rather than
+    at the load-zone level (see get_agg_project_name_str).
     """
     if project_aggregation not in PROJECT_AGGREGATION_CHOICES:
         raise ValueError(
@@ -213,6 +245,7 @@ def get_project_name_str(
         footprint=footprint,
         aggregation_dimensions=aggregation_dimensions,
         generators_table=generators_table,
+        aggregation_level=aggregation_level,
     )
     if project_aggregation == "all":
         return agg_name_str

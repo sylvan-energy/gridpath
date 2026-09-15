@@ -85,6 +85,7 @@ Settings
     * load_zone_level
     * project_aggregation
     * aggregation_dimensions
+    * aggregation_level
     * eia860m_as_of_date
     * project_specified_capacity_scenario_id
     * project_specified_capacity_scenario_name

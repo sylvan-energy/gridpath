@@ -46,6 +46,7 @@ function's default and skips the checks that setting drives.
 from open_data_toolkit.geographic_scope import (
     add_footprint_argument,
     add_load_zone_level_argument,
+    check_aggregation_level_refines_zone_level,
     check_custom_zone_level_ready,
     report_footprint_type,
 )
@@ -100,7 +101,11 @@ FLEET_SELECTION_SETTINGS = (
     "include_planned_retirements",
     "include_btm_plants",
 )
-AGGREGATION_SETTINGS = ("project_aggregation", "aggregation_dimensions")
+AGGREGATION_SETTINGS = (
+    "project_aggregation",
+    "aggregation_dimensions",
+    "aggregation_level",
+)
 
 
 def add_shared_project_step_arguments(
@@ -181,6 +186,7 @@ def get_project_name_str_from_args(
         footprint=parsed_args.footprint,
         aggregation_dimensions=parsed_args.aggregation_dimensions,
         generators_table=generators_table,
+        aggregation_level=getattr(parsed_args, "aggregation_level", None),
     )
 
 
@@ -212,9 +218,10 @@ def connect_and_check_scope(parsed_args):
     report whether the footprint value matched a region or an interconnect
     (and warn loudly if neither, since every output would then be empty),
     and, for a step that takes a load-zone level, verify the custom level
-    is usable. Returns the connection; the caller closes it — except when
-    a check fails, where this closes it before raising (the checks are the
-    only database work that happens before a step's caller has the
+    is usable and that any requested aggregation level refines the
+    load-zone level. Returns the connection; the caller closes it — except
+    when a check fails, where this closes it before raising (the checks
+    are the only database work that happens before a step's caller has the
     connection to close).
     """
     conn = connect_to_database(db_path=parsed_args.database)
@@ -226,6 +233,12 @@ def connect_and_check_scope(parsed_args):
         if hasattr(parsed_args, "load_zone_level"):
             check_custom_zone_level_ready(
                 conn=conn,
+                load_zone_level=parsed_args.load_zone_level,
+                footprint=parsed_args.footprint,
+            )
+            check_aggregation_level_refines_zone_level(
+                conn=conn,
+                aggregation_level=getattr(parsed_args, "aggregation_level", None),
                 load_zone_level=parsed_args.load_zone_level,
                 footprint=parsed_args.footprint,
             )

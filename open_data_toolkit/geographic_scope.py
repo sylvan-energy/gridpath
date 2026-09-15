@@ -79,8 +79,9 @@ def add_load_zone_level_argument(parser):
         "--load_zone_level",
         default="baa",
         choices=list(LOAD_ZONE_LEVEL_CHOICES),
-        help="The level at which to assign project load zones and to name "
-        "(and thereby aggregate) any aggregated projects (see the "
+        help="The level at which to assign project load zones and — unless "
+        "overridden by the aggregation_level setting — to name (and thereby "
+        "aggregate) any aggregated projects (see the "
         "project_aggregation setting): each "
         "generator's BA, or its BA's EIA930 region or interconnect from "
         "the BA map; 'all' makes the whole footprint selected by --footprint "
@@ -148,6 +149,79 @@ def check_custom_zone_level_ready(conn, load_zone_level, footprint):
         )
 
     return unmapped
+
+
+def check_aggregation_level_refines_zone_level(
+    conn, aggregation_level, load_zone_level, footprint
+):
+    """
+    Fail loudly when a requested *aggregation_level* (the level at which
+    aggregated projects are named, see
+    open_data_toolkit.project.fleet.aggregation) does not REFINE the
+    load-zone level over the in-footprint BAs — i.e. when some
+    aggregation-level value spans more than one load zone, or when an
+    in-scope BA has no value at the aggregation level at all. Either
+    would otherwise produce silently wrong outputs: a project spanning
+    zones gets an arbitrary one of them in the load-zone CSV, and a NULL
+    aggregation-level value makes the whole project name NULL. No-op when
+    *aggregation_level* is unset (aggregation happens at the load-zone
+    level itself) or equal to the load-zone level. Returns the list of
+    (aggregation value, n zones) offenders it would have raised on (empty
+    on success).
+    """
+    if aggregation_level is None or aggregation_level == load_zone_level:
+        return []
+
+    # A custom aggregation level needs the custom_zone column ready, just
+    # like the custom zone level does
+    check_custom_zone_level_ready(
+        conn=conn, load_zone_level=aggregation_level, footprint=footprint
+    )
+
+    agg_str = get_load_zone_str(aggregation_level, footprint)
+    zone_str = get_load_zone_str(load_zone_level, footprint)
+    scope_sql = get_footprint_scope_sql(
+        footprint=footprint, load_zone_level=load_zone_level
+    )
+
+    null_agg_bas = [baa for (baa,) in conn.cursor().execute(f"""
+            SELECT baa FROM raw_data_eia_baa_codes
+            WHERE {scope_sql} AND {agg_str} IS NULL
+            ORDER BY baa
+            ;
+            """)]
+    if null_agg_bas:
+        raise ValueError(
+            f"aggregation_level '{aggregation_level}' cannot be used with "
+            f"load_zone_level '{load_zone_level}': in-footprint BA(s) "
+            f"{', '.join(null_agg_bas)} have a load zone but no value at "
+            f"the aggregation level in raw_data_eia_baa_codes, so their "
+            f"aggregated project names would be NULL. Fill the map column "
+            f"(or choose another level)."
+        )
+
+    offenders = conn.cursor().execute(f"""
+        SELECT {agg_str} AS agg_value, COUNT(DISTINCT {zone_str}) AS n_zones
+        FROM raw_data_eia_baa_codes
+        WHERE {scope_sql}
+        GROUP BY agg_value
+        HAVING n_zones > 1
+        ORDER BY agg_value
+        ;
+        """).fetchall()
+    if offenders:
+        offender_str = "; ".join(
+            f"'{agg_value}' spans {n_zones} zones" for agg_value, n_zones in offenders
+        )
+        raise ValueError(
+            f"aggregation_level '{aggregation_level}' does not refine "
+            f"load_zone_level '{load_zone_level}' over the in-footprint "
+            f"BAs — every aggregated project must belong to exactly one "
+            f"load zone, but: {offender_str}. Use an aggregation level "
+            f"finer than the load-zone level (e.g. 'baa')."
+        )
+
+    return offenders
 
 
 def get_footprint_options(conn):

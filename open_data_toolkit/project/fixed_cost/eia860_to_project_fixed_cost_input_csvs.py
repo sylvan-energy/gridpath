@@ -57,6 +57,7 @@ Settings
     * load_zone_level
     * project_aggregation
     * aggregation_dimensions
+    * aggregation_level
     * project_fixed_cost_scenario_id
     * project_fixed_cost_scenario_name
 
