@@ -1,0 +1,2 @@
+version_num,report_date,plant_id_eia,generator_id,uses_net_metering_agreement,net_metering_capacity_mwdc,uses_virtual_net_metering_agreement,virtual_net_metering_capacity_mwdc
+v-test,2025-01-01,999999,NM0,0,,,

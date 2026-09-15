@@ -214,6 +214,93 @@ def warn_on_missing_planned_retirement_data(conn, generators_table):
     return n_populated, n_rows
 
 
+# Mirror of the raw_data_eia860_solar DDL in raw_data_db_schema.sql (as
+# CREATE TABLE IF NOT EXISTS, so pre-existing raw databases get the table
+# on first use) — keep the two in sync
+NET_METERING_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS raw_data_eia860_solar
+(
+    version_num                          TEXT,
+    report_date                          DATETIME,
+    plant_id_eia                         INTEGER,
+    generator_id                         TEXT,
+    uses_net_metering_agreement          INTEGER,
+    net_metering_capacity_mwdc           REAL,
+    uses_virtual_net_metering_agreement  INTEGER,
+    virtual_net_metering_capacity_mwdc   REAL,
+    PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
+);
+"""
+
+
+def ensure_net_metering_table(conn):
+    """
+    Create the (empty) raw_data_eia860_solar table if this raw database
+    predates it, so the net-metered exclusion's subquery never fails on a
+    missing table. An empty table makes the exclusion a no-op — which
+    warn_on_missing_net_metering_data reports loudly, since it usually
+    means the solar CSV was never loaded rather than that no unit is
+    net-metered.
+    """
+    conn.execute(NET_METERING_TABLE_DDL)
+    conn.commit()
+
+
+def warn_on_missing_net_metering_data(conn):
+    """
+    Warn — loudly, regardless of any quiet setting — when the net-metered
+    exclusion is active but raw_data_eia860_solar is empty, making the
+    exclusion silently do nothing (there are always net-metered solar
+    units in real EIA data — ~1,100 nationally at the 2025 vintage). The
+    usual cause is a raw database loaded before pudl_eia860_solar.csv
+    existed (September 2026) — re-run gridpath_pudl_to_gridpath_raw and
+    load the new CSV, or pass include_net_metered to accept the fleet
+    including net-metered units. Callers should skip this check when
+    include_net_metered is set. Returns the table's row count.
+    """
+    n_rows = (
+        conn.cursor()
+        .execute("SELECT COUNT(*) FROM raw_data_eia860_solar")
+        .fetchone()[0]
+    )
+
+    if not n_rows:
+        print(
+            "WARNING: net-metered units are being excluded, but "
+            "raw_data_eia860_solar is EMPTY, so the exclusion will do "
+            "nothing. Load pudl_eia860_solar.csv (added to the convert "
+            "step in September 2026 — re-run gridpath_pudl_to_gridpath_raw "
+            "if the raw CSVs predate it), or pass include_net_metered to "
+            "accept keeping net-metered units."
+        )
+
+    return n_rows
+
+
+def get_net_metering_filter_string(include_net_metered):
+    """
+    The net-metered exclusion part of the EIA860(M) filters: drop units
+    the EIA860 solar supplement flags as operating under a net-metering
+    agreement — their output serves onsite load and is netted out of the
+    metered demand that EIA-930-derived load is built from, so modeling
+    them as supply alongside that load double-counts their energy (the
+    same physical concern as the behind-the-meter SECTOR exclusion, on
+    different evidence: the flag is per-generator and mostly marks small
+    distributed solar in the utility/IPP sectors the sector exclusion
+    keeps). Empty with *include_net_metered*; a unit absent from
+    raw_data_eia860_solar — any non-solar unit, and solar units newer
+    than the loaded solar vintage — is never excluded.
+    """
+    if include_net_metered:
+        return ""
+
+    return """AND (plant_id_eia, generator_id) NOT IN (
+         SELECT plant_id_eia, generator_id
+         FROM raw_data_eia860_solar
+         WHERE uses_net_metering_agreement = 1
+     )"""
+
+
 def get_allowed_status_codes(planned_inclusion, inactive_inclusion="none"):
     """
     The operational status codes allowed through the EIA860(M) filters.
@@ -271,6 +358,7 @@ def get_eia860_sql_filter_string(
     include_btm_plants=False,
     btm_sector_column="sector_name_eia",
     btm_sector_values=BTM_SECTOR_NAMES,
+    include_net_metered=False,
 ):
     """
     With *include_retired*, retired units are allowed through: the 'RE'
@@ -321,6 +409,7 @@ def get_eia860_sql_filter_string(
         include_btm_plants=include_btm_plants,
         btm_sector_column=btm_sector_column,
         btm_sector_values=btm_sector_values,
+        include_net_metered=include_net_metered,
     )
     eia860_sql_filter_string = f"""
     {geographic_filter_string}
@@ -357,13 +446,15 @@ def get_characteristics_filter_string(
     include_btm_plants=False,
     btm_sector_column="sector_name_eia",
     btm_sector_values=BTM_SECTOR_NAMES,
+    include_net_metered=False,
 ):
     """
     The generator-characteristics part of the EIA860(M) filters (pipeline
     stage 2): the planned-operating-date window vs the study year, the
     operational-status / retirement-date selection (see
-    get_retired_filter_string and the tier constants), and the
-    behind-the-meter sector exclusion (see get_btm_filter_string).
+    get_retired_filter_string and the tier constants), the
+    behind-the-meter sector exclusion (see get_btm_filter_string), and
+    the net-metered exclusion (see get_net_metering_filter_string).
     Everything about WHAT the unit is; nothing about where it is.
     """
     retired_filter_string = get_retired_filter_string(
@@ -380,10 +471,14 @@ def get_characteristics_filter_string(
         sector_column=btm_sector_column,
         btm_sector_values=btm_sector_values,
     )
+    net_metering_filter_string = get_net_metering_filter_string(
+        include_net_metered=include_net_metered
+    )
     planned_date_window_string = get_planned_date_window_string(study_year=study_year)
     return f"""{planned_date_window_string}
      {retired_filter_string}
-     {btm_filter_string}"""
+     {btm_filter_string}
+     {net_metering_filter_string}"""
 
 
 def get_planned_date_window_string(study_year):
@@ -406,6 +501,7 @@ def get_eia860m_sql_filter_string(
     inactive_inclusion="none",
     include_planned_retirements=False,
     include_btm_plants=False,
+    include_net_metered=False,
 ):
     """
     EIA860M equivalent of get_eia860_sql_filter_string, for use against
@@ -428,6 +524,7 @@ def get_eia860m_sql_filter_string(
         include_btm_plants=include_btm_plants,
         btm_sector_column="sector_id_eia",
         btm_sector_values=BTM_SECTOR_IDS,
+        include_net_metered=include_net_metered,
     )
 
 
@@ -542,6 +639,7 @@ def get_fleet_relation_sql(
     inactive_inclusion="none",
     include_planned_retirements=False,
     include_btm_plants=False,
+    include_net_metered=False,
     generators_table="raw_data_eia860_generators",
     join_ba_map=True,
     extra_joins="",
@@ -597,6 +695,7 @@ def get_fleet_relation_sql(
         include_btm_plants=include_btm_plants,
         btm_sector_column=btm_sector_column,
         btm_sector_values=btm_sector_values,
+        include_net_metered=include_net_metered,
     )
     include_override_sql = get_unit_override_sql(
         column="include", generators_table=generators_table
@@ -646,8 +745,8 @@ def add_fleet_selection_arguments(parser):
     """
     Add the shared fleet-selection arguments — ``--include_retired``,
     ``--planned_inclusion``, ``--inactive_inclusion``,
-    ``--include_planned_retirements``, ``--include_btm_plants`` — to a
-    project-level step's argument parser.
+    ``--include_planned_retirements``, ``--include_btm_plants``,
+    ``--include_net_metered`` — to a project-level step's argument parser.
     Single-sourced here (like add_project_aggregation_arguments) so the
     settings and their --help texts can't drift across the steps; they
     must be set consistently across the EIA860(M)-based project steps.
@@ -712,4 +811,20 @@ def add_fleet_selection_arguments(parser):
         "from and absent from BA generation telemetry, so modeling them "
         "as supply resources alongside that load double-counts their "
         "energy. Units with no sector in the raw data are always kept.",
+    )
+    parser.add_argument(
+        "-nm",
+        "--include_net_metered",
+        default=False,
+        action="store_true",
+        help="Also include units the EIA860 solar supplement flags as "
+        "operating under a net-metering agreement (raw_data_eia860_solar). "
+        "These are excluded by default for the same physical reason as the "
+        "behind-the-meter sectors — their output serves onsite load and is "
+        "netted out of EIA-930-derived demand — but on different evidence: "
+        "the flag is per-generator and mostly marks small distributed "
+        "solar in the utility/IPP sectors that the sector exclusion keeps. "
+        "Units absent from the solar table (non-solar units, and solar "
+        "units newer than the loaded solar vintage) are always kept; an "
+        "empty table makes the exclusion a no-op (warned loudly).",
     )

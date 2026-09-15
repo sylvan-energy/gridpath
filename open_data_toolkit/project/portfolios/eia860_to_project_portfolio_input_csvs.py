@@ -141,7 +141,19 @@ load is built from and absent from BA generation telemetry, and modeling
 them as supply resources alongside that load would double-count their
 energy. ``include_btm_plants`` opts them back in; units with no sector
 in the raw data cannot be classified and are always kept (with a loud
-warning). The same window (and the same settings) applies in all the
+warning). Net-metered units — those the EIA860 solar supplement
+(raw_data_eia860_solar) flags as operating under a net-metering
+agreement — are excluded by default for the same physical reason, on
+different evidence: the sector exclusion classifies by WHO owns the
+plant (commercial/industrial), the net-metering flag by HOW its output
+is billed, and the two populations barely overlap (net-metered solar is
+mostly small IPP- and utility-sector distributed systems the sector
+exclusion keeps, while most C&I-sector capacity is not net metered).
+``include_net_metered`` opts them back in; units absent from the loaded
+solar table (all non-solar units, and solar units newer than its
+annual-only vintage) are always kept, and an empty table makes the
+exclusion a no-op (with a loud warning). The same window (and the same
+settings) applies in all the
 EIA860(M)-based project steps and should be set consistently across
 them.
 
@@ -172,6 +184,7 @@ Settings
     * inactive_inclusion
     * include_planned_retirements
     * include_btm_plants
+    * include_net_metered
     * ba_source
     * load_zone_level
     * project_aggregation

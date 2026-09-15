@@ -33,6 +33,7 @@ from open_data_toolkit.raw_data.pudl.pudl_to_gridpath_raw_data import (
     get_eia860m_generator_data_from_pudl_parquet,
     get_eia_baa_codes_from_pudl_parquet,
     get_eia_generator_data_from_pudl_parquet,
+    get_eia860_solar_data_from_pudl_parquet,
     main as pudl_to_gridpath_raw_data_main,
     warn_on_baa_coverage,
 )
@@ -109,6 +110,18 @@ ENTITY_GENERATORS_FIXTURE_SQL = """
         (2, '1', DATE '1985-03-01', TRUE)
     ) t(plant_id_eia, generator_id, generator_operating_date,
         associated_combined_heat_power)
+"""
+
+# Two solar vintages: unit 1-1 flips to net-metered in the 2025 filing;
+# unit 5-PV exists only in 2024
+SOLAR_FIXTURE_SQL = """
+    SELECT * FROM (VALUES
+        (DATE '2024-01-01', 1, '1', FALSE, NULL, FALSE, NULL),
+        (DATE '2024-01-01', 5, 'PV', TRUE, 2.5, FALSE, NULL),
+        (DATE '2025-01-01', 1, '1', TRUE, 1.2, FALSE, NULL)
+    ) t(report_date, plant_id_eia, generator_id,
+        uses_net_metering_agreement, net_metering_capacity_mwdc,
+        uses_virtual_net_metering_agreement, virtual_net_metering_capacity_mwdc)
 """
 
 EIA860M_FIXTURE_SQL = """
@@ -252,6 +265,7 @@ class TestPudlToGridPathRawData(unittest.TestCase):
             ("core_eia860__scd_generators", GENERATORS_FIXTURE_SQL),
             ("core_eia860__scd_plants", PLANTS_FIXTURE_SQL),
             ("core_eia__entity_generators", ENTITY_GENERATORS_FIXTURE_SQL),
+            ("core_eia860__scd_generators_solar", SOLAR_FIXTURE_SQL),
             ("core_eia860m__changelog_generators", EIA860M_FIXTURE_SQL),
             (
                 "core_eiaaeo__yearly_projected_fuel_cost_in_electric_sector" "_by_type",
@@ -1047,6 +1061,51 @@ class TestPudlToGridPathRawData(unittest.TestCase):
         )
         self.assertEqual(len(df), 3)
         self.assertEqual(df["report_date"].iloc[0], "2017-06-01")
+
+    def get_solar_csv(self, solar_report_date=None):
+        raw_data_directory = tempfile.mkdtemp(dir=self.tmp_dir.name)
+        get_eia860_solar_data_from_pudl_parquet(
+            raw_data_directory=raw_data_directory,
+            pudl_download_directory=self.tmp_dir.name,
+            solar_report_date=solar_report_date,
+            pudl_version="v-test",
+            quiet=True,
+        )
+        return pd.read_csv(
+            os.path.join(raw_data_directory, "pudl_eia860_solar.csv"),
+            dtype={"generator_id": str},
+        )
+
+    def test_solar_defaults_to_latest_vintage(self):
+        # The 2025 vintage has one row: unit 1-1, net-metered there
+        df = self.get_solar_csv()
+        self.assertEqual(df["report_date"].unique().tolist(), ["2025-01-01"])
+        self.assertEqual(len(df), 1)
+        self.assertEqual(int(df["uses_net_metering_agreement"].iloc[0]), 1)
+
+    def test_solar_pinned_vintage(self):
+        # The 2024 vintage: unit 1-1 not yet net-metered, unit 5-PV flagged
+        df = self.get_solar_csv(solar_report_date="2024-01-01")
+        self.assertEqual(len(df), 2)
+        df = df.set_index(["plant_id_eia", "generator_id"])
+        self.assertEqual(int(df.loc[(1, "1"), "uses_net_metering_agreement"]), 0)
+        self.assertEqual(int(df.loc[(5, "PV"), "uses_net_metering_agreement"]), 1)
+        self.assertEqual(float(df.loc[(5, "PV"), "net_metering_capacity_mwdc"]), 2.5)
+
+    def test_solar_bad_vintage_raises(self):
+        with self.assertRaisesRegex(ValueError, "eia860_solar_report_date"):
+            self.get_solar_csv(solar_report_date="2026-06-15")
+
+    def test_solar_missing_parquet_raises(self):
+        empty_download_dir = tempfile.mkdtemp(dir=self.tmp_dir.name)
+        with self.assertRaisesRegex(FileNotFoundError, "gridpath_get_pudl_data"):
+            get_eia860_solar_data_from_pudl_parquet(
+                raw_data_directory=tempfile.mkdtemp(dir=self.tmp_dir.name),
+                pudl_download_directory=empty_download_dir,
+                solar_report_date=None,
+                pudl_version="v-test",
+                quiet=True,
+            )
 
     @classmethod
     def tearDownClass(cls):

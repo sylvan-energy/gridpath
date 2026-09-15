@@ -288,10 +288,11 @@ def main(args=None):
             footprint=parsed_args.footprint,
             # the battery-duration patch is UPDATE-only against existing
             # CSV rows, so a superset fleet is harmless — and required if
-            # the CSVs were generated with include_btm_plants or
-            # include_planned_retirements
+            # the CSVs were generated with include_btm_plants,
+            # include_planned_retirements, or include_net_metered
             include_btm_plants=True,
             include_planned_retirements=True,
+            include_net_metered=True,
         ),
         study_year=parsed_args.study_year,
         csv_location=parsed_args.capacity_specified_directory,

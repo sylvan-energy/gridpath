@@ -91,6 +91,7 @@ Settings
 * inactive_inclusion
 * include_planned_retirements
 * include_btm_plants
+* include_net_metered
 * ba_source
 * load_zone_level
 * project_aggregation
@@ -121,6 +122,7 @@ from open_data_toolkit.project.fleet.ba_assignment import (
 from open_data_toolkit.project.fleet.fleet_filters import (
     get_allowed_status_codes,
     get_geographic_filter_string,
+    get_net_metering_filter_string,
     get_planned_date_window_string,
     get_retired_filter_string,
     get_btm_filter_string,
@@ -172,6 +174,7 @@ def get_fleet_audit_sql(
     inactive_inclusion,
     include_planned_retirements,
     include_btm_plants,
+    include_net_metered,
     project_name_str,
 ):
     """
@@ -215,6 +218,7 @@ def get_fleet_audit_sql(
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
         include_btm_plants=include_btm_plants,
+        include_net_metered=include_net_metered,
     )
     # Sub-flags: the individual pieces the characteristics filter is
     # composed of; the AND-prefixed builders become bare predicates by
@@ -231,6 +235,9 @@ def get_fleet_audit_sql(
     )
     btm_predicate = "1 = 1 " + get_btm_filter_string(
         include_btm_plants=include_btm_plants
+    )
+    net_metering_predicate = "1 = 1 " + get_net_metering_filter_string(
+        include_net_metered=include_net_metered
     )
 
     load_zone_str = get_project_load_zone_str(
@@ -276,6 +283,8 @@ def get_fleet_audit_sql(
         CASE WHEN {status_retirement_predicate} THEN 1 ELSE 0 END
             AS passes_status_retirement,
         CASE WHEN {btm_predicate} THEN 1 ELSE 0 END AS passes_btm,
+        CASE WHEN {net_metering_predicate} THEN 1 ELSE 0 END
+            AS passes_net_metering,
         {include_override_sql} AS override_include,
         {aggregation_override_sql} AS override_aggregation,
         {load_zone_override_sql} AS override_load_zone,
@@ -321,6 +330,7 @@ def print_fleet_waterfall(audit_df):
     date_ok = in_footprint & (audit_df["passes_date_window"] == 1)
     status_ok = in_footprint & (audit_df["passes_status_retirement"] == 1)
     btm_ok = in_footprint & (audit_df["passes_btm"] == 1)
+    net_metering_ok = in_footprint & (audit_df["passes_net_metering"] == 1)
     in_fleet = audit_df["in_fleet"] == 1
 
     print("Fleet selection waterfall (units passing this AND previous stages):")
@@ -330,6 +340,7 @@ def print_fleet_waterfall(audit_df):
     line("stage 2:   pass planned-date window", date_ok)
     line("stage 2:   pass status/retirement selection", status_ok)
     line("stage 2:   pass behind-the-meter exclusion", btm_ok)
+    line("stage 2:   pass net-metered exclusion", net_metering_ok)
     force_included = in_fleet & in_footprint & (audit_df["override_include"] == 1)
     force_excluded = in_footprint & keyed & (audit_df["override_include"] == 0)
     if force_included.any():
@@ -398,6 +409,7 @@ def main(args=None):
         inactive_inclusion=parsed_args.inactive_inclusion,
         include_planned_retirements=parsed_args.include_planned_retirements,
         include_btm_plants=parsed_args.include_btm_plants,
+        include_net_metered=parsed_args.include_net_metered,
         project_name_str=project_name_str,
     )
 

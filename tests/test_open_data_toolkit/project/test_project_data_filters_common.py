@@ -24,6 +24,12 @@ from db.create_database import main as create_database_main
 from open_data_toolkit.geographic_scope import (
     check_aggregation_level_refines_zone_level,
 )
+from open_data_toolkit.project.fleet.fleet_filters import (
+    ensure_net_metering_table,
+    get_fleet_relation_sql,
+    get_net_metering_filter_string,
+    warn_on_missing_net_metering_data,
+)
 from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
 from open_data_toolkit.project.project_data_filters_common import (
     AGGREGATION_DIMENSIONS,
@@ -740,6 +746,116 @@ class TestAggregationLevelRefinesZoneLevel(unittest.TestCase):
         self.conn.commit()
         with self.assertRaisesRegex(ValueError, "gridpath_apply_custom_zones"):
             self.check("custom", "baa")
+
+
+class TestNetMeteringFilter(unittest.TestCase):
+    """
+    The net-metered exclusion (raw_data_eia860_solar flag): flagged units
+    drop by default, everything absent from the solar table is kept,
+    include_net_metered keeps everything, and an empty table is a no-op
+    (with the loud warning).
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        db_path = os.path.join(self.tmp_dir.name, "net_metering_test_raw.db")
+        create_database_main(
+            ["--database", db_path, "--db_schema", RAW_DATA_DB_SCHEMA, "--quiet"]
+        )
+        self.conn = sqlite3.connect(db_path)
+        self.addCleanup(self.conn.close)
+        self.conn.execute(
+            "INSERT INTO raw_data_eia_baa_codes (baa, region, interconnect) "
+            "VALUES ('BA1', 'Region1', 'Interconnect1')"
+        )
+        self.conn.execute("""
+            INSERT INTO user_defined_eia_gridpath_key
+            (prime_mover_code, energy_source_code, gridpath_capacity_type,
+            gridpath_operational_type, gridpath_technology, agg_project)
+            VALUES ('PV', 'SUN', 'gen_spec', 'gen_var', 'Solar', 'Solar')
+            """)
+        self.conn.executemany(
+            """
+            INSERT INTO raw_data_eia860_generators
+            (version_num, report_date, plant_id_eia, generator_id,
+            balancing_authority_code_eia, prime_mover_code,
+            energy_source_code_1, operational_status_code, sector_name_eia,
+            capacity_mw)
+            VALUES ('v-test', '2026-01-01', ?, ?, 'BA1', 'PV', 'SUN', 'OP',
+            'Electric Utility', 100)
+            """,
+            [(1, "1"), (2, "1"), (3, "1")],
+        )
+        # Unit 1__1 is net-metered; 2__1 has a flag-0 row; 3__1 is absent
+        # from the solar table (e.g. newer than the loaded solar vintage)
+        self.conn.executemany(
+            """
+            INSERT INTO raw_data_eia860_solar
+            (version_num, report_date, plant_id_eia, generator_id,
+            uses_net_metering_agreement)
+            VALUES ('v-test', '2025-01-01', ?, ?, ?)
+            """,
+            [(1, "1", 1), (2, "1", 0)],
+        )
+        self.conn.commit()
+
+    def query_fleet(self, **kwargs):
+        sql = f"""
+            SELECT plant_id_eia || '__' || generator_id AS project
+            {get_fleet_relation_sql(
+                ba_source="eia860",
+                study_year=2030,
+                footprint="Interconnect1",
+                **kwargs,
+            )}
+            ORDER BY project
+            ;
+            """
+        return [p for (p,) in self.conn.cursor().execute(sql)]
+
+    def test_flagged_units_excluded_by_default(self):
+        self.assertEqual(self.query_fleet(), ["2__1", "3__1"])
+
+    def test_include_net_metered_keeps_them(self):
+        self.assertEqual(
+            self.query_fleet(include_net_metered=True), ["1__1", "2__1", "3__1"]
+        )
+
+    def test_empty_table_is_a_noop(self):
+        self.conn.execute("DELETE FROM raw_data_eia860_solar")
+        self.conn.commit()
+        self.assertEqual(self.query_fleet(), ["1__1", "2__1", "3__1"])
+
+    def test_clause_present_only_when_excluding(self):
+        self.assertIn(
+            "raw_data_eia860_solar",
+            get_net_metering_filter_string(include_net_metered=False),
+        )
+        self.assertEqual(get_net_metering_filter_string(include_net_metered=True), "")
+
+    def test_warns_on_empty_table(self):
+        self.conn.execute("DELETE FROM raw_data_eia860_solar")
+        self.conn.commit()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            n_rows = warn_on_missing_net_metering_data(conn=self.conn)
+        self.assertEqual(n_rows, 0)
+        self.assertIn("WARNING", out.getvalue())
+        self.assertIn("raw_data_eia860_solar", out.getvalue())
+
+    def test_no_warning_when_table_has_rows(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            n_rows = warn_on_missing_net_metering_data(conn=self.conn)
+        self.assertEqual(n_rows, 2)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_table_created_on_first_use(self):
+        self.conn.execute("DROP TABLE raw_data_eia860_solar")
+        self.conn.commit()
+        ensure_net_metering_table(conn=self.conn)
+        self.assertEqual(self.query_fleet(), ["1__1", "2__1", "3__1"])
 
 
 class TestBAAssignmentPrecedence(unittest.TestCase):

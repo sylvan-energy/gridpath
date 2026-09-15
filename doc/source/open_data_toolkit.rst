@@ -166,7 +166,8 @@ what gets modeled. They apply, in order:
    not-yet-operational units expected online by it — minus units with a
    filed PLANNED retirement date before the study year's end. The
    ``planned_inclusion``, ``inactive_inclusion``, ``include_retired``,
-   ``include_planned_retirements``, and ``include_btm_plants`` settings
+   ``include_planned_retirements``, ``include_btm_plants``, and
+   ``include_net_metered`` settings
    widen or narrow this default window (how speculative a planned unit
    to admit; whether to count standby/out-of-service units, retired
    units, units planning to retire, and behind-the-meter units). The

@@ -137,6 +137,14 @@ class TestEIA860ToProjectLoadZoneInputCsvs(unittest.TestCase):
             """,
             EIA_GRIDPATH_KEY_FIXTURE_ROWS,
         )
+        # One inert solar row (flag 0) so the empty-solar-table warning
+        # (net-metered exclusion silently doing nothing) stays quiet
+        conn.execute("""
+            INSERT INTO raw_data_eia860_solar
+            (version_num, report_date, plant_id_eia, generator_id,
+            uses_net_metering_agreement)
+            VALUES ('v-test', '2025-01-01', 999999, 'NM0', 0)
+            """)
         conn.commit()
         conn.close()
 

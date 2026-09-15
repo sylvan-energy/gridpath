@@ -135,6 +135,14 @@ class TestFleetAudit(unittest.TestCase):
             (plant_id_eia, generator_id, balancing_authority_code_eia, reason)
             VALUES (8, '1', 'Zone1', 'test override')
             """)
+        # One inert solar row (flag 0) so the empty-solar-table warning
+        # (net-metered exclusion silently doing nothing) stays quiet
+        conn.execute("""
+            INSERT INTO raw_data_eia860_solar
+            (version_num, report_date, plant_id_eia, generator_id,
+            uses_net_metering_agreement)
+            VALUES ('v-test', '2025-01-01', 999999, 'NM0', 0)
+            """)
         # Sectors: unit 6 is behind-the-meter, the rest utility
         conn.execute("""
             UPDATE raw_data_eia860_generators

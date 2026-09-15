@@ -59,7 +59,9 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_missing_planned_retirement_data,
     BTM_SECTOR_COLUMN,
     add_fleet_selection_arguments,
+    ensure_net_metering_table,
     get_fleet_relation_sql,
+    warn_on_missing_net_metering_data,
     warn_on_null_sector_rows,
     warn_on_uncovered_status_codes,
 )
@@ -85,6 +87,7 @@ FLEET_RELATION_SETTINGS = (
     "inactive_inclusion",
     "include_planned_retirements",
     "include_btm_plants",
+    "include_net_metered",
 )
 
 # The settings the EIA860(M)-based project steps SHARE — the ones that
@@ -103,6 +106,7 @@ FLEET_SELECTION_SETTINGS = (
     "inactive_inclusion",
     "include_planned_retirements",
     "include_btm_plants",
+    "include_net_metered",
 )
 AGGREGATION_SETTINGS = (
     "project_aggregation",
@@ -231,8 +235,10 @@ def connect_and_check_scope(parsed_args):
 
     try:
         # The fleet relation references user_defined_unit_overrides
-        # unconditionally; create it empty on databases that predate it
+        # unconditionally (and raw_data_eia860_solar when the net-metered
+        # exclusion is on); create them empty on databases that predate them
         ensure_unit_overrides_table(conn=conn)
+        ensure_net_metering_table(conn=conn)
         report_footprint_type(
             conn=conn, footprint=parsed_args.footprint, quiet=parsed_args.quiet
         )
@@ -280,3 +286,6 @@ def warn_on_fleet_data_gaps(
         warn_on_missing_planned_retirement_data(
             conn=conn, generators_table=generators_table
         )
+
+    if not getattr(parsed_args, "include_net_metered", True):
+        warn_on_missing_net_metering_data(conn=conn)

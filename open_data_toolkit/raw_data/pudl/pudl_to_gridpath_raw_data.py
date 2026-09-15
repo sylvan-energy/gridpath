@@ -29,6 +29,7 @@ previous step in order to create the following files in the user-specified
 raw data directory.
 
 * pudl_eia860_generators.csv
+* pudl_eia860_solar.csv
 * pudl_eia860m_generators.csv
 * pudl_eia923_plant_fuel_generation.csv
 * pudl_eia930_hourly_interchange.csv
@@ -96,6 +97,13 @@ while those columns are backfilled per generator from a pinned as-filed
 vintage, leaving NULLs only for generators too new to appear in it. The
 resulting CSV therefore mixes vintages — its ``report_date`` column is
 the fleet's, and the metadata trail records the detail vintage.
+
+``pudl_eia860_solar.csv`` (the per-generator net-metering flags, from the
+EIA860 solar supplement) is likewise an annual-form-only dataset with no
+monthly_update vintage: the ``eia860_solar_report_date`` setting defaults
+to the latest (most recent annual) vintage, typically one report year
+behind a monthly_update fleet, and solar units newer than it are simply
+absent — see ``get_eia860_solar_data_from_pudl_parquet``.
 
 This step selects data VINTAGES only (the EIA860 report date, defaulting
 to the latest available, the EIA860M latest-entries default vs the
@@ -216,6 +224,21 @@ def parse_arguments(args):
         "vintage (typically those built since) simply keep NULLs. Pick a "
         "vintage whose data_maturity is 'final' or 'provisional'; the "
         "resulting CSV mixes vintages, which the metadata trail records.",
+    )
+
+    parser.add_argument(
+        "-sdate",
+        "--eia860_solar_report_date",
+        default=None,
+        help="EIA860 report date (YYYY-MM-DD) to pull the solar-generator "
+        "detail table for (the net-metering flags). The solar table is an "
+        "annual-form-only supplement — it has NO monthly_update vintage — "
+        "so this defaults to the LATEST report date in the downloaded "
+        "solar data (the most recent annual filing), which typically lags "
+        "the --eia860_report_date fleet by a report year: solar units "
+        "newer than this vintage are simply absent, and therefore not "
+        "flagged as net-metered downstream. A date with no rows is "
+        "rejected.",
     )
 
     parser.add_argument(
@@ -745,6 +768,91 @@ def get_eia860m_generator_data_from_pudl_parquet(
         )
 
 
+def get_eia860_solar_data_from_pudl_parquet(
+    raw_data_directory,
+    pudl_download_directory,
+    solar_report_date,
+    pudl_version,
+    quiet=False,
+):
+    """
+    Per-generator solar detail from the EIA860 solar supplement
+    (core_eia860__scd_generators_solar) — currently the net-metering
+    flags, the basis of the project steps' net-metered exclusion (see
+    ``include_net_metered`` there). The solar supplement is filed with
+    the annual form only, so it has NO monthly_update vintage: the
+    default *solar_report_date* is the latest (most recent annual)
+    vintage, typically one report year behind a monthly_update fleet —
+    solar units newer than it are absent from the CSV and therefore not
+    flagged. The flags are written as 0/1 integers (empty = the source
+    row's NULL). Loads into raw_data_eia860_solar.
+    """
+    filepath = os.path.join(raw_data_directory, "pudl_eia860_solar.csv")
+
+    if determine_proceed(filepath):
+        if not quiet:
+            print(
+                f"Getting EIA860 solar generator detail from PUDL parquet "
+                f"files to {filepath}..."
+            )
+        solar_parquet_path = os.path.join(
+            pudl_download_directory, "core_eia860__scd_generators_solar.parquet"
+        )
+        if not os.path.exists(solar_parquet_path):
+            raise FileNotFoundError(
+                f"{solar_parquet_path} not found. The solar generator "
+                f"detail table was added to the PUDL download list in "
+                f"September 2026 (it provides the net-metering flags); "
+                f"re-run gridpath_get_pudl_data to download it."
+            )
+
+        available_report_dates = get_available_eia860_report_dates(
+            generators_parquet_path=solar_parquet_path
+        )
+        if solar_report_date is None:
+            solar_report_date = available_report_dates[-1]
+        elif solar_report_date not in available_report_dates:
+            raise ValueError(
+                f"eia860_solar_report_date '{solar_report_date}' is not a "
+                f"report date in the downloaded solar data, so the solar "
+                f"CSV would come out empty. Available report dates: "
+                f"{', '.join(available_report_dates)}."
+            )
+
+        query = f"""
+            SELECT
+                '{pudl_version}' AS version_num,
+                CAST(report_date AS VARCHAR) AS report_date,
+                plant_id_eia,
+                generator_id,
+                CAST(uses_net_metering_agreement AS INTEGER)
+                    AS uses_net_metering_agreement,
+                net_metering_capacity_mwdc,
+                CAST(uses_virtual_net_metering_agreement AS INTEGER)
+                    AS uses_virtual_net_metering_agreement,
+                virtual_net_metering_capacity_mwdc
+            FROM read_parquet('{solar_parquet_path}')
+            WHERE report_date = '{solar_report_date}'
+            ORDER BY plant_id_eia, generator_id
+        """
+
+        solar_gens = duckdb.sql(query).df()
+        solar_gens.to_csv(
+            filepath,
+            index=False,
+        )
+
+        log_data_metadata(
+            directory=raw_data_directory,
+            script="pudl_to_gridpath_raw_data",
+            output_file="pudl_eia860_solar.csv",
+            settings={
+                "eia860_solar_report_date": solar_report_date,
+                "pudl_version": pudl_version,
+            },
+        )
+
+
 def get_eia_baa_codes_from_pudl_parquet(
     raw_data_directory, pudl_download_directory, quiet=False
 ):
@@ -1196,6 +1304,19 @@ def main(args=None):
             pudl_download_directory=parsed_args.pudl_download_directory,
             pudl_version=parsed_args.pudl_version,
             source_file="core_eia860m__changelog_generators.parquet",
+        ),
+        quiet=parsed_args.quiet,
+    )
+
+    # Solar generator detail (net-metering flags)
+    get_eia860_solar_data_from_pudl_parquet(
+        raw_data_directory=parsed_args.raw_data_directory,
+        pudl_download_directory=parsed_args.pudl_download_directory,
+        solar_report_date=parsed_args.eia860_solar_report_date,
+        pudl_version=determine_pudl_version(
+            pudl_download_directory=parsed_args.pudl_download_directory,
+            pudl_version=parsed_args.pudl_version,
+            source_file="core_eia860__scd_generators_solar.parquet",
         ),
         quiet=parsed_args.quiet,
     )

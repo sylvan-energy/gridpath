@@ -127,6 +127,30 @@ CREATE TABLE raw_data_eia860m_generators
     PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
 );
 
+-- Per-generator solar detail from the EIA860 solar supplement (from
+-- pudl_eia860_solar.csv): the net-metering flags behind the project
+-- steps' net-metered exclusion (include_net_metered setting). The solar
+-- supplement is annual-form-only — the convert step pins one (by default
+-- the latest annual) vintage, typically a report year behind a
+-- monthly_update fleet, so newer solar units are absent and therefore
+-- unflagged. An EMPTY table makes the exclusion a no-op (the steps warn
+-- loudly); fleet_filters.py mirrors this DDL as CREATE TABLE IF NOT
+-- EXISTS so pre-existing raw databases get the table on first use —
+-- keep the two in sync.
+DROP TABLE IF EXISTS raw_data_eia860_solar;
+CREATE TABLE raw_data_eia860_solar
+(
+    version_num                          TEXT,
+    report_date                          DATETIME,
+    plant_id_eia                         INTEGER,
+    generator_id                         TEXT,
+    uses_net_metering_agreement          INTEGER,
+    net_metering_capacity_mwdc           REAL,
+    uses_virtual_net_metering_agreement  INTEGER,
+    virtual_net_metering_capacity_mwdc   REAL,
+    PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
+);
+
 DROP TABLE IF EXISTS raw_data_eia930_hourly_interchange;
 CREATE TABLE raw_data_eia930_hourly_interchange
 (

@@ -329,6 +329,9 @@ def main(args=None):
         "core_eia__entity_generators": {
             "skip": parsed_args.skip_eia860_download,
         },
+        "core_eia860__scd_generators_solar": {
+            "skip": parsed_args.skip_eia860_download,
+        },
         "core_eia860m__changelog_generators": {
             "skip": parsed_args.skip_eia860m_download,
         },
