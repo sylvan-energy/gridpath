@@ -31,6 +31,7 @@ from open_data_toolkit.geographic_scope import (
     LOAD_ZONE_LEVEL_CHOICES,
 )
 from open_data_toolkit.project.fleet.ba_assignment import GENERATORS_TABLE_COLUMNS
+from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
 
 DISAGG_PROJECT_NAME_STR = (
     "plant_id_eia || '__' || REPLACE(REPLACE(generator_id, ' ', '_'), '-', '_')"
@@ -195,12 +196,20 @@ def get_agg_project_name_str(
     zone the resulting projects are assigned to (e.g. a custom zone); the
     level must refine the load-zone level, which
     geographic_scope.check_aggregation_level_refines_zone_level verifies
-    against the BA map.
+    against the BA map. A unit with an 'aggregation' override in
+    user_defined_unit_overrides gets THAT value as its geographic token
+    (a per-plant carve-out, e.g. 'Hydro_Hoover'; see
+    open_data_toolkit.project.fleet.unit_overrides) — an empty overrides
+    table is a no-op.
     """
-    load_zone_str = get_load_zone_str(
+    map_token_str = get_load_zone_str(
         (load_zone_level if aggregation_level is None else aggregation_level),
         footprint,
     )
+    aggregation_override_sql = get_unit_override_sql(
+        column="aggregation", generators_table=generators_table
+    )
+    geographic_token_str = f"COALESCE({aggregation_override_sql}, {map_token_str})"
     dimensions_sql = get_aggregation_dimensions_sql(
         aggregation_dimensions=aggregation_dimensions,
         generators_table=generators_table,
@@ -209,7 +218,7 @@ def get_agg_project_name_str(
         "COALESCE(agg_project, gridpath_technology)"
         + dimensions_sql
         + " || '_' || "
-        + load_zone_str
+        + geographic_token_str
     )
 
 

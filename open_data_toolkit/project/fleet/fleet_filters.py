@@ -26,6 +26,7 @@ EIA860(M)-based project steps share.
 
 from open_data_toolkit.geographic_scope import get_footprint_scope_sql
 from open_data_toolkit.project.fleet.ba_assignment import get_generators_table_str
+from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
 
 # The operational-status-code tiers of not-yet-operational ("proposed")
 # and existing-but-not-operating units. The annual EIA860 and EIA860M
@@ -569,29 +570,42 @@ def get_fleet_relation_sql(
     *extra_where* is ANDed after the fleet filter (e.g. the EIA860M
     as-of-date snapshot filter or an operational-type filter). The
     EIA860M generators table gets the 860M filter variant automatically.
+
+    Per-unit include/exclude overrides (user_defined_unit_overrides, see
+    open_data_toolkit.project.fleet.unit_overrides) apply to the
+    characteristics stage only: include=1 bypasses it, include=0 fails
+    it, and the geographic filter, the key join, and any *extra_where*
+    still apply either way. An empty overrides table (the default) is a
+    no-op.
     """
     if generators_table == "raw_data_eia860m_generators":
-        fleet_filter_string = get_eia860m_sql_filter_string(
-            study_year=study_year,
-            footprint=footprint,
-            load_zone_level=load_zone_level,
-            include_retired=include_retired,
-            planned_inclusion=planned_inclusion,
-            inactive_inclusion=inactive_inclusion,
-            include_planned_retirements=include_planned_retirements,
-            include_btm_plants=include_btm_plants,
-        )
+        btm_sector_column = "sector_id_eia"
+        btm_sector_values = BTM_SECTOR_IDS
     else:
-        fleet_filter_string = get_eia860_sql_filter_string(
-            study_year=study_year,
-            footprint=footprint,
-            load_zone_level=load_zone_level,
-            include_retired=include_retired,
-            planned_inclusion=planned_inclusion,
-            inactive_inclusion=inactive_inclusion,
-            include_planned_retirements=include_planned_retirements,
-            include_btm_plants=include_btm_plants,
-        )
+        btm_sector_column = "sector_name_eia"
+        btm_sector_values = BTM_SECTOR_NAMES
+
+    geographic_filter_string = get_geographic_filter_string(
+        footprint=footprint, load_zone_level=load_zone_level
+    )
+    characteristics_filter_string = get_characteristics_filter_string(
+        study_year=study_year,
+        include_retired=include_retired,
+        planned_inclusion=planned_inclusion,
+        inactive_inclusion=inactive_inclusion,
+        include_planned_retirements=include_planned_retirements,
+        include_btm_plants=include_btm_plants,
+        btm_sector_column=btm_sector_column,
+        btm_sector_values=btm_sector_values,
+    )
+    include_override_sql = get_unit_override_sql(
+        column="include", generators_table=generators_table
+    )
+    fleet_filter_string = f"""
+    {geographic_filter_string}
+     AND COALESCE(({include_override_sql}) = 1, ({characteristics_filter_string}
+    ))
+    """
 
     generators_str = get_generators_table_str(
         ba_source=ba_source, generators_table=generators_table

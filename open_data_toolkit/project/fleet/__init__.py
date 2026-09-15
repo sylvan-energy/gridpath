@@ -35,6 +35,13 @@ module per stage:
    the qualifying units are named, and thereby whether they are modeled
    individually or grouped into aggregate projects.
 
+Cutting across the stages,
+:mod:`open_data_toolkit.project.fleet.unit_overrides` lets a study pin
+individual units past the automated decisions (the OPTIONAL
+``user_defined_unit_overrides`` table, empty by default): force a unit
+into or out of the fleet, carve a plant into its own aggregate project,
+or override its load zone.
+
 Two more modules support the steps rather than adding a stage:
 :mod:`open_data_toolkit.project.fleet.step_common` holds the scaffolding every
 step's ``main`` runs (resolve settings, connect, run the scope checks and

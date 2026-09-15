@@ -114,7 +114,11 @@ study's interpretation of the raw data, which you provide as CSVs:
   fuel carbon intensities;
 * ``user_defined_baa_overrides`` — optional manual generator-to-BA
   assignment overrides, taking precedence over both EIA-930A and EIA-860
-  (empty by default).
+  (empty by default);
+* ``user_defined_unit_overrides`` — optional per-unit manual overrides
+  for the project steps: force a unit into or out of the fleet, carve a
+  plant into its own aggregate project, or override its load zone (empty
+  by default; see :mod:`open_data_toolkit.project.fleet.unit_overrides`).
 
 .. warning:: Loads append. Re-running ``load_raw_data`` for a file that
     is already loaded duplicates its rows, and loading a second EIA860
@@ -183,6 +187,11 @@ what gets modeled. They apply, in order:
    setting aggregates at a finer geographic level than the load zones
    (e.g. per-BA projects assigned to custom zones) — again see the
    portfolio step's documentation for details.
+
+Individual units can be pinned past all three stages with the optional
+``user_defined_unit_overrides`` table — force a unit into or out of the
+fleet, carve a plant into its own aggregate project, or override its
+load zone (see :mod:`open_data_toolkit.project.fleet.unit_overrides`).
 
 Because these settings decide which units become which projects, every
 project-level step must run with the SAME values — a portfolio
@@ -351,6 +360,7 @@ columns NULL. The portfolio module below documents what that means and
 when to pin an as-filed vintage instead.
 
 .. automodule:: open_data_toolkit.project.fleet
+.. automodule:: open_data_toolkit.project.fleet.unit_overrides
 .. automodule:: open_data_toolkit.project.fleet.fleet_audit
 .. automodule:: open_data_toolkit.project.portfolios.eia860_to_project_portfolio_input_csvs
 .. automodule:: open_data_toolkit.project.load_zones.eia860_to_project_load_zone_input_csvs

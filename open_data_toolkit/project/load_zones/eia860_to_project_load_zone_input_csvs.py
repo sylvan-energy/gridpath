@@ -27,6 +27,13 @@ user_defined_eia_gridpath_key table.
     default) is PUDL's EIA860M-derived reconstruction of the in-progress
     report year, not an as-filed annual survey.
 
+Per-unit ``load_zone`` overrides from ``user_defined_unit_overrides``
+(see ``open_data_toolkit.project.fleet.unit_overrides``) apply here, and the
+step verifies that every project resolves to exactly ONE load zone
+before writing the CSV — a violation (e.g. an aggregation carve-out
+whose units' zones disagree) fails loudly rather than riding into the
+inputs as duplicate rows.
+
 After writing the CSV, the step cross-checks the assigned zones against the
 system load zones that ``eia930_load_zone_input_csvs`` derives for the same
 footprint and load-zone level, and warns (even with ``quiet``) about any
@@ -79,8 +86,11 @@ import pandas as pd
 import sys
 
 from open_data_toolkit.geographic_scope import (
-    get_load_zone_str,
     warn_on_project_load_zones_missing_from_system,
+)
+from open_data_toolkit.project.fleet.unit_overrides import (
+    check_one_zone_per_project,
+    get_project_load_zone_str,
 )
 from open_data_toolkit.project.fleet.step_common import (
     connect_and_check_scope,
@@ -130,7 +140,11 @@ def get_project_load_zones(
     subscenario_name,
     aggregate_projects=False,
 ):
-    group_by_sql = "GROUP BY project" if aggregate_projects else ""
+    # Grouping by (project, load_zone) rather than project alone keeps a
+    # project spanning zones visible as multiple rows, so the one-zone
+    # check below can catch it (bare GROUP BY project would collapse it
+    # to one arbitrary zone); for a healthy fleet the output is identical
+    group_by_sql = "GROUP BY project, load_zone" if aggregate_projects else ""
     sql = f"""
     SELECT {project_name_str} AS project,
         {load_zone_str} AS load_zone
@@ -140,6 +154,7 @@ def get_project_load_zones(
     """
 
     df = pd.read_sql(sql, conn)
+    check_one_zone_per_project(project_load_zones_df=df)
     df.to_csv(
         os.path.join(output_directory, f"{subscenario_id}_" f"{subscenario_name}.csv"),
         index=False,
@@ -169,7 +184,7 @@ def main(args=None):
         conn=conn,
         project_name_str=project_name_str,
         fleet_relation_sql=fleet_relation_sql,
-        load_zone_str=get_load_zone_str(
+        load_zone_str=get_project_load_zone_str(
             load_zone_level=parsed_args.load_zone_level, footprint=parsed_args.footprint
         ),
         output_directory=parsed_args.output_directory,

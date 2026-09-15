@@ -294,6 +294,33 @@ CREATE TABLE user_defined_baa_overrides
 );
 
 
+-- OPTIONAL per-unit manual overrides for the EIA860(M)-based project
+-- steps (see open_data_toolkit/project/fleet/unit_overrides.py, which
+-- mirrors this DDL as CREATE TABLE IF NOT EXISTS so pre-existing raw
+-- databases get the table on first use — keep the two in sync). An
+-- EMPTY table (the default) is a no-op. One row per plant/generator
+-- (generator_id '*' = every generator at the plant; a generator-specific
+-- row wins over a '*' row, per column), with three independent nullable
+-- override columns: include (1 = force into the fleet, bypassing the
+-- characteristic filters; 0 = force out; NULL = no membership override),
+-- aggregation (replaces the geographic token in the unit's aggregate
+-- project name — a per-plant carve-out), and load_zone (replaces the
+-- unit's map-derived project load zone; must use the study's load-zone
+-- vocabulary). The reason column is free text, for documenting the
+-- evidence.
+DROP TABLE IF EXISTS user_defined_unit_overrides;
+CREATE TABLE user_defined_unit_overrides
+(
+    plant_id_eia INTEGER,
+    generator_id TEXT,
+    include      INTEGER,
+    aggregation  TEXT,
+    load_zone    TEXT,
+    reason       TEXT,
+    PRIMARY KEY (plant_id_eia, generator_id)
+);
+
+
 DROP TABLE IF EXISTS user_defined_eiaaeo_region_key;
 CREATE TABLE user_defined_eiaaeo_region_key
 (

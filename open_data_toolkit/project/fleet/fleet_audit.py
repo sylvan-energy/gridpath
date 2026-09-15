@@ -24,7 +24,13 @@ unit, the audit CSV (``fleet_audit.csv`` in the output directory) shows:
 * the unit's BA per source — EIA-860 as reported, its EIA-930A
   operational BAs, any manual override — and the RESOLVED BA the pipeline
   used (stage 0, see ``open_data_toolkit.project.fleet.ba_assignment``), plus the
-  load zone at the chosen level;
+  load zone at the chosen level (with any per-unit load_zone override
+  applied);
+* any per-unit overrides from ``user_defined_unit_overrides``
+  (``override_include``/``override_aggregation``/``override_load_zone``;
+  see ``open_data_toolkit.project.fleet.unit_overrides``) — the include
+  override folds into the ``in_fleet`` verdict exactly as in the fleet
+  relation the steps query;
 * pass/fail per selection stage: whether the unit's prime mover/fuel has
   a ``user_defined_eia_gridpath_key`` row at all, the geographic
   footprint/zone filter (stage 1, ``open_data_toolkit.geographic_scope``), and
@@ -101,9 +107,10 @@ import pandas as pd
 
 from gridpath.common_functions import get_version_parser
 
-from open_data_toolkit.geographic_scope import (
-    get_footprint_scope_sql,
-    get_load_zone_str,
+from open_data_toolkit.geographic_scope import get_footprint_scope_sql
+from open_data_toolkit.project.fleet.unit_overrides import (
+    get_project_load_zone_str,
+    get_unit_override_sql,
 )
 from open_data_toolkit.project.fleet.ba_assignment import (
     GENERATORS_TABLE_COLUMNS,
@@ -226,12 +233,24 @@ def get_fleet_audit_sql(
         include_btm_plants=include_btm_plants
     )
 
-    load_zone_str = get_load_zone_str(
+    load_zone_str = get_project_load_zone_str(
         load_zone_level=load_zone_level, footprint=footprint
     )
     footprint_scope_sql = get_footprint_scope_sql(
         footprint=footprint, load_zone_level=load_zone_level
     )
+
+    # Per-unit overrides (user_defined_unit_overrides): shown per column,
+    # and the include override folds into the in_fleet verdict exactly as
+    # in get_fleet_relation_sql (bypassing/failing the characteristics
+    # stage only)
+    include_override_sql = get_unit_override_sql(column="include")
+    aggregation_override_sql = get_unit_override_sql(column="aggregation")
+    load_zone_override_sql = get_unit_override_sql(column="load_zone")
+    in_fleet_predicate = f"""gridpath_technology IS NOT NULL
+            AND {geographic_filter}
+            AND COALESCE(({include_override_sql}) = 1, ({characteristics_filter}
+            ))"""
 
     return f"""
     SELECT
@@ -257,13 +276,12 @@ def get_fleet_audit_sql(
         CASE WHEN {status_retirement_predicate} THEN 1 ELSE 0 END
             AS passes_status_retirement,
         CASE WHEN {btm_predicate} THEN 1 ELSE 0 END AS passes_btm,
-        CASE WHEN gridpath_technology IS NOT NULL
-            AND {geographic_filter}
-            AND {characteristics_filter}
+        {include_override_sql} AS override_include,
+        {aggregation_override_sql} AS override_aggregation,
+        {load_zone_override_sql} AS override_load_zone,
+        CASE WHEN {in_fleet_predicate}
             THEN 1 ELSE 0 END AS in_fleet,
-        CASE WHEN gridpath_technology IS NOT NULL
-            AND {geographic_filter}
-            AND {characteristics_filter}
+        CASE WHEN {in_fleet_predicate}
             THEN {project_name_str} END AS project
     FROM (
         SELECT
@@ -312,6 +330,12 @@ def print_fleet_waterfall(audit_df):
     line("stage 2:   pass planned-date window", date_ok)
     line("stage 2:   pass status/retirement selection", status_ok)
     line("stage 2:   pass behind-the-meter exclusion", btm_ok)
+    force_included = in_fleet & in_footprint & (audit_df["override_include"] == 1)
+    force_excluded = in_footprint & keyed & (audit_df["override_include"] == 0)
+    if force_included.any():
+        line("    force-included by unit override", force_included)
+    if force_excluded.any():
+        line("    force-excluded by unit override", force_excluded)
     line("IN FLEET (all stages)", in_fleet)
     n_projects = audit_df.loc[in_fleet, "project"].nunique()
     print(f"    {'stage 3: aggregated into projects':<58}{n_projects:>7} projects")

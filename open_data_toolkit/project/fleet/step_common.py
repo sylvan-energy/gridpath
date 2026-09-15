@@ -63,6 +63,9 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_null_sector_rows,
     warn_on_uncovered_status_codes,
 )
+from open_data_toolkit.project.fleet.unit_overrides import (
+    ensure_unit_overrides_table,
+)
 from db.common_functions import connect_to_database
 
 EIA860_GENERATORS_TABLE = "raw_data_eia860_generators"
@@ -227,6 +230,9 @@ def connect_and_check_scope(parsed_args):
     conn = connect_to_database(db_path=parsed_args.database)
 
     try:
+        # The fleet relation references user_defined_unit_overrides
+        # unconditionally; create it empty on databases that predate it
+        ensure_unit_overrides_table(conn=conn)
         report_footprint_type(
             conn=conn, footprint=parsed_args.footprint, quiet=parsed_args.quiet
         )

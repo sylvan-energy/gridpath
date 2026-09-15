@@ -51,6 +51,13 @@ map before querying and fail loudly otherwise.
 All these settings must be set consistently across the project-level
 steps.
 
+Individual units can additionally be pinned past the automated selection
+and aggregation with the OPTIONAL ``user_defined_unit_overrides`` table
+(empty by default — a no-op): force a unit into or out of the fleet,
+carve a plant into its own aggregate project (e.g. ``Hydro_Hoover``), or
+override its load zone. See
+``open_data_toolkit.project.fleet.unit_overrides`` for the semantics.
+
 .. note:: Hybrid projects are currently not treated separately by this
     module: their generation and storage components show up as individual
     units.

@@ -24,6 +24,7 @@ from db.create_database import main as create_database_main
 from open_data_toolkit.geographic_scope import (
     check_aggregation_level_refines_zone_level,
 )
+from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
 from open_data_toolkit.project.project_data_filters_common import (
     AGGREGATION_DIMENSIONS,
     ALL_KNOWN_STATUS_CODES,
@@ -563,13 +564,15 @@ class TestAggregationNaming(unittest.TestCase):
             footprint="western",
             aggregation_dimensions="vintage_decade,status",
         )
+        aggregation_override_sql = get_unit_override_sql(column="aggregation")
         self.assertEqual(
             name_str,
             "COALESCE(agg_project, gridpath_technology)"
             " || COALESCE('_' || CAST(CAST(STRFTIME('%Y', "
             "generator_operating_date) AS INTEGER) / 10 * 10 AS TEXT) || 's', '')"
             " || COALESCE('_' || operational_status_code, '')"
-            " || '_' || raw_data_eia_baa_codes.baa",
+            f" || '_' || COALESCE({aggregation_override_sql}, "
+            "raw_data_eia_baa_codes.baa)",
         )
 
     def test_unknown_dimension_raises(self):
@@ -636,10 +639,12 @@ class TestAggregationNaming(unittest.TestCase):
             footprint="western",
             aggregation_level="baa",
         )
+        aggregation_override_sql = get_unit_override_sql(column="aggregation")
         self.assertEqual(
             name_str,
             "COALESCE(agg_project, gridpath_technology)"
-            " || '_' || raw_data_eia_baa_codes.baa",
+            f" || '_' || COALESCE({aggregation_override_sql}, "
+            "raw_data_eia_baa_codes.baa)",
         )
         self.assertNotIn("custom_zone", name_str)
 
