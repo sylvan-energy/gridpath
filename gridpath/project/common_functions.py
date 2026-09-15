@@ -83,6 +83,16 @@ def get_energy_budget_balancing_type(mod, prj, energy_budget_balancing_type_para
         specification is tested via sparse membership)
     :return: the balancing type
     """
+    if not energy_budget_balancing_type_param.is_constructed():
+        # Pyomo constructs components in declaration order and membership
+        # in a not-yet-constructed Param is silently False, i.e. the
+        # fallback would be taken for every project with no error: declare
+        # the Param before the component whose initializer calls this
+        raise RuntimeError(
+            f"{energy_budget_balancing_type_param.name} has not been "
+            f"constructed yet: declare it before the component whose "
+            f"initializer reads it."
+        )
     if prj in energy_budget_balancing_type_param:
         return energy_budget_balancing_type_param[prj]
     else:
