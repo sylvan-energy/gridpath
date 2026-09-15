@@ -699,17 +699,13 @@ class TestExamples(unittest.TestCase):
     def test_example_multi_stage_prod_cost_parallel(self):
         """
         Check "multi_stage_prod_cost" example running subproblems in parallel
-        (getting inputs and optimization); run in a temporary copy of the
-        scenario directory, so that this test doesn't write into the
+        (getting inputs and optimization); run in a temporary scenario location (inputs are generated
+        there from the database; examples/ is left alone), so that this test doesn't write into the
         examples/ directory that test_example_multi_stage_prod_cost may be
         using concurrently
         :return:
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
-                os.path.join(tmp_dir, "multi_stage_prod_cost"),
-            )
             run_end_to_end.main(
                 [
                     "--database",
@@ -747,10 +743,10 @@ class TestExamples(unittest.TestCase):
         process before the current process has finished its bootstrapping
         phase".
 
-        Run in a temporary copy of the scenario directory so this test
-        doesn't write into the examples/ directory that other tests may be
-        using concurrently. No --testing flag: main() must return None so
-        that the console script's sys.exit(main()) exits 0 on success.
+        Run in a temporary scenario location (inputs are generated there from
+        the database) so this test leaves examples/ alone. No --testing flag:
+        main() must return None so that the console script's sys.exit(main())
+        exits 0 on success.
         """
         exe_name = "gridpath_run_e2e" + (".exe" if WINDOWS else "")
         exe_path = os.path.join(os.path.dirname(sys.executable), exe_name)
@@ -760,10 +756,6 @@ class TestExamples(unittest.TestCase):
             base_cmd = [sys.executable, "-m", "gridpath.run_end_to_end"]
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
-                os.path.join(tmp_dir, "multi_stage_prod_cost"),
-            )
             result = subprocess.run(
                 base_cmd
                 + [
@@ -861,20 +853,12 @@ class TestExamples(unittest.TestCase):
 
         # Classic whole-scenario baseline
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                os.path.join(tmp_dir, scenario_name),
-            )
             self.run_e2e_in(scenario_name, tmp_dir, [])
             baseline_rows = self.get_scenario_results_rows(scenario_name)
         self.assertTrue(len(baseline_rows[0]) > 0)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             # Strip the results CSVs (keeping the termination/status files),
             # mimicking the committed example state a fresh checkout has:
             # the per-draw mode must re-solve rather than trust and import
@@ -914,10 +898,6 @@ class TestExamples(unittest.TestCase):
         # the same database rows and the same cleaned end-state
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             self.run_e2e_in(
                 scenario_name,
                 tmp_dir,
@@ -944,17 +924,13 @@ class TestExamples(unittest.TestCase):
         draw's inputs with gridpath_get_inputs' iteration options (the
         cleanup marker must stay in place, since the rest of the tree is
         still cleaned), then solve just that draw with run_scenario's
-        --ignore_cleanup_marker. Run in a temporary copy of the scenario
-        directory.
+        --ignore_cleanup_marker. Run in a temporary scenario location (the inputs are
+        generated there from the database; examples/ is left alone).
         """
         scenario_name = "ra_toolkit_monte_carlo"
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             self.run_e2e_in(
                 scenario_name,
                 tmp_dir,
@@ -1159,10 +1135,6 @@ class TestExamples(unittest.TestCase):
 
         # Baseline run without cleanup
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                os.path.join(tmp_dir, scenario_name),
-            )
             run_e2e(tmp_dir, [])
             baseline_rows = get_results_rows()
         self.assertTrue(len(baseline_rows[0]) > 0)
@@ -1170,10 +1142,6 @@ class TestExamples(unittest.TestCase):
         # Run with cleanup: identical database rows, cleaned directory
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             # --log so the run writes the scenario-root logs directory,
             # which cleanup must leave alone (the e2e log is still open)
             run_e2e(tmp_dir, ["--cleanup_after_import", "--log"])
@@ -1917,15 +1885,22 @@ class TestExamples(unittest.TestCase):
     def test_incomplete_only(self):
         """
         Check that the "incomplete only" functionality works with no errors.
-        Run in a temporary copy of the scenario directory, so that this test
-        doesn't write into the examples/ directory that test_example_test
-        may be using concurrently.
+        Run in a temporary directory with inputs generated from the database
+        (not a copy of examples/, which test_example_test may be regenerating
+        concurrently).
         :return:
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, "test"),
-                os.path.join(tmp_dir, "test"),
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    "test",
+                    "--scenario_location",
+                    tmp_dir,
+                    "--quiet",
+                ]
             )
             actual_objective = run_scenario.main(
                 [

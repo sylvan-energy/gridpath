@@ -33,6 +33,7 @@ import pandas as pd
 from pyomo.core.expr import identify_variables
 from pyomo.repn import generate_standard_repn
 
+from gridpath.project.common_functions import get_energy_budget_balancing_type
 from gridpath.project.operations.operational_types.common_functions import (
     validate_energy_budget_balancing_type_rows,
     validate_hydro_opchars,
@@ -449,6 +450,56 @@ class TestEnergyBudgetBalancingTypeModel(unittest.TestCase):
                 instance, "Energy_Slice_Hrz_Shaping", 20200202
             )
         )
+
+
+class TestEnergyBudgetBalancingTypeConstructionGuard(unittest.TestCase):
+    """
+    Membership in a not-yet-constructed Pyomo Param is silently False, so a
+    Set or Param initializer reading the energy-budget balancing type before
+    its Param is constructed would silently fall back to
+    balancing_type_project; the helper must refuse instead.
+    """
+
+    @staticmethod
+    def build(param_declared_first):
+        from pyomo.environ import AbstractModel, Param, Set
+
+        m = AbstractModel()
+        m.PROJECTS = Set(initialize=["Hydro"])
+        m.BLN_TYPES = Set(initialize=["day", "year"])
+        m.balancing_type_project = Param(m.PROJECTS, initialize={"Hydro": "day"})
+
+        def declare_param():
+            m.budget_bt = Param(m.PROJECTS, within=m.BLN_TYPES)
+
+        def declare_reader():
+            m.BUDGET_BTS = Set(
+                initialize=lambda mod: [
+                    get_energy_budget_balancing_type(mod, "Hydro", mod.budget_bt)
+                ]
+            )
+
+        if param_declared_first:
+            declare_param()
+            declare_reader()
+        else:
+            declare_reader()
+            declare_param()
+        return m.create_instance({None: {"budget_bt": {"Hydro": "year"}}})
+
+    def test_param_declared_first_resolves(self):
+        instance = self.build(param_declared_first=True)
+        self.assertListEqual(["year"], list(instance.BUDGET_BTS))
+
+    def test_reader_declared_first_raises(self):
+        logger = logging.getLogger("pyomo.core")
+        was_disabled = logger.disabled
+        logger.disabled = True
+        try:
+            with self.assertRaisesRegex(Exception, "has not been constructed yet"):
+                self.build(param_declared_first=False)
+        finally:
+            logger.disabled = was_disabled
 
 
 class SubScenariosStub:
