@@ -17,7 +17,7 @@ import os
 import pandas as pd
 import unittest
 
-from data_toolkit import run_data_toolkit
+from open_data_toolkit import run_data_toolkit
 
 OPEN_DATA_SETTINGS_CSV = "../tests/test_data/data_toolkit_open_data_settings.csv"
 
@@ -26,7 +26,7 @@ class TestDataToolkit(unittest.TestCase):
     """
     Run the Data Toolkit steps end to end against the open-data test
     fixture (builds the Data Toolkit raw database from
-    data_toolkit/raw_data_db_schema.sql, loads it, and runs the steps).
+    open_data_toolkit/raw_data_db_schema.sql, loads it, and runs the steps).
     The RA Toolkit steps that used to share this settings CSV run against
     their own raw database in tests/test_run_ra_toolkit.py
     (ra_toolkit_open_data_settings.csv).
@@ -45,7 +45,7 @@ class TestDataToolkit(unittest.TestCase):
             if os.path.exists(p):
                 os.remove(p)
 
-    def test_data_toolkit_open_data(self):
+    def test_open_data_toolkit_open_data(self):
         os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
         # This fixture DELIBERATELY mixes settings across project steps:
         # the EIA860M capacity run exercises keyed aggregation while the

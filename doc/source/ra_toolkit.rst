@@ -9,7 +9,7 @@ Using the GridPath RA Toolkit
 
 RA Toolkit steps run from their own ``gridpath_run_ra_toolkit`` command
 and settings CSV — the RA Toolkit counterpart to the GridPath Data
-Toolkit's ``gridpath_run_data_toolkit`` (see :doc:`data_toolkit`); steps
+Toolkit's ``gridpath_run_data_toolkit`` (see :doc:`open_data_toolkit`); steps
 are resolved from the ``gridpath.ra_toolkit_steps`` entry-point group. The
 RA Toolkit works off its own raw data database, separate from the Data
 Toolkit's: create it with the ``create_database`` step pointing

@@ -28,7 +28,7 @@ derates, hydro budgets — in either of the two flavors GridPath supports:
 over.
 
 This is a separate pipeline from the EIA860(M) fleet selection in
-:mod:`data_toolkit.project.fleet`: the two share no code, and a step draws
+:mod:`open_data_toolkit.project.fleet`: the two share no code, and a step draws
 on one or the other, never both. Steps here take their project list from
 the profiles' own raw data rather than from the fleet filters.
 """

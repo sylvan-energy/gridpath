@@ -1,6 +1,6 @@
 script,setting,value,script_true_false_arg,reverse_default_behavior
 create_database,database,./open_data_raw_temp.db,,
-create_database,db_schema,../data_toolkit/raw_data_db_schema.sql,,
+create_database,db_schema,../open_data_toolkit/raw_data_db_schema.sql,,
 create_database,omit_data,,1,1
 load_raw_data,csv_location,./csvs_test_examples/raw_data_open_data/,,
 load_raw_data,database,./open_data_raw_temp.db,,
