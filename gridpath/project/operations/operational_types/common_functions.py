@@ -1023,9 +1023,13 @@ def validate_energy_budget_balancing_type_rows(
     must be for horizons of the project's energy-budget balancing type
     (energy_budget_balancing_type if specified, else balancing_type_project):
     rows for any other balancing type are never looked up by the per-horizon
-    constraints. Writes a High-severity validation error to the database if
-    not. (That the balancing types exist in the temporal scenario is
-    validated in gridpath.project.operations.)
+    constraints. Every such project must also have at least one row for the
+    temporal scenario's horizons (in this subproblem, stage, and iteration):
+    the per-horizon parameters are looked up for each of the project's
+    operational timepoints, so a project without rows fails at model
+    construction (a KeyError), not here. Writes High-severity validation
+    errors to the database. (That the balancing types exist in the temporal
+    scenario is validated in gridpath.project.operations.)
     """
     c = conn.cursor()
     budget_bt_by_prj = dict(c.execute(f"""SELECT project,
@@ -1052,6 +1056,17 @@ def validate_energy_budget_balancing_type_rows(
         if not mismatched.empty
         else []
     )
+    # Only rows for (balancing type, horizon)s of the temporal scenario are
+    # returned, so this also catches rows that exist but are all for
+    # horizons outside it (e.g. of an unknown balancing type)
+    without_rows = sorted(set(budget_bt_by_prj) - set(df["project"]))
+    if without_rows:
+        errors.append(
+            f"project(s) {without_rows}: no {db_table} rows for any horizon of "
+            f"the temporal scenario (of the project's energy-budget balancing "
+            f"type); the per-horizon parameters are required for every "
+            f"operational timepoint and the model would fail to build."
+        )
     write_validation_to_database(
         conn=conn,
         scenario_id=scenario_id,

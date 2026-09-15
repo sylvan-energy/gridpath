@@ -673,6 +673,27 @@ class TestEnergyBudgetBalancingTypeValidation(unittest.TestCase):
         self.assertIn("inputs_project_energy_hrz_shaping", errors[0][1])
         self.assertIn("['day']", errors[0][1])
 
+    def test_project_without_rows_flagged(self):
+        self.set_inputs("day", None, [])
+        errors = self.get_validation_errors()
+        self.assertEqual(1, len(errors))
+        self.assertEqual("High", errors[0][0])
+        self.assertIn("['Hydro']", errors[0][1])
+        self.assertIn("no inputs_project_hydro_operational_chars rows", errors[0][1])
+
+    def test_rows_only_outside_temporal_scenario_flagged_as_missing(self):
+        # Rows exist, but none for a horizon of the temporal scenario
+        self.set_inputs("day", None, [("day", 209901)])
+        errors = self.get_validation_errors()
+        self.assertEqual(1, len(errors))
+        self.assertIn("no inputs_project_hydro_operational_chars rows", errors[0][1])
+
+    def test_energy_hrz_shaping_project_without_rows_flagged(self):
+        self.set_shaping_inputs("day", None, [])
+        errors = self.get_shaping_validation_errors()
+        self.assertEqual(1, len(errors))
+        self.assertIn("no inputs_project_energy_hrz_shaping rows", errors[0][1])
+
     def test_default_balancing_type_passes(self):
         self.set_inputs("day", None, [("day", 202001), ("day", 202002)])
         self.assertListEqual([], self.get_validation_errors())
