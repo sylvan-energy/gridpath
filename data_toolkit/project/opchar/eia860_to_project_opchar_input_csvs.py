@@ -23,7 +23,11 @@ user_defined_eia_gridpath_key table and will take default values until more
 detailed data are available.
 
 .. note:: The query in this module is consistent with the project selection
-    from ``eia860_to_project_portfolio_input_csvs``.
+    from ``eia860_to_project_portfolio_input_csvs``, which also documents
+    what the EIA860 data vintage in the raw database means — in
+    particular that the latest available vintage (the convert step's
+    default) is PUDL's EIA860M-derived reconstruction of the in-progress
+    report year, not an as-filed annual survey.
 
 =====
 Usage
@@ -45,7 +49,16 @@ Settings
     * database
     * output_directory
     * study_year
-    * region
+    * footprint
+    * include_retired
+    * planned_inclusion
+    * inactive_inclusion
+    * include_planned_retirements
+    * include_btm_plants
+    * ba_source
+    * load_zone_level
+    * project_aggregation
+    * aggregation_dimensions
     * project_operational_chars_scenario_id
     * project_operational_chars_scenario_name
     * project_fuel_scenario_id
@@ -60,16 +73,19 @@ import os.path
 import pandas as pd
 import sys
 
-from db.common_functions import connect_to_database
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
+from data_toolkit.project.fleet.fleet_filters import (
     VAR_GEN_FILTER_STR,
     HYDRO_FILTER_STR,
     FUEL_FILTER_STR,
     HEAT_RATE_FILTER_STR,
     STOR_FILTER_STR,
-    DISAGG_PROJECT_NAME_STR,
-    AGG_PROJECT_NAME_STR,
+)
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_fleet_relation_sql_from_args,
+    get_project_name_str_from_args,
+    warn_on_fleet_data_gaps,
+    add_shared_project_step_arguments,
 )
 
 # TODO: add var costs, startup and shutdown costs, and startup fuel use
@@ -86,8 +102,7 @@ def parse_arguments(args):
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
-    parser.add_argument("-y", "--study_year", default=2026)
-    parser.add_argument("-r", "--region", default="WECC")
+    add_shared_project_step_arguments(parser=parser)
     parser.add_argument(
         "-o",
         "--output_directory",
@@ -107,14 +122,6 @@ def parse_arguments(args):
         "-var_id", "--variable_generator_profile_scenario_id", default=1
     )
     parser.add_argument("-hy_id", "--hydro_operational_chars_scenario_id", default=1)
-
-    parser.add_argument(
-        "-agg",
-        "--aggregate_projects",
-        default=False,
-        action="store_true",
-        help="Aggregate all projects to the BA-technology level.",
-    )
     parser.add_argument(
         "-hydro_bt",
         "--hydro_balancing_type",
@@ -132,14 +139,13 @@ def parse_arguments(args):
 
 def get_project_opchar(
     conn,
-    eia860_sql_filter_string,
+    project_name_str,
+    fleet_relation_sql,
     fuel_filter_str,
     heat_rate_filter_str,
     stor_filter_str,
     var_gen_filter_str,
     hydro_filter_str,
-    disagg_project_name_str,
-    agg_project_name_str,
     csv_location,
     subscenario_id,
     subscenario_name,
@@ -150,9 +156,9 @@ def get_project_opchar(
     aggregate_projects=False,
     hydro_balancing_type=None,
 ):
-    # Wind, offshore wind, and PV are aggregated, so treated separately since
-    # they are aggregated, so here we make a UNION between tables filtering
-    # based on var_gen_filter_str
+    # Variable gen and hydro get different opchar columns (profile / hydro
+    # opchar scenario IDs), so the query is a UNION of three branches split
+    # by the operational-type filter strings
 
     non_var_opchars_str = make_opchar_sql_str(
         technology="gridpath_technology",
@@ -191,87 +197,28 @@ def get_project_opchar(
         hydro_operational_chars_scenario_id=f"{hy_id}",
     )
 
-    if aggregate_projects:
-        sql = f"""
-         SELECT {agg_project_name_str} AS project,
-             {non_var_opchars_str}
-         FROM raw_data_eia860_generators
-         JOIN user_defined_eia_gridpath_key ON
-                raw_data_eia860_generators.prime_mover_code =
-                user_defined_eia_gridpath_key.prime_mover_code
-                AND energy_source_code_1 = energy_source_code
-         WHERE 1 = 1
-         AND {eia860_sql_filter_string}
-         AND NOT {var_gen_filter_str}
-         AND NOT {hydro_filter_str}
-         GROUP BY project
-         -- Variable gen
-         UNION
-         SELECT {agg_project_name_str} AS project,
-             {var_opchars_str}
-         FROM raw_data_eia860_generators
-         JOIN user_defined_eia_gridpath_key ON
-                raw_data_eia860_generators.prime_mover_code =
-                user_defined_eia_gridpath_key.prime_mover_code
-                AND energy_source_code_1 = energy_source_code
-         WHERE 1 = 1
-         AND {eia860_sql_filter_string}
-         AND {var_gen_filter_str}
-         GROUP BY project
-         -- Hydro
-         UNION
-         SELECT {agg_project_name_str} AS project,
-             {hydro_opchars_str}
-         FROM raw_data_eia860_generators
-         JOIN user_defined_eia_gridpath_key ON
-                raw_data_eia860_generators.prime_mover_code =
-                user_defined_eia_gridpath_key.prime_mover_code
-                AND energy_source_code_1 = energy_source_code
-         WHERE 1 = 1
-         AND {eia860_sql_filter_string}
-         AND {hydro_filter_str}
-         GROUP BY project
-         ;
-         """
-    else:
-        sql = f"""
-     SELECT {disagg_project_name_str} AS project,
+    group_by_sql = "GROUP BY project" if aggregate_projects else ""
+    sql = f"""
+     SELECT {project_name_str} AS project,
          {non_var_opchars_str}
-     FROM raw_data_eia860_generators
-     JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-     WHERE 1 = 1
-     AND {eia860_sql_filter_string}
+     {fleet_relation_sql}
      AND NOT {var_gen_filter_str}
      AND NOT {hydro_filter_str}
-     -- Variable gen
+     {group_by_sql}
+     -- Variable gen (different opchar columns, e.g. the profile scenario)
      UNION
-     SELECT {agg_project_name_str} AS project,
+     SELECT {project_name_str} AS project,
          {var_opchars_str}
-     FROM raw_data_eia860_generators
-     JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-     WHERE 1 = 1
-     AND {eia860_sql_filter_string}
+     {fleet_relation_sql}
      AND {var_gen_filter_str}
-     GROUP BY project
-     -- Hydro
+     {group_by_sql}
+     -- Hydro (different opchar columns, e.g. the hydro opchar scenario)
      UNION
-     SELECT {agg_project_name_str} AS project,
+     SELECT {project_name_str} AS project,
          {hydro_opchars_str}
-     FROM raw_data_eia860_generators
-     JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-     WHERE 1 = 1
-     AND {eia860_sql_filter_string}
+     {fleet_relation_sql}
      AND {hydro_filter_str}
-     GROUP BY project
+     {group_by_sql}
      ;
      """
 
@@ -526,20 +473,21 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    project_name_str = get_project_name_str_from_args(parsed_args)
+    fleet_relation_sql = get_fleet_relation_sql_from_args(parsed_args)
+
+    conn = connect_and_check_scope(parsed_args)
+    warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
 
     get_project_opchar(
         conn=conn,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
-        ),
+        project_name_str=project_name_str,
+        fleet_relation_sql=fleet_relation_sql,
         fuel_filter_str=FUEL_FILTER_STR,
         heat_rate_filter_str=HEAT_RATE_FILTER_STR,
         stor_filter_str=STOR_FILTER_STR,
         var_gen_filter_str=VAR_GEN_FILTER_STR,
         hydro_filter_str=HYDRO_FILTER_STR,
-        disagg_project_name_str=DISAGG_PROJECT_NAME_STR,
-        agg_project_name_str=AGG_PROJECT_NAME_STR,
         csv_location=parsed_args.output_directory,
         subscenario_id=parsed_args.project_operational_chars_scenario_id,
         subscenario_name=parsed_args.project_operational_chars_scenario_name,
@@ -547,7 +495,7 @@ def main(args=None):
         hr_id=parsed_args.heat_rate_curves_scenario_id,
         var_id=parsed_args.variable_generator_profile_scenario_id,
         hy_id=parsed_args.hydro_operational_chars_scenario_id,
-        aggregate_projects=parsed_args.aggregate_projects,
+        aggregate_projects=parsed_args.project_aggregation != "none",
         hydro_balancing_type=parsed_args.hydro_balancing_type,
     )
 

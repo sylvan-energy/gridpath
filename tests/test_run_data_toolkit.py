@@ -47,7 +47,19 @@ class TestDataToolkit(unittest.TestCase):
 
     def test_data_toolkit_open_data(self):
         os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
-        run_data_toolkit.main(["--settings_csv", OPEN_DATA_SETTINGS_CSV, "--quiet"])
+        # This fixture DELIBERATELY mixes settings across project steps:
+        # the EIA860M capacity run exercises keyed aggregation while the
+        # EIA860-based runs (whose outputs feed real example scenarios)
+        # stay at the defaults — so the settings-consistency check is off
+        run_data_toolkit.main(
+            [
+                "--settings_csv",
+                OPEN_DATA_SETTINGS_CSV,
+                "--quiet",
+                "--check_settings_consistency",
+                "off",
+            ]
+        )
 
     def test_ra_toolkit_step_in_settings_csv_fails_loudly(self):
         # A settings CSV naming a step from the other toolkit's registry

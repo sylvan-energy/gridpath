@@ -21,7 +21,11 @@ set to zero** as fixed cost data are not available at this time. The CSV is
 necessary to create since fixed costs are currently a required GridPath input.
 
 .. note:: The query in this module is consistent with the project selection
-    from ``eia860_to_project_portfolio_input_csvs``.
+    from ``eia860_to_project_portfolio_input_csvs``, which also documents
+    what the EIA860 data vintage in the raw database means — in
+    particular that the latest available vintage (the convert step's
+    default) is PUDL's EIA860M-derived reconstruction of the in-progress
+    report year, not an as-filed annual survey.
 
 =====
 Usage
@@ -43,7 +47,16 @@ Settings
     * database
     * output_directory
     * study_year
-    * region
+    * footprint
+    * include_retired
+    * planned_inclusion
+    * inactive_inclusion
+    * include_planned_retirements
+    * include_btm_plants
+    * ba_source
+    * load_zone_level
+    * project_aggregation
+    * aggregation_dimensions
     * project_fixed_cost_scenario_id
     * project_fixed_cost_scenario_name
 
@@ -55,13 +68,12 @@ import os.path
 import pandas as pd
 import sys
 
-from db.common_functions import connect_to_database
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
-    VAR_GEN_FILTER_STR,
-    HYDRO_FILTER_STR,
-    DISAGG_PROJECT_NAME_STR,
-    AGG_PROJECT_NAME_STR,
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_fleet_relation_sql_from_args,
+    get_project_name_str_from_args,
+    warn_on_fleet_data_gaps,
+    add_shared_project_step_arguments,
 )
 
 
@@ -75,25 +87,16 @@ def parse_arguments(args):
     """
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
-    parser.add_argument("-db", "--database", default="../../../db/open_data_raw.db")
-    parser.add_argument("-y", "--study_year", default=2026)
-    parser.add_argument("-r", "--region", default="WECC")
+    parser.add_argument("-db", "--database", default="../../open_data_raw.db")
+    add_shared_project_step_arguments(parser=parser)
     parser.add_argument(
         "-o",
         "--output_directory",
-        default="../../../db/csvs_open_data/project/fixed_cost",
+        default="../../csvs_open_data/project/fixed_cost",
     )
     parser.add_argument("-fcost_id", "--project_fixed_cost_scenario_id", default=1)
     parser.add_argument(
         "-fcost_name", "--project_fixed_cost_scenario_name", default="base"
-    )
-
-    parser.add_argument(
-        "-agg",
-        "--aggregate_projects",
-        default=False,
-        action="store_true",
-        help="Aggregate all projects to the BA-technology level.",
     )
 
     parser.add_argument("-q", "--quiet", default=False, action="store_true")
@@ -105,20 +108,22 @@ def parse_arguments(args):
 
 def get_project_fixed_cost(
     conn,
-    eia860_sql_filter_string,
-    var_gen_filter_str,
-    hydro_filter_str,
-    disagg_project_name_str,
-    agg_project_name_str,
+    project_name_str,
+    fleet_relation_sql,
     study_year,
     output_directory,
     subscenario_id,
     subscenario_name,
     aggregate_projects=False,
 ):
+    # The two modes share the fleet relation but differ in the SELECT
+    # list. NOTE the pre-existing drift in the storage-cost CASE: the
+    # aggregated branch tests energy_storage_capacity_mwh IS NULL while
+    # the disaggregated branch tests the storage prime-mover codes —
+    # preserved as-is here (flagged for review, not silently changed)
     if aggregate_projects:
         sql = f"""
-        SELECT {agg_project_name_str} AS project,
+        SELECT {project_name_str} AS project,
             {study_year} as period,
             0 AS fixed_cost_per_mw_yr,
             0 AS fixed_cost_per_energy_mwh_yr,
@@ -133,27 +138,21 @@ def get_project_fixed_cost(
             NULL AS fuel_production_capacity_fixed_cost_per_fuelunitperhour_yr,
             NULL AS fuel_release_capacity_fixed_cost_per_fuelunitperhour_yr,
             NULL AS fuel_storage_capacity_fixed_cost_per_fuelunit_yr
-        FROM raw_data_eia860_generators
-        JOIN user_defined_eia_gridpath_key ON
-                raw_data_eia860_generators.prime_mover_code =
-                user_defined_eia_gridpath_key.prime_mover_code
-                AND energy_source_code_1 = energy_source_code
-         WHERE 1 = 1
-         AND {eia860_sql_filter_string}
+        {fleet_relation_sql}
          GROUP BY project
         ;
         """
     else:
         sql = f"""
-    SELECT {disagg_project_name_str} AS project,
+    SELECT {project_name_str} AS project,
         {study_year} as period,
         0 AS fixed_cost_per_mw_yr,
         0 AS fixed_cost_per_energy_mwh_yr,
         0 AS fixed_cost_per_shaping_mw_yr,
         NULL AS hyb_gen_fixed_cost_per_mw_yr,
         NULL AS hyb_stor_fixed_cost_per_mw_yr,
-        CASE WHEN raw_data_eia860_generators.prime_mover_code NOT IN ('BA', 
-        'ES', 'FW', 'PS') 
+        CASE WHEN raw_data_eia860_generators.prime_mover_code NOT IN ('BA',
+        'ES', 'FW', 'PS')
             THEN NULL
             ELSE 0
         END
@@ -161,38 +160,7 @@ def get_project_fixed_cost(
         NULL AS fuel_production_capacity_fixed_cost_per_fuelunitperhour_yr,
         NULL AS fuel_release_capacity_fixed_cost_per_fuelunitperhour_yr,
         NULL AS fuel_storage_capacity_fixed_cost_per_fuelunit_yr
-    FROM raw_data_eia860_generators
-   JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-     WHERE 1 = 1
-     AND {eia860_sql_filter_string}
-     AND NOT {var_gen_filter_str}
-     AND NOT {hydro_filter_str}
-    UNION
-    -- Aggregated units include wind, offshore wind, solar, and hydro
-    SELECT {agg_project_name_str} AS project,
-        {study_year} as period,
-        0 AS specified_fixed_cost_mw,
-        0 AS fixed_cost_per_energy_mwh_yr,
-        0 AS fixed_cost_per_shaping_mw_yr,
-        NULL AS hyb_gen_specified_fixed_cost_mw,
-        NULL AS hyb_stor_specified_fixed_cost_mw,
-        CASE
-            WHEN energy_storage_capacity_mwh IS NULL THEN NULL
-            ELSE 0
-            END 
-            AS fixed_cost_per_stor_mwh_yr,
-        NULL AS fuel_production_fixed_cost_fuelunitperhour,
-        NULL AS fuel_release_fixed_cost_fuelunitperhour,
-        NULL AS fuel_storage_fixed_cost_fuelunit
-    FROM raw_data_eia860_generators
-    JOIN user_defined_eia_gridpath_key
-    USING (prime_mover_code)
-    WHERE 1 = 1
-    AND {eia860_sql_filter_string}
-    AND ({var_gen_filter_str} OR {hydro_filter_str})
+    {fleet_relation_sql}
     ;
     """
 
@@ -214,22 +182,21 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    project_name_str = get_project_name_str_from_args(parsed_args)
+    fleet_relation_sql = get_fleet_relation_sql_from_args(parsed_args)
+
+    conn = connect_and_check_scope(parsed_args)
+    warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
 
     get_project_fixed_cost(
         conn=conn,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
-        ),
+        project_name_str=project_name_str,
+        fleet_relation_sql=fleet_relation_sql,
         study_year=parsed_args.study_year,
-        var_gen_filter_str=VAR_GEN_FILTER_STR,
-        hydro_filter_str=HYDRO_FILTER_STR,
-        disagg_project_name_str=DISAGG_PROJECT_NAME_STR,
-        agg_project_name_str=AGG_PROJECT_NAME_STR,
         output_directory=parsed_args.output_directory,
         subscenario_id=parsed_args.project_fixed_cost_scenario_id,
         subscenario_name=parsed_args.project_fixed_cost_scenario_name,
-        aggregate_projects=parsed_args.aggregate_projects,
+        aggregate_projects=parsed_args.project_aggregation != "none",
     )
 
     conn.close()

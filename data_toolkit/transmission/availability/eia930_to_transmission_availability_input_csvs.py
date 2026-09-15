@@ -36,14 +36,15 @@ Input prerequisites
 
 This module assumes the following raw input database tables have been populated:
     * raw_data_eia930_hourly_interchange
-    * user_defined_baa_key
+    * raw_data_eia_baa_codes
 
 =========
 Settings
 =========
     * database
     * output_directory
-    * region
+    * footprint
+    * load_zone_level
     * transmission_availability_scenario_id
     * transmission_availability_scenario_name
 
@@ -57,6 +58,11 @@ import pandas as pd
 import sys
 
 from db.common_functions import connect_to_database
+from data_toolkit.geographic_scope import (
+    LOAD_ZONE_LEVEL_CHOICES,
+    check_custom_zone_level_ready,
+    report_footprint_type,
+)
 from data_toolkit.transmission.transmission_data_filters_common import (
     get_all_links_sql,
     get_unique_tx_lines,
@@ -74,7 +80,30 @@ def parse_arguments(args):
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
-    parser.add_argument("-r", "--region", default="WECC")
+    parser.add_argument(
+        "-fp",
+        "--footprint",
+        default="western",
+        help="The study footprint: an EIA930 region or interconnect value "
+        "from the BA map (e.g. 'CAL' or 'western'), or 'all' for no "
+        "footprint filter (every mapped BA with a load zone at the chosen "
+        "load-zone level). Defaults to 'western'.",
+    )
+    parser.add_argument(
+        "-lzl",
+        "--load_zone_level",
+        default="baa",
+        choices=list(LOAD_ZONE_LEVEL_CHOICES),
+        help="The level at which to define the transmission network: lines "
+        "between BAs, EIA930 regions, or interconnects (at the aggregated "
+        "levels, parallel BA pairs collapse into one line per zone pair, "
+        "and intra-zone links are dropped); at the 'all' level the whole "
+        "--footprint is a single zone, so the network is empty; 'custom' "
+        "uses the user-defined zones applied by gridpath_apply_custom_zones "
+        "(BAs without a custom zone are excluded). "
+        "Must match the level used for the load-zone and project-level "
+        "steps. Defaults to 'baa'.",
+    )
 
     parser.add_argument(
         "-o",
@@ -125,9 +154,23 @@ def main(args=None):
 
     conn = connect_to_database(db_path=parsed_args.database)
 
+    report_footprint_type(
+        conn=conn, footprint=parsed_args.footprint, quiet=parsed_args.quiet
+    )
+    check_custom_zone_level_ready(
+        conn=conn,
+        load_zone_level=parsed_args.load_zone_level,
+        footprint=parsed_args.footprint,
+    )
+
     c = conn.cursor()
 
-    all_links = c.execute(get_all_links_sql(region=parsed_args.region)).fetchall()
+    all_links = c.execute(
+        get_all_links_sql(
+            footprint=parsed_args.footprint,
+            load_zone_level=parsed_args.load_zone_level,
+        )
+    ).fetchall()
     unique_tx_lines = get_unique_tx_lines(all_links=all_links)
 
     get_tx_availability(

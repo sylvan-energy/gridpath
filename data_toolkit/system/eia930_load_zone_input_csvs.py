@@ -17,7 +17,12 @@ EIA 930 BAs
 ***********
 
 Create GridPath load_zone inputs (load_zone_scenario_id) based on BAs in Form
-EIA 930.
+EIA 930: one load zone per BA observed in the interchange data within the
+region, or — with the ``load_zone_level`` setting — one per EIA930 region
+or interconnect.
+The chosen level must match the one used for the project-level steps, and
+the ``user_defined_load_zone_units`` mapping (which assigns the system-load
+units to load zones) must use the same zone vocabulary.
 
 =====
 Usage
@@ -30,18 +35,19 @@ Input prerequisites
 ===================
 
 This script depends on having loaded the Form EIA 930 hourly interchange data
-and to have defined a region for each BA in the user_defined_baa_key table (
-in order to filter BAs if needed). It assumes the following raw input
-database tables have been populated:
+and the EIA balancing-authority map (in order to filter BAs and determine
+their load zones). It assumes the following raw input database tables have
+been populated:
 
 * raw_data_eia930_hourly_interchange
-* user_defined_baa_key
+* raw_data_eia_baa_codes
 
 =========
 Settings
 =========
 
 * database
+* load_zone_level
 * lz_output_directory
 * load_zone_scenario_id
 * load_zone_scenario_name
@@ -66,6 +72,14 @@ import pandas as pd
 import sys
 
 from db.common_functions import connect_to_database
+from data_toolkit.geographic_scope import (
+    LOAD_ZONE_LEVEL_CHOICES,
+    check_custom_zone_level_ready,
+    report_footprint_type,
+    get_all_lzs_sql,
+    get_load_zone_str,
+    get_footprint_scope_sql,
+)
 
 
 def parse_arguments(args):
@@ -78,8 +92,30 @@ def parse_arguments(args):
     """
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
-    parser.add_argument("-db", "--database", default="../../../db/open_data.db")
-    parser.add_argument("-r", "--region", default="WECC")
+    parser.add_argument("-db", "--database", default="../../open_data_raw.db")
+    parser.add_argument(
+        "-fp",
+        "--footprint",
+        default="western",
+        help="The study footprint: an EIA930 region or interconnect value "
+        "from the BA map (e.g. 'CAL' or 'western'), or 'all' for no "
+        "footprint filter (every mapped BA with a load zone at the chosen "
+        "load-zone level). Defaults to 'western'.",
+    )
+    parser.add_argument(
+        "-lzl",
+        "--load_zone_level",
+        default="baa",
+        choices=list(LOAD_ZONE_LEVEL_CHOICES),
+        help="The level at which to create the GridPath load zones: one per "
+        "BA, EIA930 region, or interconnect (from the BA map), or — with "
+        "'all' — a single zone spanning the whole --footprint, "
+        "named after the --footprint value; 'custom' uses the user-defined "
+        "zones applied by gridpath_apply_custom_zones (BAs without a "
+        "custom zone are excluded). Must match the level used for "
+        "the project-level steps, and the user_defined_load_zone_units "
+        "mapping must use the same zone vocabulary. Defaults to 'baa'.",
+    )
 
     # Load zones
     parser.add_argument("-lz_id", "--load_zone_scenario_id", default=1)
@@ -118,25 +154,6 @@ def parse_arguments(args):
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
     return parsed_arguments
-
-
-def get_all_lzs_sql(region):
-    all_lzs_sql = f"""
-        SELECT DISTINCT baa from (
-            SELECT DISTINCT balancing_authority_code_eia as baa
-            FROM raw_data_eia930_hourly_interchange
-            UNION
-            SELECT DISTINCT balancing_authority_code_adjacent_eia as ba
-            FROM raw_data_eia930_hourly_interchange
-            ) AS distinct_baa_tbl
-        LEFT OUTER JOIN
-        user_defined_baa_key
-        USING (baa)
-        WHERE region = '{region}'
-        ;
-        """
-
-    return all_lzs_sql
 
 
 def make_load_zones_csv(
@@ -220,10 +237,31 @@ def main(args=None):
 
     conn = connect_to_database(db_path=parsed_args.database)
 
+    report_footprint_type(
+        conn=conn, footprint=parsed_args.footprint, quiet=parsed_args.quiet
+    )
+    check_custom_zone_level_ready(
+        conn=conn,
+        load_zone_level=parsed_args.load_zone_level,
+        footprint=parsed_args.footprint,
+    )
+
     c = conn.cursor()
 
     all_lzs = [
-        lz[0] for lz in c.execute(get_all_lzs_sql(region=parsed_args.region)).fetchall()
+        lz[0]
+        for lz in c.execute(
+            get_all_lzs_sql(
+                load_zone_str=get_load_zone_str(
+                    load_zone_level=parsed_args.load_zone_level,
+                    footprint=parsed_args.footprint,
+                ),
+                footprint_scope_sql=get_footprint_scope_sql(
+                    footprint=parsed_args.footprint,
+                    load_zone_level=parsed_args.load_zone_level,
+                ),
+            )
+        ).fetchall()
     ]
 
     make_load_zones_csv(

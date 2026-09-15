@@ -24,7 +24,11 @@ Create project heat rate CSV for a EIA860-based project portfolio.
     this module.
 
 .. note:: The query in this module is consistent with the project selection
-    from ``eia860_to_project_portfolio_input_csvs``.
+    from ``eia860_to_project_portfolio_input_csvs``, which also documents
+    what the EIA860 data vintage in the raw database means — in
+    particular that the latest available vintage (the convert step's
+    default) is PUDL's EIA860M-derived reconstruction of the in-progress
+    report year, not an as-filed annual survey.
 
 =====
 Usage
@@ -47,7 +51,13 @@ Settings
     * database
     * output_directory
     * study_year
-    * region
+    * footprint
+    * include_retired
+    * planned_inclusion
+    * inactive_inclusion
+    * include_planned_retirements
+    * include_btm_plants
+    * ba_source
     * project_hr_scenario_id
     * project_hr_scenario_name
 
@@ -59,11 +69,13 @@ from gridpath.common_functions import get_version_parser
 import os.path
 import sys
 
-from db.common_functions import connect_to_database
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
-    HEAT_RATE_FILTER_STR,
-    DISAGG_PROJECT_NAME_STR,
+from data_toolkit.project.fleet.aggregation import DISAGG_PROJECT_NAME_STR
+from data_toolkit.project.fleet.fleet_filters import HEAT_RATE_FILTER_STR
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_fleet_relation_sql_from_args,
+    warn_on_fleet_data_gaps,
+    add_shared_project_step_arguments,
 )
 
 
@@ -78,8 +90,9 @@ def parse_arguments(args):
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
-    parser.add_argument("-y", "--study_year", default=2026)
-    parser.add_argument("-r", "--region", default="WECC")
+    add_shared_project_step_arguments(
+        parser=parser, zone_aware=False, aggregation=False
+    )
 
     parser.add_argument(
         "-o",
@@ -98,8 +111,7 @@ def parse_arguments(args):
 
 def get_project_heat_rates(
     conn,
-    eia860_sql_filter_string,
-    heat_rate_filter_str,
+    fleet_relation_sql,
     disagg_project_name_str,
     csv_location,
     subscenario_id,
@@ -108,17 +120,10 @@ def get_project_heat_rates(
 
     # Only coal, gas, and fuel oil for now (with aeo prices)
     sql = f"""
-        SELECT {disagg_project_name_str} AS project, 
-            raw_data_eia860_generators.prime_mover_code, gridpath_generic_fuel, 
+        SELECT {disagg_project_name_str} AS project,
+            raw_data_eia860_generators.prime_mover_code, gridpath_generic_fuel,
             heat_rate_mmbtu_per_mwh, min_load_fraction
-        FROM raw_data_eia860_generators
-        JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-        WHERE 1 = 1
-        AND {eia860_sql_filter_string}
-        AND {heat_rate_filter_str}
+        {fleet_relation_sql}
         """
 
     c = conn.cursor()
@@ -143,8 +148,9 @@ def get_project_heat_rates(
                 f"{project}-{subscenario_id}" f"-{subscenario_name}.csv",
             ),
             "w",
+            newline="",
         ) as filepath:
-            writer = csv.writer(filepath, delimiter=",")
+            writer = csv.writer(filepath, delimiter=",", lineterminator="\n")
             writer.writerow(header)
             writer.writerow(
                 [
@@ -167,14 +173,19 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    # Zone-agnostic step: no BA-map join and the default 'baa' load-zone
+    # level (a superset of the portfolio's projects is harmless); the
+    # operational-type filter rides in as an extra WHERE term
+    fleet_relation_sql = get_fleet_relation_sql_from_args(
+        parsed_args, join_ba_map=False, extra_where=HEAT_RATE_FILTER_STR
+    )
+
+    conn = connect_and_check_scope(parsed_args)
+    warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
 
     get_project_heat_rates(
         conn=conn,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
-        ),
-        heat_rate_filter_str=HEAT_RATE_FILTER_STR,
+        fleet_relation_sql=fleet_relation_sql,
         disagg_project_name_str=DISAGG_PROJECT_NAME_STR,
         csv_location=parsed_args.output_directory,
         subscenario_id=parsed_args.project_hr_scenario_id,

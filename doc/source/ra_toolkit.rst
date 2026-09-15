@@ -25,9 +25,10 @@ the user-defined weather bins and unit mappings) with the RA Toolkit's
 Note that the RA Toolkit steps take their project names from user-provided
 mapping tables (e.g. ``raw_data_var_project_units``,
 ``user_defined_load_zone_units``) rather than from the Data Toolkit's
-EIA860-based project selection. When combining RA Toolkit inputs with
+fleet-selection settings. When combining RA Toolkit inputs with
 Data-Toolkit-generated project inputs in one scenario, those mappings must
-use the same project and load zone names the Data Toolkit run generated.
+use the same project and load zone names the Data Toolkit run generated —
+including the effects of its aggregation and load-zone-level settings.
 
 ***************
 Temporal Inputs

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import tempfile
 import unittest
 
 from db.create_database import main as create_database_main
@@ -28,11 +29,11 @@ class TestLoadRawData(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment"""
         os.chdir(os.path.join(os.path.dirname(__file__), "..", "..", "db"))
-        cls.db_path = "data_toolkit_load_raw_data_test_temp.db"
-
-        # Clean up temp database if it exists
-        if os.path.exists(cls.db_path):
-            os.remove(cls.db_path)
+        # The scratch DB lives in a per-class temp dir: a shared
+        # CWD-relative DB file caused flaky lock/disk-I/O errors and stale
+        # WAL state across test modules
+        cls.tmp_dir = tempfile.TemporaryDirectory()
+        cls.db_path = os.path.join(cls.tmp_dir.name, "step_test_temp.db")
 
         # Create database first
         create_db_args = [
@@ -58,12 +59,7 @@ class TestLoadRawData(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
-        if os.path.exists(cls.db_path):
-            os.remove(cls.db_path)
-        for temp_file_ext in ["-shm", "-wal"]:
-            temp_file = f"{cls.db_path}{temp_file_ext}"
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
+        cls.tmp_dir.cleanup()
 
 
 if __name__ == "__main__":

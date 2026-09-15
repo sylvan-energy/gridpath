@@ -21,7 +21,20 @@ portfolio based on the user-defined mapping in the
 user_defined_eia_gridpath_key table.
 
 .. note:: The query in this module is consistent with the project selection
-    from ``eia860_to_project_portfolio_input_csvs``.
+    from ``eia860_to_project_portfolio_input_csvs``, which also documents
+    what the EIA860 data vintage in the raw database means — in
+    particular that the latest available vintage (the convert step's
+    default) is PUDL's EIA860M-derived reconstruction of the in-progress
+    report year, not an as-filed annual survey.
+
+After writing the CSV, the step cross-checks the assigned zones against the
+system load zones that ``eia930_load_zone_input_csvs`` derives for the same
+footprint and load-zone level, and warns (even with ``quiet``) about any
+project zone missing there — such projects would reference a load zone with
+no load balance and only fail later, at model load (e.g. islanded BAs like
+HECO that are in the BA map but never appear in the interchange data, with
+``--footprint all --load_zone_level baa``). The check is skipped if no
+EIA930 interchange data is loaded.
 
 =====
 Usage
@@ -43,7 +56,16 @@ Settings
     * database
     * output_directory
     * study_year
-    * region
+    * footprint
+    * include_retired
+    * planned_inclusion
+    * inactive_inclusion
+    * include_planned_retirements
+    * include_btm_plants
+    * ba_source
+    * load_zone_level
+    * project_aggregation
+    * aggregation_dimensions
     * project_load_zone_scenario_id
     * project_load_zone_scenario_name
 
@@ -55,13 +77,16 @@ import os.path
 import pandas as pd
 import sys
 
-from db.common_functions import connect_to_database
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
-    HYDRO_FILTER_STR,
-    VAR_GEN_FILTER_STR,
-    DISAGG_PROJECT_NAME_STR,
-    AGG_PROJECT_NAME_STR,
+from data_toolkit.geographic_scope import (
+    get_load_zone_str,
+    warn_on_project_load_zones_missing_from_system,
+)
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_fleet_relation_sql_from_args,
+    get_project_name_str_from_args,
+    warn_on_fleet_data_gaps,
+    add_shared_project_step_arguments,
 )
 
 
@@ -75,25 +100,16 @@ def parse_arguments(args):
     """
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
-    parser.add_argument("-db", "--database", default="../../../db/open_data_raw.db")
-    parser.add_argument("-y", "--study_year", default=2026)
-    parser.add_argument("-r", "--region", default="WECC")
+    parser.add_argument("-db", "--database", default="../../open_data_raw.db")
+    add_shared_project_step_arguments(parser=parser)
     parser.add_argument(
         "-o",
         "--output_directory",
-        default="../../../db/csvs_open_data/project/load_zones",
+        default="../../csvs_open_data/project/load_zones",
     )
     parser.add_argument("-lz_id", "--project_load_zone_scenario_id", default=1)
     parser.add_argument(
         "-lz_name", "--project_load_zone_scenario_name", default="wecc_baas"
-    )
-
-    parser.add_argument(
-        "-agg",
-        "--aggregate_projects",
-        default=False,
-        action="store_true",
-        help="Aggregate all projects to the BA-technology level.",
     )
 
     parser.add_argument("-q", "--quiet", default=False, action="store_true")
@@ -105,52 +121,20 @@ def parse_arguments(args):
 
 def get_project_load_zones(
     conn,
-    eia860_sql_filter_string,
-    var_gen_filter_str,
-    hydro_filter_str,
-    disagg_project_name_str,
-    agg_project_name_str,
+    project_name_str,
+    fleet_relation_sql,
+    load_zone_str,
     output_directory,
     subscenario_id,
     subscenario_name,
     aggregate_projects=False,
 ):
-    if aggregate_projects:
-        sql = f"""
-        SELECT {agg_project_name_str} AS project,
-            balancing_authority_code_eia AS load_zone
-        FROM raw_data_eia860_generators
-        JOIN user_defined_eia_gridpath_key ON
-                raw_data_eia860_generators.prime_mover_code =
-                user_defined_eia_gridpath_key.prime_mover_code
-                AND energy_source_code_1 = energy_source_code
-        WHERE 1 = 1
-        AND {eia860_sql_filter_string}
-        GROUP BY project
-        ;
-        """
-    else:
-        sql = f"""
-    SELECT {disagg_project_name_str} AS project, balancing_authority_code_eia AS load_zone
-    FROM raw_data_eia860_generators
-    JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-    WHERE 1 = 1
-    AND {eia860_sql_filter_string}
-    AND NOT {var_gen_filter_str}
-    AND NOT {hydro_filter_str}
-    -- Aggregated units include wind, offshore wind, solar, and hydro
-    UNION
-    SELECT {agg_project_name_str} AS project,
-        balancing_authority_code_eia AS load_zone
-    FROM raw_data_eia860_generators
-    JOIN user_defined_eia_gridpath_key
-    USING (prime_mover_code)
-    WHERE 1 = 1
-    AND {eia860_sql_filter_string}
-    AND ({var_gen_filter_str} OR {hydro_filter_str})
+    group_by_sql = "GROUP BY project" if aggregate_projects else ""
+    sql = f"""
+    SELECT {project_name_str} AS project,
+        {load_zone_str} AS load_zone
+    {fleet_relation_sql}
+    {group_by_sql}
     ;
     """
 
@@ -159,6 +143,8 @@ def get_project_load_zones(
         os.path.join(output_directory, f"{subscenario_id}_" f"{subscenario_name}.csv"),
         index=False,
     )
+
+    return df
 
 
 def main(args=None):
@@ -172,21 +158,33 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    project_name_str = get_project_name_str_from_args(parsed_args)
+    fleet_relation_sql = get_fleet_relation_sql_from_args(parsed_args)
 
-    get_project_load_zones(
+    conn = connect_and_check_scope(parsed_args)
+    warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
+
+    project_load_zones_df = get_project_load_zones(
         conn=conn,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
+        project_name_str=project_name_str,
+        fleet_relation_sql=fleet_relation_sql,
+        load_zone_str=get_load_zone_str(
+            load_zone_level=parsed_args.load_zone_level, footprint=parsed_args.footprint
         ),
-        var_gen_filter_str=VAR_GEN_FILTER_STR,
-        hydro_filter_str=HYDRO_FILTER_STR,
-        disagg_project_name_str=DISAGG_PROJECT_NAME_STR,
-        agg_project_name_str=AGG_PROJECT_NAME_STR,
         output_directory=parsed_args.output_directory,
         subscenario_id=parsed_args.project_load_zone_scenario_id,
         subscenario_name=parsed_args.project_load_zone_scenario_name,
-        aggregate_projects=parsed_args.aggregate_projects,
+        aggregate_projects=parsed_args.project_aggregation != "none",
+    )
+
+    # Cross-check against the system load zones the eia930_load_zone step
+    # derives: a project zone missing there would only fail at model load
+    warn_on_project_load_zones_missing_from_system(
+        conn=conn,
+        footprint=parsed_args.footprint,
+        load_zone_level=parsed_args.load_zone_level,
+        project_load_zones=project_load_zones_df["load_zone"].unique(),
+        quiet=parsed_args.quiet,
     )
 
     conn.close()

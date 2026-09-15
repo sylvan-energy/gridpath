@@ -18,13 +18,21 @@ Form EIA 860 Project Fuels
 
 Create project fuels CSV for a EIA860-based project portfolio.
 
-.. note:: Some fuel regions in the EIA AEO are more disaggragated than the BA
-    in Form EIA 860 (e.g. CA South and North regions in the AEO, and CISO BA in
-    Form EIA 860). This module currently can only assign one fuel region to
-    each BA. If you need the extra resolution, you will need to modify it.
+Each project's fuel is named <generic_fuel>_<fuel_region>, with the fuel
+region taken from the user_defined_project_fuel_region_key table — an
+explicit per-project mapping the user provides (fuel regions in the EIA
+AEO can be more disaggregated than BAs, e.g. the CA South and North AEO
+regions vs the CISO BA, so a per-BA assignment is not always possible).
+Projects without a mapping are skipped (no fuel CSV is written for them);
+the fuel-region vocabulary must match user_defined_eiaaeo_region_key's,
+which defines the fuels' prices and characteristics.
 
 .. note:: The query in this module is consistent with the project selection
-    from ``eia860_to_project_portfolio_input_csvs``.
+    from ``eia860_to_project_portfolio_input_csvs``, which also documents
+    what the EIA860 data vintage in the raw database means — in
+    particular that the latest available vintage (the convert step's
+    default) is PUDL's EIA860M-derived reconstruction of the in-progress
+    report year, not an as-filed annual survey.
 
 =====
 Usage
@@ -39,7 +47,8 @@ Input prerequisites
 This module assumes the following raw input database tables have been populated:
     * raw_data_eia860_generators
     * user_defined_eia_gridpath_key
-    * user_defined_baa_key
+    * raw_data_eia_baa_codes
+    * user_defined_project_fuel_region_key
 
 =========
 Settings
@@ -47,7 +56,13 @@ Settings
     * database
     * output_directory
     * study_year
-    * region
+    * footprint
+    * include_retired
+    * planned_inclusion
+    * inactive_inclusion
+    * include_planned_retirements
+    * include_btm_plants
+    * ba_source
     * project_fuel_scenario_id
     * project_fuel_scenario_name
 
@@ -59,11 +74,13 @@ from gridpath.common_functions import get_version_parser
 import os.path
 import sys
 
-from db.common_functions import connect_to_database
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
-    FUEL_FILTER_STR,
-    DISAGG_PROJECT_NAME_STR,
+from data_toolkit.project.fleet.aggregation import DISAGG_PROJECT_NAME_STR
+from data_toolkit.project.fleet.fleet_filters import FUEL_FILTER_STR
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_fleet_relation_sql_from_args,
+    warn_on_fleet_data_gaps,
+    add_shared_project_step_arguments,
 )
 
 
@@ -78,8 +95,9 @@ def parse_arguments(args):
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
-    parser.add_argument("-y", "--study_year", default=2026)
-    parser.add_argument("-r", "--region", default="WECC")
+    add_shared_project_step_arguments(
+        parser=parser, zone_aware=False, aggregation=False
+    )
     parser.add_argument(
         "-o",
         "--output_directory",
@@ -98,8 +116,7 @@ def parse_arguments(args):
 # Fuels and heat rates for gen_commit_bin/lin
 def get_project_fuels(
     conn,
-    eia860_sql_filter_string,
-    fuel_filter_str,
+    fleet_relation_sql,
     disagg_project_name_str,
     csv_location,
     subscenario_id,
@@ -107,18 +124,13 @@ def get_project_fuels(
 ):
 
     # Only coal, gas, and fuel oil for now (with aeo prices)
+    # The fuel region comes from the user's explicit per-project mapping;
+    # the LEFT JOIN (in the fleet relation's extra_joins) plus the
+    # fuel-is-None guard below skip unmapped projects
     sql = f"""
-        SELECT {disagg_project_name_str} AS project, 
+        SELECT {disagg_project_name_str} AS project,
             gridpath_generic_fuel || '_' || fuel_region as fuel
-        FROM raw_data_eia860_generators
-        JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-        JOIN user_defined_baa_key ON (balancing_authority_code_eia = baa)
-        WHERE 1 = 1
-        AND {eia860_sql_filter_string}
-        AND {fuel_filter_str}
+        {fleet_relation_sql}
         """
 
     c = conn.cursor()
@@ -131,8 +143,9 @@ def get_project_fuels(
                     f"{project}-{subscenario_id}" f"-{subscenario_name}.csv",
                 ),
                 "w",
+                newline="",
             ) as filepath:
-                writer = csv.writer(filepath, delimiter=",")
+                writer = csv.writer(filepath, delimiter=",", lineterminator="\n")
                 writer.writerow(header)
                 writer.writerow([fuel, None, None])
 
@@ -148,14 +161,26 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    # Zone-agnostic step: no BA-map join and the default 'baa' load-zone
+    # level (a superset of the portfolio's projects is harmless); the
+    # fuel-region key rides in as an extra join, the operational-type
+    # filter as an extra WHERE term
+    fleet_relation_sql = get_fleet_relation_sql_from_args(
+        parsed_args,
+        join_ba_map=False,
+        extra_joins=f"""
+        LEFT JOIN user_defined_project_fuel_region_key ON
+            user_defined_project_fuel_region_key.project =
+            {DISAGG_PROJECT_NAME_STR}""",
+        extra_where=FUEL_FILTER_STR,
+    )
+
+    conn = connect_and_check_scope(parsed_args)
+    warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
 
     get_project_fuels(
         conn=conn,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
-        ),
-        fuel_filter_str=FUEL_FILTER_STR,
+        fleet_relation_sql=fleet_relation_sql,
         disagg_project_name_str=DISAGG_PROJECT_NAME_STR,
         csv_location=parsed_args.output_directory,
         subscenario_id=parsed_args.project_fuel_scenario_id,

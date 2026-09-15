@@ -20,7 +20,11 @@ Form EIA 860 Project Capacity
 Create specified capacity CSV for a EIA860-based project portfolio.
 
 .. note:: The query in this module is consistent with the project selection
-    from ``eia860_to_project_portfolio_input_csvs``.
+    from ``eia860_to_project_portfolio_input_csvs``, which also documents
+    what the EIA860 data vintage in the raw database means — in
+    particular that the latest available vintage (the convert step's
+    default) is PUDL's EIA860M-derived reconstruction of the in-progress
+    report year, not an as-filed annual survey.
 
 =====
 Usage
@@ -42,7 +46,16 @@ Settings
     * database
     * output_directory
     * study_year
-    * region
+    * footprint
+    * include_retired
+    * planned_inclusion
+    * inactive_inclusion
+    * include_planned_retirements
+    * include_btm_plants
+    * ba_source
+    * load_zone_level
+    * project_aggregation
+    * aggregation_dimensions
     * project_specified_capacity_scenario_id
     * project_specified_capacity_scenario_name
 
@@ -55,13 +68,12 @@ import os.path
 import pandas as pd
 import sys
 
-from db.common_functions import connect_to_database
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
-    VAR_GEN_FILTER_STR,
-    HYDRO_FILTER_STR,
-    DISAGG_PROJECT_NAME_STR,
-    AGG_PROJECT_NAME_STR,
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_fleet_relation_sql_from_args,
+    get_project_name_str_from_args,
+    warn_on_fleet_data_gaps,
+    add_shared_project_step_arguments,
 )
 
 
@@ -76,8 +88,7 @@ def parse_arguments(args):
     parser = ArgumentParser(add_help=True, parents=[get_version_parser()])
 
     parser.add_argument("-db", "--database", default="../../open_data_raw.db")
-    parser.add_argument("-y", "--study_year", default=2026)
-    parser.add_argument("-r", "--region", default="WECC")
+    add_shared_project_step_arguments(parser=parser)
     parser.add_argument(
         "-cap_csv",
         "--output_directory",
@@ -90,14 +101,6 @@ def parse_arguments(args):
         "-cap_name", "--project_specified_capacity_scenario_name", default="base"
     )
 
-    parser.add_argument(
-        "-agg",
-        "--aggregate_projects",
-        default=False,
-        action="store_true",
-        help="Aggregate all projects to the BA-technology level.",
-    )
-
     parser.add_argument("-q", "--quiet", default=False, action="store_true")
 
     parsed_arguments = parser.parse_known_args(args=args)[0]
@@ -107,20 +110,19 @@ def parse_arguments(args):
 
 def get_project_capacity(
     conn,
-    eia860_sql_filter_string,
-    var_gen_filter_str,
-    hydro_filter_str,
-    disagg_project_name_str,
-    agg_project_name_str,
+    project_name_str,
+    fleet_relation_sql,
     study_year,
     csv_location,
     subscenario_id,
     subscenario_name,
     aggregate_projects=False,
 ):
+    # The two modes share the fleet relation but differ in the SELECT
+    # list: aggregated groups SUM their units' capacities
     if aggregate_projects:
         sql = f"""
-        SELECT {agg_project_name_str} AS project,
+        SELECT {project_name_str} AS project,
             {study_year} as period,
             SUM(capacity_mw) AS specified_capacity_mw,
             NULL AS specified_energy_mwh,
@@ -136,27 +138,21 @@ def get_project_capacity(
             NULL AS fuel_production_capacity_fuelunitperhour,
             NULL AS fuel_release_capacity_fuelunitperhour,
             NULL AS fuel_storage_capacity_fuelunit
-        FROM raw_data_eia860_generators
-        JOIN user_defined_eia_gridpath_key ON
-                raw_data_eia860_generators.prime_mover_code =
-                user_defined_eia_gridpath_key.prime_mover_code
-                AND energy_source_code_1 = energy_source_code
-         WHERE 1 = 1
-         AND {eia860_sql_filter_string}
+        {fleet_relation_sql}
          GROUP BY project
         ;
         """
     else:
         sql = f"""
-    SELECT {disagg_project_name_str} AS project, 
+    SELECT {project_name_str} AS project,
         {study_year} as period,
         capacity_mw AS specified_capacity_mw,
         NULL AS specified_energy_mwh,
         NULL AS shaping_capacity_mw,
         NULL AS hyb_gen_specified_capacity_mw,
         NULL AS hyb_stor_specified_capacity_mw,
-        CASE 
-            WHEN raw_data_eia860_generators.prime_mover_code NOT IN ('BA', 
+        CASE
+            WHEN raw_data_eia860_generators.prime_mover_code NOT IN ('BA',
             'ES', 'FW', 'PS') THEN NULL
             ELSE energy_storage_capacity_mwh
         END
@@ -164,35 +160,7 @@ def get_project_capacity(
         NULL AS fuel_production_capacity_fuelunitperhour,
         NULL AS fuel_release_capacity_fuelunitperhour,
         NULL AS fuel_storage_capacity_fuelunit
-    FROM raw_data_eia860_generators
-    JOIN user_defined_eia_gridpath_key ON
-            raw_data_eia860_generators.prime_mover_code = 
-            user_defined_eia_gridpath_key.prime_mover_code
-            AND energy_source_code_1 = energy_source_code
-     WHERE 1 = 1
-     AND {eia860_sql_filter_string}
-     AND NOT {var_gen_filter_str}
-     AND NOT {hydro_filter_str}
-    UNION
-    -- Aggregated units include wind, offshore wind, solar, and hydro
-    SELECT {agg_project_name_str} AS project,
-        {study_year} as period,
-        SUM(capacity_mw) AS specified_capacity_mw,
-        NULL AS specified_energy_mwh,
-        NULL AS shaping_capacity_mw,
-        NULL AS hyb_gen_specified_capacity_mw,
-        NULL AS hyb_stor_specified_capacity_mw,
-        SUM(energy_storage_capacity_mwh) AS specified_stor_capacity_mwh,
-        NULL AS fuel_production_capacity_fuelunitperhour,
-        NULL AS fuel_release_capacity_fuelunitperhour,
-        NULL AS fuel_storage_capacity_fuelunit
-    FROM raw_data_eia860_generators
-    JOIN user_defined_eia_gridpath_key
-    USING (prime_mover_code)
-    WHERE 1 = 1
-    AND {eia860_sql_filter_string}
-    AND ({var_gen_filter_str} OR {hydro_filter_str})
-    GROUP BY project
+    {fleet_relation_sql}
     ;
     """
 
@@ -214,22 +182,21 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    project_name_str = get_project_name_str_from_args(parsed_args)
+    fleet_relation_sql = get_fleet_relation_sql_from_args(parsed_args)
+
+    conn = connect_and_check_scope(parsed_args)
+    warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
 
     get_project_capacity(
         conn=conn,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
-        ),
+        project_name_str=project_name_str,
+        fleet_relation_sql=fleet_relation_sql,
         study_year=parsed_args.study_year,
-        var_gen_filter_str=VAR_GEN_FILTER_STR,
-        hydro_filter_str=HYDRO_FILTER_STR,
-        disagg_project_name_str=DISAGG_PROJECT_NAME_STR,
-        agg_project_name_str=AGG_PROJECT_NAME_STR,
         csv_location=parsed_args.output_directory,
         subscenario_id=parsed_args.project_specified_capacity_scenario_id,
         subscenario_name=parsed_args.project_specified_capacity_scenario_name,
-        aggregate_projects=parsed_args.aggregate_projects,
+        aggregate_projects=parsed_args.project_aggregation != "none",
     )
 
     conn.close()

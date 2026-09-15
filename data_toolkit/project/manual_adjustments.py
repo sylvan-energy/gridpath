@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +13,70 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Manual Adjustments
+******************
+
+The post-processing escape hatch of the project pipeline: patch gaps in
+the ALREADY-GENERATED project input CSVs that the raw data cannot fill.
+Run it after the other project-level steps, with the same shared settings
+(so its queries name the same projects the other steps generated). Two
+kinds of adjustment are made:
+
+* **User-provided project files**: per the instructions in the
+  ``files_to_copy_csv`` file, copy an existing per-project input CSV to
+  serve as another project's inputs (e.g. give a project a neighbor's
+  hydro characteristics when it has none of its own). The copies are
+  written next to the generated files, named
+  ``<new_project>-<id>-<name>_MANUAL_copy_from_<copy_project>_<id>.csv``
+  so their provenance is visible.
+* **Default storage durations**: EIA860 reports no energy capacity for
+  some storage units, which leaves ``specified_stor_capacity_mwh`` NULL
+  in the generated specified-capacity CSV. This step fills those NULLs
+  (only those — existing values are never overwritten) with
+  ``duration × specified_capacity_mw``, using the ``battery_duration``
+  and ``pumped_storage_duration`` settings for battery (BA) and
+  pumped-storage (PS) prime movers respectively.
+
+Because its patches only ever update rows that already exist in the
+generated CSVs, this step deliberately queries a SUPERSET fleet (e.g.
+behind-the-meter units are always included, and it takes no
+fleet-selection settings of its own) — extra units in its queries are
+harmless, missing ones would silently leave gaps unpatched.
+
+=====
+Usage
+=====
+
+>>> gridpath_run_data_toolkit --single_step manual_adjustments --settings_csv PATH/TO/SETTINGS/CSV
+
+===================
+Input prerequisites
+===================
+
+This module assumes the following raw input database tables have been populated:
+    * raw_data_eia860_generators
+    * user_defined_eia_gridpath_key
+    * raw_data_eia_baa_codes
+
+=========
+Settings
+=========
+    * database
+    * files_to_copy_csv
+    * capacity_specified_directory
+    * project_specified_capacity_scenario_id
+    * project_specified_capacity_scenario_name
+    * study_year
+    * footprint
+    * ba_source
+    * load_zone_level
+    * project_aggregation
+    * aggregation_dimensions
+    * battery_duration
+    * pumped_storage_duration
+"""
+
 from argparse import ArgumentParser
 from gridpath.common_functions import get_version_parser
 import duckdb
@@ -20,20 +85,17 @@ import shutil
 import sys
 import pandas as pd
 
-from db.common_functions import connect_to_database
-from db.common_functions import read_and_import_csv
-from data_toolkit.project.project_data_filters_common import (
-    get_eia860_sql_filter_string,
-    DISAGG_PROJECT_NAME_STR,
-    AGG_PROJECT_NAME_STR,
+from data_toolkit.project.fleet.fleet_filters import get_fleet_relation_sql
+from data_toolkit.project.fleet.step_common import (
+    connect_and_check_scope,
+    get_project_name_str_from_args,
+    add_shared_project_step_arguments,
 )
 
 # Storage durations
 STORAGE_DURATION_DEFAULTS = {"BA": 1, "PS": 12}
 SPEC_CAP_ID_DEFAULT = 1
 SPEC_CAP_NAME_DEFAULT = "base"
-STUDY_YEAR_DEFAULT = 2026
-REGION_DEFAULT = "WECC"
 
 
 def parse_arguments(args):
@@ -72,8 +134,7 @@ def parse_arguments(args):
         "--project_specified_capacity_scenario_name",
         default=SPEC_CAP_NAME_DEFAULT,
     )
-    parser.add_argument("-y", "--study_year", default=STUDY_YEAR_DEFAULT)
-    parser.add_argument("-r", "--region", default=REGION_DEFAULT)
+    add_shared_project_step_arguments(parser=parser, fleet_selection=False)
     parser.add_argument(
         "-ba_dur",
         "--battery_duration",
@@ -94,14 +155,6 @@ def parse_arguments(args):
         default=False,
         action="store_true",
         help="Overwrite existing CSV files.",
-    )
-
-    parser.add_argument(
-        "-agg",
-        "--aggregate_projects",
-        default=False,
-        action="store_true",
-        help="Aggregate all projects to the BA-technology level.",
     )
 
     parser.add_argument("-q", "--quiet", default=False, action="store_true")
@@ -139,8 +192,8 @@ def make_copy_files(
 def add_battery_durations(
     conn,
     project_name_str,
+    fleet_relation_sql,
     study_year,
-    eia860_sql_filter_string,
     csv_location,
     subscenario_id,
     subscenario_name,
@@ -161,13 +214,7 @@ def add_battery_durations(
         sql = f"""
             SELECT {project_name_str} AS project,
             {study_year} as period
-            FROM raw_data_eia860_generators
-            JOIN user_defined_eia_gridpath_key ON
-                    raw_data_eia860_generators.prime_mover_code =
-                    user_defined_eia_gridpath_key.prime_mover_code
-                    AND energy_source_code_1 = energy_source_code
-            WHERE 1 = 1
-            AND {eia860_sql_filter_string}
+            {fleet_relation_sql}
             AND raw_data_eia860_generators.prime_mover_code = '{tech}'
             {group_by}
             ;
@@ -207,7 +254,9 @@ def main(args=None):
     if not parsed_args.quiet:
         print("Making manual adjustments")
 
-    conn = connect_to_database(db_path=parsed_args.database)
+    project_name_str = get_project_name_str_from_args(parsed_args)
+
+    conn = connect_and_check_scope(parsed_args)
 
     # Add missing project files
     copy_files_df = pd.read_csv(parsed_args.files_to_copy_csv, index_col=False)
@@ -229,24 +278,26 @@ def main(args=None):
         "PS": parsed_args.pumped_storage_duration,
     }
 
-    project_name_str = (
-        AGG_PROJECT_NAME_STR
-        if parsed_args.aggregate_projects
-        else DISAGG_PROJECT_NAME_STR
-    )
-
     add_battery_durations(
         conn=conn,
         project_name_str=project_name_str,
-        study_year=parsed_args.study_year,
-        eia860_sql_filter_string=get_eia860_sql_filter_string(
-            study_year=parsed_args.study_year, region=parsed_args.region
+        fleet_relation_sql=get_fleet_relation_sql(
+            ba_source=parsed_args.ba_source,
+            study_year=parsed_args.study_year,
+            footprint=parsed_args.footprint,
+            # the battery-duration patch is UPDATE-only against existing
+            # CSV rows, so a superset fleet is harmless — and required if
+            # the CSVs were generated with include_btm_plants or
+            # include_planned_retirements
+            include_btm_plants=True,
+            include_planned_retirements=True,
         ),
+        study_year=parsed_args.study_year,
         csv_location=parsed_args.capacity_specified_directory,
         subscenario_id=parsed_args.project_specified_capacity_scenario_id,
         subscenario_name=parsed_args.project_specified_capacity_scenario_name,
         tech_dur_dict=tech_dur_dict,
-        aggregate_projects=parsed_args.aggregate_projects,
+        aggregate_projects=parsed_args.project_aggregation != "none",
     )
 
     conn.commit()
