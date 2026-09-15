@@ -43,7 +43,8 @@ Costs for this operational type include variable O&M costs.
 
     * :code:`STOR_OPR_BT_HRZ` checks horizon-timepoint membership
       element-by-element with O(1) lookups against :code:`PRJ_OPR_TMPS` and
-      iterates only the project's own balancing type's horizons. (Testing
+      iterates only the horizons of the project's energy-budget balancing
+      type. (Testing
       with :code:`set(...).issubset(mod.PRJ_OPR_TMPS)` would materialize the
       entire multi-million-element superset into a temporary Python set on
       every check.)
@@ -91,6 +92,7 @@ from gridpath.project.common_functions import (
     check_if_first_timepoint,
     check_if_last_timepoint,
     check_boundary_type,
+    get_energy_budget_balancing_type,
 )
 from gridpath.project.operations.operational_types.common_functions import (
     load_optype_model_data,
@@ -132,6 +134,14 @@ def add_model_components(
     | Two-dimensional set with generators of the :code:`stor`                 |
     | operational type and their linked timepoints.                           |
     +-------------------------------------------------------------------------+
+    | | :code:`STOR_OPR_BT_HRZ`                                               |
+    |                                                                         |
+    | Three-dimensional set with projects of the :code:`stor` operational     |
+    | type and the (balancing type, horizon)s of their energy-budget          |
+    | balancing type (see :code:`stor_energy_budget_balancing_type`) that     |
+    | lie entirely within their operational timepoints; the max-losses        |
+    | limit is enforced over these horizons.                                  |
+    +-------------------------------------------------------------------------+
 
     |
 
@@ -169,6 +179,25 @@ def add_model_components(
     | | *Default*: :code:`1`                                                  |
     |                                                                         |
     | The fraction of storage losses that count against the energy target.    |
+    +-------------------------------------------------------------------------+
+    | | :code:`stor_max_losses_in_hrz_frac_stor_energy_capacity`              |
+    | | *Defined over*: :code:`STOR`                                          |
+    | | *Within*: :code:`NonNegativeReals`                                    |
+    | | *Default*: :code:`inf`                                                |
+    |                                                                         |
+    | The maximum losses (charging minus discharging energy) in each          |
+    | horizon of the project's energy-budget balancing type, as a fraction    |
+    | of the project's energy capacity.                                       |
+    +-------------------------------------------------------------------------+
+    | | :code:`stor_energy_budget_balancing_type`                             |
+    | | *Defined over*: :code:`STOR`                                          |
+    | | *Within*: :code:`BLN_TYPES`                                           |
+    | | *Default*: the project's :code:`balancing_type_project`               |
+    |                                                                         |
+    | The balancing type of the horizons over which the max-losses limit      |
+    | applies. The project's :code:`balancing_type_project` continues to      |
+    | govern chronology (state-of-charge tracking and horizon-boundary        |
+    | handling).                                                              |
     +-------------------------------------------------------------------------+
     | | :code:`stor_losses_factor_curtailment`                                |
     | | *Defined over*: :code:`STOR`                                          |
@@ -348,10 +377,20 @@ def add_model_components(
 
     m.STOR_EXOG_SOC_TMPS = Set(within=m.STOR_OPR_TMPS)
 
+    # Declared before STOR_OPR_BT_HRZ, whose initializer reads it: Pyomo
+    # constructs components in declaration order, and sparse membership in a
+    # not-yet-constructed Param is silently False. No default: unspecified
+    # means the project's balancing_type_project (see
+    # get_energy_budget_balancing_type).
+    m.stor_energy_budget_balancing_type = Param(m.STOR, within=m.BLN_TYPES)
+
     def stor_opr_bt_hrz_set_init(mod):
         prj_bt_hrz = []
         for prj in mod.STOR:
-            bt = mod.balancing_type_project[prj]
+            # The horizons over which the max-losses limit applies
+            bt = get_energy_budget_balancing_type(
+                mod, prj, mod.stor_energy_budget_balancing_type
+            )
             for hrz in mod.HRZS_BY_BLN_TYPE[bt]:
                 # Add to the set if all timepoints in the horizon are in
                 # the project's operational timepoints

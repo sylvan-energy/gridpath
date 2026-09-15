@@ -385,6 +385,13 @@ def add_model_components(
         ),
     )
 
+    # Declared right after the project set: the budget-allocation components'
+    # initializers read it, and Pyomo constructs components in declaration
+    # order (sparse membership in a not-yet-constructed Param is silently
+    # False). No default: unspecified means the project's
+    # balancing_type_project (see get_energy_budget_balancing_type).
+    m.gen_hydro_energy_budget_balancing_type = Param(m.GEN_HYDRO, within=m.BLN_TYPES)
+
     m.GEN_HYDRO_OPR_BT_HRZS = Set(dimen=3)
 
     m.GEN_HYDRO_OPR_TMPS = Set(
@@ -415,10 +422,6 @@ def add_model_components(
     m.gen_hydro_ramp_down_when_on_rate = Param(
         m.GEN_HYDRO, within=NonNegativeReals, default=float("inf")
     )
-
-    # No default: unspecified means the project's balancing_type_project (see
-    # get_energy_budget_balancing_type)
-    m.gen_hydro_energy_budget_balancing_type = Param(m.GEN_HYDRO, within=m.BLN_TYPES)
 
     m.gen_hydro_aux_consumption_frac_capacity = Param(
         m.GEN_HYDRO, within=PercentFraction, default=0

@@ -1987,6 +1987,23 @@ def validate_inputs(
     opchar_df = pd.read_sql(sql, conn)
 
     su_errors = validate_startup_shutdown_rate_inputs(opchar_df, su_df, hrs_in_tmp)
+
+    # Balancing types must exist in the temporal scenario
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_project_operational_chars",
+        severity="High",
+        errors=validate_project_balancing_types(
+            conn=conn, subscenarios=subscenarios, subproblem=subproblem, stage=stage
+        ),
+    )
     write_validation_to_database(
         conn=conn,
         scenario_id=scenario_id,
@@ -2009,6 +2026,53 @@ def validate_inputs(
 
     # TODO: check that there is no overlap between simple and by-type
     #  startup cost
+
+
+def validate_project_balancing_types(conn, subscenarios, subproblem, stage):
+    """
+    Each portfolio project's balancing_type_project and, where specified,
+    energy_budget_balancing_type must be balancing types of the temporal
+    scenario (for this subproblem and stage); the model otherwise fails when
+    loading projects.tab.
+
+    :return: list of error strings (empty if all balancing types are valid)
+    """
+    c = conn.cursor()
+    temporal_bts = {bt for (bt,) in c.execute(f"""SELECT DISTINCT balancing_type_horizon
+            FROM inputs_temporal_horizon_timepoints
+            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            AND subproblem_id = {subproblem}
+            AND stage_id = {stage};""").fetchall()}
+    project_bts = c.execute(
+        f"""SELECT project, balancing_type_project, energy_budget_balancing_type
+        FROM inputs_project_operational_chars
+        WHERE project_operational_chars_scenario_id =
+        {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+        AND project IN (
+            SELECT project FROM inputs_project_portfolios
+            WHERE project_portfolio_scenario_id =
+            {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+        );"""
+    ).fetchall()
+
+    errors = []
+    for column, idx in [
+        ("balancing_type_project", 1),
+        ("energy_budget_balancing_type", 2),
+    ]:
+        unknown = {
+            row[0]: row[idx]
+            for row in project_bts
+            if row[idx] is not None and row[idx] not in temporal_bts
+        }
+        if unknown:
+            errors.append(
+                f"project(s) {sorted(unknown)}: {column} "
+                f"{sorted(set(unknown.values()))} is not a balancing type of "
+                f"the temporal scenario {sorted(temporal_bts)}."
+            )
+
+    return errors
 
 
 def get_slopes_intercept_by_project_period_segment(df, input_col, projects, periods):

@@ -1044,12 +1044,12 @@ def validate_hydro_opchars(
     df = cursor_to_df(hydro_chars)
     value_cols = ["min_power_fraction", "average_power_fraction", "max_power_fraction"]
 
-    # The energy-budget balancing type of each project of this type in the
-    # portfolio (energy_budget_balancing_type if specified, else
-    # balancing_type_project) must be one of the temporal scenario's
-    # balancing types, and the project's hydro opchar rows must be for
-    # horizons of that balancing type: rows for any other balancing type are
-    # never looked up by the min/max power and energy-budget constraints
+    # Each project's hydro opchar rows must be for horizons of its
+    # energy-budget balancing type (energy_budget_balancing_type if
+    # specified, else balancing_type_project): rows for any other balancing
+    # type are never looked up by the min/max power and energy-budget
+    # constraints. (That the balancing types exist in the temporal scenario
+    # is validated in gridpath.project.operations.)
     c = conn.cursor()
     budget_bt_by_prj = dict(c.execute(f"""SELECT project,
             COALESCE(energy_budget_balancing_type, balancing_type_project)
@@ -1062,21 +1062,7 @@ def validate_hydro_opchars(
                 WHERE project_portfolio_scenario_id =
                 {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
             );""").fetchall())
-    temporal_bts = {bt for (bt,) in c.execute(f"""SELECT DISTINCT balancing_type_horizon
-            FROM inputs_temporal_horizon_timepoints
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            AND subproblem_id = {subproblem}
-            AND stage_id = {stage};""").fetchall()}
-    unknown_bt = {
-        prj: bt for prj, bt in budget_bt_by_prj.items() if bt not in temporal_bts
-    }
     bt_errors = []
-    if unknown_bt:
-        bt_errors.append(
-            f"project(s) {sorted(unknown_bt)}: energy-budget balancing type(s) "
-            f"{sorted(set(unknown_bt.values()))} are not balancing types of "
-            f"the temporal scenario {sorted(temporal_bts)}."
-        )
     mismatched = df[df["balancing_type_project"] != df["project"].map(budget_bt_by_prj)]
     if not mismatched.empty:
         bt_errors.append(

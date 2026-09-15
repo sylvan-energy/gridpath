@@ -39,6 +39,7 @@ from gridpath.project.operations.operational_types.common_functions import (
 from gridpath.project.operations.operational_types.gen_hydro_common import (
     HYDRO_BUDGET_ALLOCATION_TAB_FILE,
 )
+from gridpath.project.operations import validate_project_balancing_types
 from tests.common_functions import add_components_and_load_data
 
 TEST_DATA_DIRECTORY = os.path.join(
@@ -67,6 +68,9 @@ GEN_HYDRO_MODULE = import_module(
 )
 GEN_HYDRO_MUST_TAKE_MODULE = import_module(
     ".project.operations.operational_types.gen_hydro_must_take", package="gridpath"
+)
+STOR_MODULE = import_module(
+    ".project.operations.operational_types.stor", package="gridpath"
 )
 HYDRO_TAB_FILE = "hydro_conventional_horizon_params.tab"
 
@@ -273,6 +277,63 @@ class TestEnergyBudgetBalancingTypeModel(unittest.TestCase):
         finally:
             logger.disabled = was_disabled
 
+    @staticmethod
+    def losses_horizon_bts(instance, prj):
+        return {
+            bt
+            for (p, bt, hrz) in instance.STOR_OPR_BT_HRZ
+            if p == prj and (p, bt, hrz) in instance.Stor_Max_Losses_Constraint
+        }
+
+    def test_storage_default_is_balancing_type_project(self):
+        self.set_project_chars(
+            "Battery_Specified", max_losses_in_hrz_frac_stor_energy_capacity="0.1"
+        )
+        instance = self.build_instance(STOR_MODULE)
+        self.assertEqual(
+            [], list(instance.stor_energy_budget_balancing_type.sparse_keys())
+        )
+        self.assertEqual(
+            {"day"}, self.losses_horizon_bts(instance, "Battery_Specified")
+        )
+
+    def test_storage_losses_limit_by_year_with_day_chronology(self):
+        self.set_project_chars(
+            "Battery_Specified",
+            max_losses_in_hrz_frac_stor_energy_capacity="0.1",
+            energy_budget_balancing_type="year",
+        )
+        instance = self.build_instance(STOR_MODULE)
+        self.assertEqual(
+            {"Battery_Specified": "year"},
+            dict(instance.stor_energy_budget_balancing_type.items()),
+        )
+        # The losses limit applies over the year horizons ...
+        self.assertEqual(
+            {"year"}, self.losses_horizon_bts(instance, "Battery_Specified")
+        )
+        self.assertFalse(
+            [
+                idx
+                for idx in instance.STOR_OPR_BT_HRZ
+                if idx[0] == "Battery_Specified" and idx[1] == "day"
+            ]
+        )
+        # ... while state-of-charge tracking still follows the circular day:
+        # the first timepoint of day 202001 tracks from the day's last one
+        self.assertEqual(
+            {20200124},
+            {
+                v.index()[1]
+                for v in identify_variables(
+                    instance.Stor_Energy_Tracking_Constraint[
+                        "Battery_Specified", 20200101
+                    ].body
+                )
+                if v.index()[1] != 20200101
+            },
+        )
+
 
 class SubScenariosStub:
     PROJECT_PORTFOLIO_SCENARIO_ID = 1
@@ -342,6 +403,25 @@ class TestEnergyBudgetBalancingTypeValidation(unittest.TestCase):
             )
         self.conn.commit()
 
+    def set_inputs_for(self, project, balancing_type_project, energy_budget_bt):
+        """
+        Add a non-hydro opchar row; 'Other' is in the portfolio, any other
+        name is not.
+        """
+        c = self.conn.cursor()
+        if project == "Other":
+            c.execute("""INSERT INTO inputs_project_portfolios
+                (project_portfolio_scenario_id, project, capacity_type)
+                VALUES (1, 'Other', 'gen_spec')""")
+        c.execute(
+            """INSERT INTO inputs_project_operational_chars
+            (project_operational_chars_scenario_id, project, operational_type,
+            balancing_type_project, energy_budget_balancing_type)
+            VALUES (1, ?, 'gen_simple', ?, ?)""",
+            (project, balancing_type_project, energy_budget_bt),
+        )
+        self.conn.commit()
+
     def get_validation_errors(self):
         validate_hydro_opchars(
             scenario_id=1,
@@ -376,12 +456,34 @@ class TestEnergyBudgetBalancingTypeValidation(unittest.TestCase):
         self.assertIn("['year']", errors[0][1])
         self.assertIn("energy-budget balancing type", errors[0][1])
 
-    def test_balancing_type_not_in_temporal_scenario_flagged(self):
+    def get_balancing_type_errors(self):
+        return validate_project_balancing_types(
+            conn=self.conn, subscenarios=SubScenariosStub(), subproblem=1, stage=1
+        )
+
+    def test_balancing_types_in_temporal_scenario_pass(self):
+        self.set_inputs("year", "day", [("day", 202001), ("day", 202002)])
+        self.assertListEqual([], self.get_balancing_type_errors())
+        self.set_inputs_for("Other", "day", None)
+        self.assertListEqual([], self.get_balancing_type_errors())
+
+    def test_energy_budget_balancing_type_not_in_temporal_scenario_flagged(self):
         self.set_inputs("year", "month", [("year", 2020)])
-        errors = self.get_validation_errors()
-        self.assertEqual("High", errors[0][0])
-        self.assertIn("['month']", errors[0][1])
-        self.assertIn("not balancing types of the temporal scenario", errors[0][1])
+        errors = self.get_balancing_type_errors()
+        self.assertEqual(1, len(errors))
+        self.assertIn("energy_budget_balancing_type ['month']", errors[0])
+        self.assertIn("['Hydro']", errors[0])
+
+    def test_balancing_type_project_not_in_temporal_scenario_flagged(self):
+        self.set_inputs("month", None, [("month", 202001)])
+        errors = self.get_balancing_type_errors()
+        self.assertEqual(1, len(errors))
+        self.assertIn("balancing_type_project ['month']", errors[0])
+
+    def test_projects_outside_portfolio_ignored(self):
+        self.set_inputs("year", "day", [("day", 202001)])
+        self.set_inputs_for("Not_In_Portfolio", "month", "week")
+        self.assertListEqual([], self.get_balancing_type_errors())
 
 
 if __name__ == "__main__":
