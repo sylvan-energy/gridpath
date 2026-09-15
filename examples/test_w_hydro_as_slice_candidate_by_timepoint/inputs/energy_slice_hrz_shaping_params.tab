@@ -1,0 +1,3 @@
+project	balancing_type_project	horizon	hrz_energy	min_power	max_power
+Hydro	timepoint	20200101	10512.0	1.000002	6.0
+Hydro	timepoint	20200102	15768.0	1.000002	6.0

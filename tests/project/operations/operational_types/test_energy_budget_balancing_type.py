@@ -65,6 +65,23 @@ PREREQUISITE_MODULE_NAMES = [
 IMPORTED_PREREQ_MODULES = [
     import_module("." + mdl, package="gridpath") for mdl in PREREQUISITE_MODULE_NAMES
 ]
+# energy_slice_hrz_shaping also needs the project potential (max_total_energy)
+SLICE_PREREQUISITE_MODULE_NAMES = [
+    "temporal.operations.timepoints",
+    "temporal.investment.periods",
+    "temporal.operations.horizons",
+    "geography.load_zones",
+    "project",
+    "project.capacity.capacity",
+    "project.capacity.potential",
+    "project.availability.availability",
+    "project.fuels",
+    "project.operations",
+]
+IMPORTED_SLICE_PREREQ_MODULES = [
+    import_module("." + mdl, package="gridpath")
+    for mdl in SLICE_PREREQUISITE_MODULE_NAMES
+]
 GEN_HYDRO_MODULE = import_module(
     ".project.operations.operational_types.gen_hydro", package="gridpath"
 )
@@ -76,6 +93,13 @@ STOR_MODULE = import_module(
 )
 ENERGY_HRZ_SHAPING_MODULE = import_module(
     ".project.operations.operational_types.energy_hrz_shaping", package="gridpath"
+)
+ENERGY_SLICE_HRZ_SHAPING_MODULE = import_module(
+    ".project.operations.operational_types.energy_slice_hrz_shaping",
+    package="gridpath",
+)
+STOR_STRESS_HRZ_MODULE = import_module(
+    ".project.operations.operational_types.stor_stress_hrz", package="gridpath"
 )
 HYDRO_TAB_FILE = "hydro_conventional_horizon_params.tab"
 
@@ -116,9 +140,9 @@ class TestEnergyBudgetBalancingTypeModel(unittest.TestCase):
         )
         pd.concat([df, new]).to_csv(path, sep="\t", index=False)
 
-    def build_instance(self, module):
+    def build_instance(self, module, prereq_modules=IMPORTED_PREREQ_MODULES):
         m, data = add_components_and_load_data(
-            prereq_modules=IMPORTED_PREREQ_MODULES,
+            prereq_modules=prereq_modules,
             module_to_test=module,
             test_data_dir=self.test_data_dir,
             weather_iteration="",
@@ -380,6 +404,111 @@ class TestEnergyBudgetBalancingTypeModel(unittest.TestCase):
         self.assertIsNotNone(
             ENERGY_HRZ_SHAPING_MODULE.power_delta_rule(
                 instance, "Energy_Hrz_Shaping", 20200202
+            )
+        )
+
+    def test_energy_slice_hrz_shaping_budgets_by_year_with_day_chronology(self):
+        self.set_project_chars(
+            "Energy_Slice_Hrz_Shaping", energy_budget_balancing_type="year"
+        )
+        path = os.path.join(
+            self.test_data_dir, "inputs", "energy_slice_hrz_shaping_params.tab"
+        )
+        with open(path, "w") as f:
+            f.write(
+                "project\tbalancing_type_project\thorizon\thrz_energy\tmin_power"
+                "\tmax_power\n"
+                "Energy_Slice_Hrz_Shaping\tyear\t2020\t2000\t1.000002\t6\n"
+                "Energy_Slice_Hrz_Shaping\tyear\t2030\t2000\t1.000002\t6\n"
+            )
+        instance = self.build_instance(
+            ENERGY_SLICE_HRZ_SHAPING_MODULE, IMPORTED_SLICE_PREREQ_MODULES
+        )
+        self.assertEqual(
+            {"Energy_Slice_Hrz_Shaping": "year"},
+            dict(
+                instance.energy_slice_hrz_shaping_energy_budget_balancing_type.items()
+            ),
+        )
+        self.assertListEqual(
+            [
+                ("Energy_Slice_Hrz_Shaping", "year", 2020),
+                ("Energy_Slice_Hrz_Shaping", "year", 2030),
+            ],
+            sorted(instance.ENERGY_SLICE_HRZ_SHAPING_OPR_BT_HRZS),
+        )
+        self.assertIn(
+            ("Energy_Slice_Hrz_Shaping", 20200201),
+            instance.EnergySliceHrzShaping_Max_Power_Constraint,
+        )
+        # Chronology still follows the days (linear day 202002)
+        self.assertIsNone(
+            ENERGY_SLICE_HRZ_SHAPING_MODULE.power_delta_rule(
+                instance, "Energy_Slice_Hrz_Shaping", 20200201
+            )
+        )
+        self.assertIsNotNone(
+            ENERGY_SLICE_HRZ_SHAPING_MODULE.power_delta_rule(
+                instance, "Energy_Slice_Hrz_Shaping", 20200202
+            )
+        )
+
+    @staticmethod
+    def tracked_from_tmps(instance, prj, tmp):
+        """
+        The other timepoints whose starting state of charge enters the
+        stress-horizon tracking constraint at *tmp*.
+        """
+        return {
+            v.index()[1]
+            for v in identify_variables(
+                instance.StorStressHrz_Stress_Hrz_Energy_Tracking_Constraint[
+                    prj, tmp
+                ].body
+            )
+            if v.parent_component().name
+            == "StorStressHrz_Starting_Energy_in_Storage_MWh"
+            and v.index()[1] != tmp
+        }
+
+    def test_stor_stress_hrz_horizons_by_day_with_year_chronology(self):
+        """
+        The fixture types day 202002 as a stress horizon. With the project
+        on the circular year, the horizon typing and the stress-horizon
+        state-of-charge chain still follow the days.
+        """
+        prj = "Battery_Stress_Hrz"
+        self.set_project_chars(
+            prj, balancing_type_project="year", energy_budget_balancing_type="day"
+        )
+        instance = self.build_instance(STOR_STRESS_HRZ_MODULE)
+        self.assertEqual(
+            {prj: "day"},
+            dict(instance.stor_stress_hrz_energy_budget_balancing_type.items()),
+        )
+        self.assertListEqual(
+            [(prj, "day", 202001), (prj, "day", 202002)],
+            sorted(instance.STOR_STRESS_HRZ_OPR_BT_HRZ),
+        )
+        self.assertListEqual(
+            [(prj, "day", 202002)], sorted(instance.STOR_STRESS_HRZ_STRESS_OPR_BT_HRZ)
+        )
+        # First stress-horizon timepoint is anchored (tracked from no other
+        # timepoint); the next one tracks from it
+        self.assertEqual(set(), self.tracked_from_tmps(instance, prj, 20200201))
+        self.assertEqual({20200201}, self.tracked_from_tmps(instance, prj, 20200202))
+        # The tuning-cost power delta follows the year: at the stress
+        # horizon's first timepoint it reaches back into the preceding
+        # average-condition day (which has no discharging variable)
+        self.assertIsNotNone(
+            STOR_STRESS_HRZ_MODULE.power_delta_rule(instance, prj, 20200201)
+        )
+
+    def test_stor_stress_hrz_default_power_delta_skips_linear_day_start(self):
+        instance = self.build_instance(STOR_STRESS_HRZ_MODULE)
+        self.assertIsNone(
+            STOR_STRESS_HRZ_MODULE.power_delta_rule(
+                instance, "Battery_Stress_Hrz", 20200201
             )
         )
 

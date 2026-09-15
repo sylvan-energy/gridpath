@@ -1,0 +1,3 @@
+weather_iteration,hydro_iteration,stage_id,balancing_type_project,horizon,hrz_energy,min_power,max_power
+0,0,1,timepoint,20200101,10512,1.000002,6
+0,0,1,timepoint,20200102,15768,1.000002,6
