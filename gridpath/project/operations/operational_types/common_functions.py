@@ -1004,6 +1004,69 @@ def load_hydro_opchars(
     data_portal.data()["{}_max_power_fraction".format(op_type)] = max
 
 
+def validate_energy_budget_balancing_type_rows(
+    conn,
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    op_type,
+    db_table,
+    df,
+):
+    """
+    Each *op_type* portfolio project's (balancing type, horizon)-indexed
+    opchar rows in *df* (columns include project and balancing_type_project)
+    must be for horizons of the project's energy-budget balancing type
+    (energy_budget_balancing_type if specified, else balancing_type_project):
+    rows for any other balancing type are never looked up by the per-horizon
+    constraints. Writes a High-severity validation error to the database if
+    not. (That the balancing types exist in the temporal scenario is
+    validated in gridpath.project.operations.)
+    """
+    c = conn.cursor()
+    budget_bt_by_prj = dict(c.execute(f"""SELECT project,
+            COALESCE(energy_budget_balancing_type, balancing_type_project)
+            FROM inputs_project_operational_chars
+            WHERE project_operational_chars_scenario_id =
+            {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+            AND operational_type = '{op_type}'
+            AND project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            );""").fetchall())
+    mismatched = df[df["balancing_type_project"] != df["project"].map(budget_bt_by_prj)]
+    errors = (
+        [
+            f"project(s) {sorted(mismatched['project'].unique())}: {db_table} "
+            f"rows are specified for horizons of balancing type(s) "
+            f"{sorted(mismatched['balancing_type_project'].unique())}, which "
+            f"is not the project's energy-budget balancing type "
+            f"(energy_budget_balancing_type if specified, else "
+            f"balancing_type_project)."
+        ]
+        if not mismatched.empty
+        else []
+    )
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table=db_table,
+        severity="High",
+        errors=errors,
+    )
+
+
 def validate_hydro_opchars(
     scenario_id,
     subscenarios,
@@ -1044,47 +1107,18 @@ def validate_hydro_opchars(
     df = cursor_to_df(hydro_chars)
     value_cols = ["min_power_fraction", "average_power_fraction", "max_power_fraction"]
 
-    # Each project's hydro opchar rows must be for horizons of its
-    # energy-budget balancing type (energy_budget_balancing_type if
-    # specified, else balancing_type_project): rows for any other balancing
-    # type are never looked up by the min/max power and energy-budget
-    # constraints. (That the balancing types exist in the temporal scenario
-    # is validated in gridpath.project.operations.)
-    c = conn.cursor()
-    budget_bt_by_prj = dict(c.execute(f"""SELECT project,
-            COALESCE(energy_budget_balancing_type, balancing_type_project)
-            FROM inputs_project_operational_chars
-            WHERE project_operational_chars_scenario_id =
-            {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
-            AND operational_type = '{op_type}'
-            AND project IN (
-                SELECT project FROM inputs_project_portfolios
-                WHERE project_portfolio_scenario_id =
-                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-            );""").fetchall())
-    bt_errors = []
-    mismatched = df[df["balancing_type_project"] != df["project"].map(budget_bt_by_prj)]
-    if not mismatched.empty:
-        bt_errors.append(
-            f"project(s) {sorted(mismatched['project'].unique())}: hydro "
-            f"operational chars are specified for horizons of balancing "
-            f"type(s) {sorted(mismatched['balancing_type_project'].unique())}, "
-            f"which is not the project's energy-budget balancing type "
-            f"(energy_budget_balancing_type if specified, else "
-            f"balancing_type_project)."
-        )
-    write_validation_to_database(
+    validate_energy_budget_balancing_type_rows(
         conn=conn,
         scenario_id=scenario_id,
+        subscenarios=subscenarios,
         weather_iteration=weather_iteration,
         hydro_iteration=hydro_iteration,
         availability_iteration=availability_iteration,
-        subproblem_id=subproblem,
-        stage_id=stage,
-        gridpath_module=__name__,
+        subproblem=subproblem,
+        stage=stage,
+        op_type=op_type,
         db_table="inputs_project_hydro_operational_chars",
-        severity="High",
-        errors=bt_errors,
+        df=df,
     )
 
     # Check for missing inputs

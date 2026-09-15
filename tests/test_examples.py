@@ -2210,6 +2210,20 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_w_hydro_as_energy_no_reserves"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_w_hydro_as_energy_no_reserves_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_as_energy_no_reserves_by_timepoint" example: as
+        "test_w_hydro_as_energy_no_reserves" on a temporal scenario that
+        also has a 'timepoint' balancing type; the Hydro project's horizon
+        energy shaping inputs are specified per timepoint via
+        energy_budget_balancing_type (40%/60% of its energy in the two
+        timepoints), while its balancing type remains 'day'.
+        :return:
+        """
+        scenario_name = "test_w_hydro_as_energy_no_reserves_by_timepoint"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_w_lf(self):
         """
         Check validation and objective function value of

@@ -34,8 +34,10 @@ from pyomo.core.expr import identify_variables
 from pyomo.repn import generate_standard_repn
 
 from gridpath.project.operations.operational_types.common_functions import (
+    validate_energy_budget_balancing_type_rows,
     validate_hydro_opchars,
 )
+from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.project.operations.operational_types.gen_hydro_common import (
     HYDRO_BUDGET_ALLOCATION_TAB_FILE,
 )
@@ -71,6 +73,9 @@ GEN_HYDRO_MUST_TAKE_MODULE = import_module(
 )
 STOR_MODULE = import_module(
     ".project.operations.operational_types.stor", package="gridpath"
+)
+ENERGY_HRZ_SHAPING_MODULE = import_module(
+    ".project.operations.operational_types.energy_hrz_shaping", package="gridpath"
 )
 HYDRO_TAB_FILE = "hydro_conventional_horizon_params.tab"
 
@@ -334,6 +339,50 @@ class TestEnergyBudgetBalancingTypeModel(unittest.TestCase):
             },
         )
 
+    def test_energy_hrz_shaping_budgets_by_year_with_day_chronology(self):
+        self.set_project_chars(
+            "Energy_Hrz_Shaping", energy_budget_balancing_type="year"
+        )
+        path = os.path.join(
+            self.test_data_dir, "inputs", "energy_hrz_shaping_params.tab"
+        )
+        with open(path, "w") as f:
+            f.write(
+                "project\tbalancing_type_project\thorizon\thrz_energy_fraction\tmin_power\tmax_power\n"
+            )
+            for hrz in (2020, 2030):
+                f.write(f"Energy_Hrz_Shaping\tyear\t{hrz}\t1\t1.000002\t6\n")
+        instance = self.build_instance(ENERGY_HRZ_SHAPING_MODULE)
+        self.assertEqual(
+            {"Energy_Hrz_Shaping": "year"},
+            dict(instance.energy_hrz_shaping_energy_budget_balancing_type.items()),
+        )
+        self.assertListEqual(
+            [
+                ("Energy_Hrz_Shaping", "year", 2020),
+                ("Energy_Hrz_Shaping", "year", 2030),
+            ],
+            sorted(instance.ENERGY_HRZ_SHAPING_OPR_BT_HRZS),
+        )
+        # Min/max power constraints look the year horizon up for every
+        # timepoint
+        self.assertIn(
+            ("Energy_Hrz_Shaping", 20200201),
+            instance.EnergyHrzShaping_Max_Power_Constraint,
+        )
+        # Chronology still follows the days: no power delta at the first
+        # timepoint of the linear day 202002, but one within the day
+        self.assertIsNone(
+            ENERGY_HRZ_SHAPING_MODULE.power_delta_rule(
+                instance, "Energy_Hrz_Shaping", 20200201
+            )
+        )
+        self.assertIsNotNone(
+            ENERGY_HRZ_SHAPING_MODULE.power_delta_rule(
+                instance, "Energy_Hrz_Shaping", 20200202
+            )
+        )
+
 
 class SubScenariosStub:
     PROJECT_PORTFOLIO_SCENARIO_ID = 1
@@ -437,6 +486,74 @@ class TestEnergyBudgetBalancingTypeValidation(unittest.TestCase):
         return self.conn.execute(
             "SELECT severity, description FROM status_validation"
         ).fetchall()
+
+    def set_shaping_inputs(self, balancing_type_project, energy_budget_bt, rows):
+        c = self.conn.cursor()
+        c.execute("""INSERT INTO inputs_project_portfolios
+            (project_portfolio_scenario_id, project, capacity_type)
+            VALUES (1, 'Shaped', 'energy_spec')""")
+        c.execute(
+            """INSERT INTO inputs_project_operational_chars
+            (project_operational_chars_scenario_id, project, operational_type,
+            balancing_type_project, energy_budget_balancing_type,
+            energy_hrz_shaping_scenario_id)
+            VALUES (1, 'Shaped', 'energy_hrz_shaping', ?, ?, 1)""",
+            (balancing_type_project, energy_budget_bt),
+        )
+        c.execute("""INSERT INTO inputs_project_energy_hrz_shaping_iterations
+            (project, energy_hrz_shaping_scenario_id,
+            varies_by_weather_iteration, varies_by_hydro_iteration)
+            VALUES ('Shaped', 1, 0, 0)""")
+        for bt, hrz in rows:
+            c.execute(
+                """INSERT INTO inputs_project_energy_hrz_shaping
+                (project, energy_hrz_shaping_scenario_id, weather_iteration,
+                hydro_iteration, stage_id, balancing_type_project, horizon,
+                hrz_energy_fraction, min_power, max_power)
+                VALUES ('Shaped', 1, 0, 0, 1, ?, ?, 0.5, 1, 6)""",
+                (bt, hrz),
+            )
+        self.conn.commit()
+
+    def get_shaping_validation_errors(self):
+        df = cursor_to_df(
+            ENERGY_HRZ_SHAPING_MODULE.get_energy_hrz_shaping_inputs_from_db(
+                subscenarios=SubScenariosStub(),
+                weather_iteration=0,
+                hydro_iteration=0,
+                availability_iteration=0,
+                subproblem=1,
+                stage=1,
+                conn=self.conn,
+            )
+        )
+        validate_energy_budget_balancing_type_rows(
+            conn=self.conn,
+            scenario_id=1,
+            subscenarios=SubScenariosStub(),
+            weather_iteration=0,
+            hydro_iteration=0,
+            availability_iteration=0,
+            subproblem=1,
+            stage=1,
+            op_type="energy_hrz_shaping",
+            db_table="inputs_project_energy_hrz_shaping",
+            df=df,
+        )
+        return self.conn.execute(
+            "SELECT severity, description FROM status_validation"
+        ).fetchall()
+
+    def test_energy_hrz_shaping_rows_by_budget_balancing_type_pass(self):
+        self.set_shaping_inputs("day", "year", [("year", 2020)])
+        self.assertListEqual([], self.get_shaping_validation_errors())
+
+    def test_energy_hrz_shaping_rows_for_other_balancing_type_flagged(self):
+        self.set_shaping_inputs("day", "year", [("day", 202001), ("day", 202002)])
+        errors = self.get_shaping_validation_errors()
+        self.assertEqual(1, len(errors))
+        self.assertIn("inputs_project_energy_hrz_shaping", errors[0][1])
+        self.assertIn("['day']", errors[0][1])
 
     def test_default_balancing_type_passes(self):
         self.set_inputs("day", None, [("day", 202001), ("day", 202002)])
