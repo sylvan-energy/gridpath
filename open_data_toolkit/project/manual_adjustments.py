@@ -290,7 +290,7 @@ def main(args=None):
             # CSV rows, so a superset fleet is harmless — and required if
             # the CSVs were generated with include_planned_retirements or
             # include_net_metered (BTM-sector units are in the default
-            # fleet already; exclude_btm_plants is deliberately not set)
+            # fleet already; exclude_commercial_industrial_sectors is deliberately not set)
             include_planned_retirements=True,
             include_net_metered=True,
         ),

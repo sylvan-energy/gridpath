@@ -63,7 +63,7 @@ NEVER_INCLUDED_STATUS_CODES = ("CN", "IP", "OZ")
 # load can therefore double-count their energy — but the sector is an
 # ownership-based proxy that also catches genuinely BA-metered exporting
 # cogens, so the project steps KEEP these units by default and offer the
-# blanket sector exclusion as the opt-in exclude_btm_plants setting (the
+# blanket sector exclusion as the opt-in exclude_commercial_industrial_sectors setting (the
 # per-generator net-metering flag and user_defined_unit_overrides are the
 # sharper per-unit instruments). The annual
 # generators table carries only sector_name_eia at monthly-update
@@ -78,7 +78,7 @@ NEVER_INCLUDED_STATUS_CODES = ("CN", "IP", "OZ")
 # sectors, NOT behind-the-meter). The ids are stable; only names drift —
 # ALL_KNOWN_SECTOR_NAMES + warn_on_uncovered_sector_names guard against
 # the next rename silently breaking this classification.
-BTM_SECTOR_NAMES = (
+COMMERCIAL_INDUSTRIAL_SECTOR_NAMES = (
     "Commercial CHP",
     "Commercial Non-CHP",
     "Industrial CHP",
@@ -89,25 +89,28 @@ BTM_SECTOR_NAMES = (
     "Industrial NAICS Cogen",
     "Industrial NAICS Non-Cogen",
 )
-BTM_SECTOR_IDS = (4, 5, 6, 7)
+COMMERCIAL_INDUSTRIAL_SECTOR_IDS = (4, 5, 6, 7)
 
-# Every sector_name_eia value the classification accounts for — the BTM
-# names above plus the electric-power-industry sectors (never BTM). A name
-# outside this set silently fails the BTM IN test (the unit is then KEPT,
+# Every sector_name_eia value the classification accounts for — the
+# commercial/industrial names above plus the electric-power-industry
+# sectors (never excluded). A name
+# outside this set silently fails the sector IN test (the unit is then KEPT,
 # like a NULL sector), so warn_on_uncovered_sector_names flags vocabulary
 # changes in future dataset versions loudly.
-NON_BTM_SECTOR_NAMES = (
+ELECTRIC_POWER_SECTOR_NAMES = (
     "Electric Utility",
     "IPP Non-CHP",
     "IPP CHP",
     "NAICS-22 Non-Cogen",
     "NAICS-22 Cogen",
 )
-ALL_KNOWN_SECTOR_NAMES = BTM_SECTOR_NAMES + NON_BTM_SECTOR_NAMES
+ALL_KNOWN_SECTOR_NAMES = (
+    COMMERCIAL_INDUSTRIAL_SECTOR_NAMES + ELECTRIC_POWER_SECTOR_NAMES
+)
 
 # Which sector column to test in each generators table, per the vintage
-# note above — used by the BTM filter and by warn_on_null_sector_rows
-BTM_SECTOR_COLUMN = {
+# note above — used by the sector filter and by warn_on_null_sector_rows
+SECTOR_COLUMN = {
     "raw_data_eia860_generators": "sector_name_eia",
     "raw_data_eia860m_generators": "sector_id_eia",
 }
@@ -171,14 +174,15 @@ def warn_on_null_sector_rows(conn, generators_table, sector_column):
     """
     Warn — loudly, regardless of any quiet setting — when
     *generators_table* has NULL values in *sector_column* while the
-    behind-the-meter sector exclusion is active (exclude_btm_plants set).
+    behind-the-meter sector exclusion is active (exclude_commercial_industrial_sectors set).
     NULL-sector units
-    cannot be classified and are KEPT in the fleet, so BTM capacity may
+    cannot be classified and are KEPT in the fleet, so commercial/
+    industrial capacity may
     leak through; an entirely NULL column almost certainly means the raw
     CSVs predate the July 2026 sector columns — re-run
     gridpath_pudl_to_gridpath_raw (after re-downloading with
     gridpath_get_pudl_data) to fill them. Callers should run this check
-    only when exclude_btm_plants is set. Returns (n_null_units, null_mw,
+    only when exclude_commercial_industrial_sectors is set. Returns (n_null_units, null_mw,
     n_rows).
     """
     n_null, null_mw, n_rows = conn.cursor().execute(f"""
@@ -217,13 +221,14 @@ def warn_on_uncovered_sector_names(conn, generators_table):
     Warn — loudly, regardless of any quiet setting — when
     *generators_table* contains sector_name_eia values outside
     ALL_KNOWN_SECTOR_NAMES while the behind-the-meter sector exclusion is
-    active. The BTM test is an IN test against BTM_SECTOR_NAMES, so an
+    active. The sector test is an IN test against
+    COMMERCIAL_INDUSTRIAL_SECTOR_NAMES, so an
     unrecognized name means those units silently pass the exclusion (kept,
     like NULL sectors) — the likely cause is a vocabulary change in a
     newer dataset version (PUDL v2026.9.0 renamed the sectors once
     already; the ids are stable but the annual table carries only names
     at monthly-update vintages). Callers should run this check only when
-    exclude_btm_plants is set, and only for tables classified by name.
+    exclude_commercial_industrial_sectors is set, and only for tables classified by name.
     Returns the list of (name, n_units, capacity_mw) found.
     """
     known_names_str = ", ".join(f"'{n}'" for n in ALL_KNOWN_SECTOR_NAMES)
@@ -248,8 +253,8 @@ def warn_on_uncovered_sector_names(conn, generators_table):
             f"{', '.join(uncovered_strs)}. Units with these sectors PASS "
             f"the behind-the-meter exclusion (they are kept) regardless of "
             f"what sector they really are — the dataset's sector "
-            f"vocabulary may have changed; update BTM_SECTOR_NAMES / "
-            f"NON_BTM_SECTOR_NAMES to cover the new names."
+            f"vocabulary may have changed; update COMMERCIAL_INDUSTRIAL_SECTOR_NAMES / "
+            f"ELECTRIC_POWER_SECTOR_NAMES to cover the new names."
         )
 
     return uncovered
@@ -430,9 +435,9 @@ def get_eia860_sql_filter_string(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    exclude_btm_plants=False,
-    btm_sector_column="sector_name_eia",
-    btm_sector_values=BTM_SECTOR_NAMES,
+    exclude_commercial_industrial_sectors=False,
+    sector_column="sector_name_eia",
+    sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
     include_net_metered=False,
 ):
     """
@@ -455,11 +460,11 @@ def get_eia860_sql_filter_string(
     Units whose EIA-reported PLANNED retirement date falls before the
     end of the study year are also excluded by default;
     *include_planned_retirements* keeps them (see
-    get_retired_filter_string). *exclude_btm_plants* opts into the
+    get_retired_filter_string). *exclude_commercial_industrial_sectors* opts into the
     blanket behind-the-meter SECTOR exclusion — dropping the
     commercial/industrial EIA sectors, whose output typically serves
     onsite load and is netted out of the metered demand that
-    EIA-930-derived load is built from (see BTM_SECTOR_NAMES; NULL-sector
+    EIA-930-derived load is built from (see COMMERCIAL_INDUSTRIAL_SECTOR_NAMES; NULL-sector
     units are always kept). It is OFF by default: the sector is an
     ownership-based proxy that also catches BA-metered exporting cogens,
     so per-unit instruments (the default net-metered exclusion,
@@ -484,9 +489,9 @@ def get_eia860_sql_filter_string(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        exclude_btm_plants=exclude_btm_plants,
-        btm_sector_column=btm_sector_column,
-        btm_sector_values=btm_sector_values,
+        exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors,
+        sector_column=sector_column,
+        sector_values=sector_values,
         include_net_metered=include_net_metered,
     )
     eia860_sql_filter_string = f"""
@@ -521,9 +526,9 @@ def get_characteristics_filter_string(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    exclude_btm_plants=False,
-    btm_sector_column="sector_name_eia",
-    btm_sector_values=BTM_SECTOR_NAMES,
+    exclude_commercial_industrial_sectors=False,
+    sector_column="sector_name_eia",
+    sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
     include_net_metered=False,
 ):
     """
@@ -531,7 +536,7 @@ def get_characteristics_filter_string(
     stage 2): the planned-operating-date window vs the study year, the
     operational-status / retirement-date selection (see
     get_retired_filter_string and the tier constants), the
-    behind-the-meter sector exclusion (see get_btm_filter_string), and
+    behind-the-meter sector exclusion (see get_commercial_industrial_filter_string), and
     the net-metered exclusion (see get_net_metering_filter_string).
     Everything about WHAT the unit is; nothing about where it is.
     """
@@ -544,10 +549,10 @@ def get_characteristics_filter_string(
         include_retired=include_retired,
         include_planned_retirements=include_planned_retirements,
     )
-    btm_filter_string = get_btm_filter_string(
-        exclude_btm_plants=exclude_btm_plants,
-        sector_column=btm_sector_column,
-        btm_sector_values=btm_sector_values,
+    commercial_industrial_filter_string = get_commercial_industrial_filter_string(
+        exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors,
+        sector_column=sector_column,
+        sector_values=sector_values,
     )
     net_metering_filter_string = get_net_metering_filter_string(
         include_net_metered=include_net_metered
@@ -555,7 +560,7 @@ def get_characteristics_filter_string(
     planned_date_window_string = get_planned_date_window_string(study_year=study_year)
     return f"""{planned_date_window_string}
      {retired_filter_string}
-     {btm_filter_string}
+     {commercial_industrial_filter_string}
      {net_metering_filter_string}"""
 
 
@@ -578,7 +583,7 @@ def get_eia860m_sql_filter_string(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    exclude_btm_plants=False,
+    exclude_commercial_industrial_sectors=False,
     include_net_metered=False,
 ):
     """
@@ -599,9 +604,9 @@ def get_eia860m_sql_filter_string(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        exclude_btm_plants=exclude_btm_plants,
-        btm_sector_column="sector_id_eia",
-        btm_sector_values=BTM_SECTOR_IDS,
+        exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors,
+        sector_column="sector_id_eia",
+        sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_IDS,
         include_net_metered=include_net_metered,
     )
 
@@ -645,24 +650,24 @@ def get_retired_filter_string(
     return retired_filter_string
 
 
-def get_btm_filter_string(
-    exclude_btm_plants,
+def get_commercial_industrial_filter_string(
+    exclude_commercial_industrial_sectors,
     sector_column="sector_name_eia",
-    btm_sector_values=BTM_SECTOR_NAMES,
+    sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
 ):
     """
     The behind-the-meter sector part of the EIA860(M) filters: with
-    *exclude_btm_plants*, exclude units in the commercial/industrial EIA
-    sectors (see BTM_SECTOR_NAMES/BTM_SECTOR_IDS), keeping NULL-sector
+    *exclude_commercial_industrial_sectors*, exclude units in the commercial/industrial EIA
+    sectors (see COMMERCIAL_INDUSTRIAL_SECTOR_NAMES/COMMERCIAL_INDUSTRIAL_SECTOR_IDS), keeping NULL-sector
     units — they can't be classified, and silently dropping them would be
     worse than keeping them (warn_on_null_sector_rows makes them loud).
     Without it (the default), no sector filtering at all.
     """
-    if not exclude_btm_plants:
+    if not exclude_commercial_industrial_sectors:
         return ""
 
     sector_values_string = ", ".join(
-        f"'{v}'" if isinstance(v, str) else str(v) for v in btm_sector_values
+        f"'{v}'" if isinstance(v, str) else str(v) for v in sector_values
     )
     return (
         f"AND ({sector_column} IS NULL "
@@ -716,7 +721,7 @@ def get_fleet_relation_sql(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    exclude_btm_plants=False,
+    exclude_commercial_industrial_sectors=False,
     include_net_metered=False,
     generators_table="raw_data_eia860_generators",
     join_ba_map=True,
@@ -755,11 +760,11 @@ def get_fleet_relation_sql(
     no-op.
     """
     if generators_table == "raw_data_eia860m_generators":
-        btm_sector_column = "sector_id_eia"
-        btm_sector_values = BTM_SECTOR_IDS
+        sector_column = "sector_id_eia"
+        sector_values = COMMERCIAL_INDUSTRIAL_SECTOR_IDS
     else:
-        btm_sector_column = "sector_name_eia"
-        btm_sector_values = BTM_SECTOR_NAMES
+        sector_column = "sector_name_eia"
+        sector_values = COMMERCIAL_INDUSTRIAL_SECTOR_NAMES
 
     geographic_filter_string = get_geographic_filter_string(
         footprint=footprint, load_zone_level=load_zone_level
@@ -770,9 +775,9 @@ def get_fleet_relation_sql(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        exclude_btm_plants=exclude_btm_plants,
-        btm_sector_column=btm_sector_column,
-        btm_sector_values=btm_sector_values,
+        exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors,
+        sector_column=sector_column,
+        sector_values=sector_values,
         include_net_metered=include_net_metered,
     )
     include_override_sql = get_unit_override_sql(
@@ -823,7 +828,7 @@ def add_fleet_selection_arguments(parser):
     """
     Add the shared fleet-selection arguments — ``--include_retired``,
     ``--planned_inclusion``, ``--inactive_inclusion``,
-    ``--include_planned_retirements``, ``--exclude_btm_plants``,
+    ``--include_planned_retirements``, ``--exclude_commercial_industrial_sectors``,
     ``--include_net_metered`` — to a project-level step's argument parser.
     Single-sourced here (like add_project_aggregation_arguments) so the
     settings and their --help texts can't drift across the steps; they
@@ -877,21 +882,21 @@ def add_fleet_selection_arguments(parser):
         "no planned retirement date are always kept.",
     )
     parser.add_argument(
-        "-xbtm",
-        "--exclude_btm_plants",
+        "-xci",
+        "--exclude_commercial_industrial_sectors",
         default=False,
         action="store_true",
-        help="Exclude ALL behind-the-meter-type units (the "
-        "commercial/industrial EIA sectors: "
-        f"{', '.join(BTM_SECTOR_NAMES)}). Much of these sectors' output "
-        "serves onsite load — netted out of the metered demand that "
+        help="Exclude ALL units in the commercial/industrial EIA sectors "
+        f"({', '.join(COMMERCIAL_INDUSTRIAL_SECTOR_NAMES)}) — a purely "
+        "SECTOR-based (ownership) classification; EIA-860 has no explicit "
+        "behind-the-meter field. Much of these sectors' output serves "
+        "onsite load — netted out of the metered demand that "
         "EIA-930-derived load is built from — so counting it as supply "
-        "double-counts its energy; but the sector is an ownership-based "
-        "proxy that also catches genuinely BA-metered exporting cogens, "
-        "so this blanket exclusion is OFF by default in favor of the "
-        "per-unit instruments (the default net-metered exclusion and "
-        "user_defined_unit_overrides). Units with no sector in the raw "
-        "data are always kept.",
+        "double-counts its energy; but the sector proxy also catches "
+        "genuinely BA-metered exporting cogens, so this blanket exclusion "
+        "is OFF by default in favor of the per-unit instruments (the "
+        "default net-metered exclusion and user_defined_unit_overrides). "
+        "Units with no sector in the raw data are always kept.",
     )
     parser.add_argument(
         "-nm",

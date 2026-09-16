@@ -90,7 +90,7 @@ Settings
 * planned_inclusion
 * inactive_inclusion
 * include_planned_retirements
-* exclude_btm_plants
+* exclude_commercial_industrial_sectors
 * include_net_metered
 * ba_source
 * load_zone_level
@@ -125,7 +125,7 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     get_net_metering_filter_string,
     get_planned_date_window_string,
     get_retired_filter_string,
-    get_btm_filter_string,
+    get_commercial_industrial_filter_string,
     get_characteristics_filter_string,
 )
 from open_data_toolkit.project.fleet.step_common import (
@@ -173,7 +173,7 @@ def get_fleet_audit_sql(
     planned_inclusion,
     inactive_inclusion,
     include_planned_retirements,
-    exclude_btm_plants,
+    exclude_commercial_industrial_sectors,
     include_net_metered,
     project_name_str,
 ):
@@ -217,7 +217,7 @@ def get_fleet_audit_sql(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        exclude_btm_plants=exclude_btm_plants,
+        exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors,
         include_net_metered=include_net_metered,
     )
     # Sub-flags: the individual pieces the characteristics filter is
@@ -233,8 +233,8 @@ def get_fleet_audit_sql(
         include_retired=include_retired,
         include_planned_retirements=include_planned_retirements,
     )
-    btm_predicate = "1 = 1 " + get_btm_filter_string(
-        exclude_btm_plants=exclude_btm_plants
+    sector_exclusion_predicate = "1 = 1 " + get_commercial_industrial_filter_string(
+        exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors
     )
     net_metering_predicate = "1 = 1 " + get_net_metering_filter_string(
         include_net_metered=include_net_metered
@@ -282,7 +282,7 @@ def get_fleet_audit_sql(
             AS passes_date_window,
         CASE WHEN {status_retirement_predicate} THEN 1 ELSE 0 END
             AS passes_status_retirement,
-        CASE WHEN {btm_predicate} THEN 1 ELSE 0 END AS passes_btm,
+        CASE WHEN {sector_exclusion_predicate} THEN 1 ELSE 0 END AS passes_commercial_industrial_exclusion,
         CASE WHEN {net_metering_predicate} THEN 1 ELSE 0 END
             AS passes_net_metering,
         {include_override_sql} AS override_include,
@@ -329,7 +329,7 @@ def print_fleet_waterfall(audit_df):
     in_footprint = keyed & (audit_df["in_footprint"] == 1)
     date_ok = in_footprint & (audit_df["passes_date_window"] == 1)
     status_ok = in_footprint & (audit_df["passes_status_retirement"] == 1)
-    btm_ok = in_footprint & (audit_df["passes_btm"] == 1)
+    ci_ok = in_footprint & (audit_df["passes_commercial_industrial_exclusion"] == 1)
     net_metering_ok = in_footprint & (audit_df["passes_net_metering"] == 1)
     in_fleet = audit_df["in_fleet"] == 1
 
@@ -339,7 +339,7 @@ def print_fleet_waterfall(audit_df):
     line("stage 1: in footprint, with a load zone at the level", in_footprint)
     line("stage 2:   pass planned-date window", date_ok)
     line("stage 2:   pass status/retirement selection", status_ok)
-    line("stage 2:   pass behind-the-meter exclusion", btm_ok)
+    line("stage 2:   pass commercial/industrial sector exclusion", ci_ok)
     line("stage 2:   pass net-metered exclusion", net_metering_ok)
     force_included = in_fleet & in_footprint & (audit_df["override_include"] == 1)
     force_excluded = in_footprint & keyed & (audit_df["override_include"] == 0)
@@ -408,7 +408,7 @@ def main(args=None):
         planned_inclusion=parsed_args.planned_inclusion,
         inactive_inclusion=parsed_args.inactive_inclusion,
         include_planned_retirements=parsed_args.include_planned_retirements,
-        exclude_btm_plants=parsed_args.exclude_btm_plants,
+        exclude_commercial_industrial_sectors=parsed_args.exclude_commercial_industrial_sectors,
         include_net_metered=parsed_args.include_net_metered,
         project_name_str=project_name_str,
     )

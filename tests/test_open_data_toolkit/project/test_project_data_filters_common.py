@@ -41,13 +41,13 @@ from open_data_toolkit.project.project_data_filters_common import (
     LOAD_ZONE_LEVEL_CHOICES,
     LOAD_ZONE_LEVEL_COLUMNS,
     check_custom_zone_level_ready,
-    BTM_SECTOR_IDS,
-    BTM_SECTOR_NAMES,
+    COMMERCIAL_INDUSTRIAL_SECTOR_IDS,
+    COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
     DISAGG_PROJECT_NAME_STR,
     GENERATORS_TABLE_COLUMNS,
     get_aggregation_dimensions_sql,
     get_allowed_status_codes,
-    get_btm_filter_string,
+    get_commercial_industrial_filter_string,
     get_eia860_sql_filter_string,
     get_eia860m_sql_filter_string,
     get_generators_table_str,
@@ -185,15 +185,17 @@ class TestEIA860EIA860MFilterSymmetry(unittest.TestCase):
             study_year=2030,
             footprint="western",
             load_zone_level="region",
-            exclude_btm_plants=True,
+            exclude_commercial_industrial_sectors=True,
         )
         filter_860 = get_eia860_sql_filter_string(**kwargs)
         filter_860m = get_eia860m_sql_filter_string(**kwargs)
-        clause_860 = get_btm_filter_string(exclude_btm_plants=True)
-        clause_860m = get_btm_filter_string(
-            exclude_btm_plants=True,
+        clause_860 = get_commercial_industrial_filter_string(
+            exclude_commercial_industrial_sectors=True
+        )
+        clause_860m = get_commercial_industrial_filter_string(
+            exclude_commercial_industrial_sectors=True,
             sector_column="sector_id_eia",
-            btm_sector_values=BTM_SECTOR_IDS,
+            sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_IDS,
         )
         self.assertIn(clause_860, filter_860)
         self.assertIn(clause_860m, filter_860m)
@@ -203,8 +205,8 @@ class TestEIA860EIA860MFilterSymmetry(unittest.TestCase):
         )
 
 
-class TestBTMFilter(unittest.TestCase):
-    def test_btm_sector_constants(self):
+class TestCommercialIndustrialFilter(unittest.TestCase):
+    def test_commercial_industrial_sector_constants(self):
         # The commercial/industrial EIA sectors, in BOTH name vocabularies
         # (PUDL v2026.9.0 added NAICS-style names alongside the old ones,
         # within a single vintage; ids are stable — 4=Commercial Non-CHP,
@@ -212,7 +214,7 @@ class TestBTMFilter(unittest.TestCase):
         # verified against v2026.9.0 name-id co-occurrence). NAICS-22 is
         # the electric-power sector (ids 2/3) and must NOT be BTM.
         self.assertEqual(
-            BTM_SECTOR_NAMES,
+            COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
             (
                 "Commercial CHP",
                 "Commercial Non-CHP",
@@ -224,14 +226,19 @@ class TestBTMFilter(unittest.TestCase):
                 "Industrial NAICS Non-Cogen",
             ),
         )
-        self.assertEqual(BTM_SECTOR_IDS, (4, 5, 6, 7))
-        self.assertNotIn("NAICS-22 Non-Cogen", BTM_SECTOR_NAMES)
+        self.assertEqual(COMMERCIAL_INDUSTRIAL_SECTOR_IDS, (4, 5, 6, 7))
+        self.assertNotIn("NAICS-22 Non-Cogen", COMMERCIAL_INDUSTRIAL_SECTOR_NAMES)
         self.assertIn("NAICS-22 Non-Cogen", ALL_KNOWN_SECTOR_NAMES)
         # No name in both tiers
         self.assertEqual(len(ALL_KNOWN_SECTOR_NAMES), len(set(ALL_KNOWN_SECTOR_NAMES)))
 
     def test_no_clause_by_default(self):
-        self.assertEqual(get_btm_filter_string(exclude_btm_plants=False), "")
+        self.assertEqual(
+            get_commercial_industrial_filter_string(
+                exclude_commercial_industrial_sectors=False
+            ),
+            "",
+        )
 
     def test_clause_excludes_btm_and_keeps_null_sector_rows(self):
         # Behavior-level check against sqlite: BTM-sector units drop,
@@ -249,13 +256,13 @@ class TestBTMFilter(unittest.TestCase):
                 ("unclassified", None, None),
             ],
         )
-        name_clause = get_btm_filter_string(
-            exclude_btm_plants=True, sector_column="name_col"
+        name_clause = get_commercial_industrial_filter_string(
+            exclude_commercial_industrial_sectors=True, sector_column="name_col"
         )
-        id_clause = get_btm_filter_string(
-            exclude_btm_plants=True,
+        id_clause = get_commercial_industrial_filter_string(
+            exclude_commercial_industrial_sectors=True,
             sector_column="id_col",
-            btm_sector_values=BTM_SECTOR_IDS,
+            sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_IDS,
         )
         for clause in (name_clause, id_clause):
             kept = {
@@ -550,7 +557,9 @@ class TestWarnOnUncoveredSectorNames(unittest.TestCase):
     def test_new_vocabulary_names_are_classified_btm(self):
         # The v2026.9.0 NAICS-style C&I names must actually trip the BTM
         # exclusion clause, not just be "known"
-        clause = get_btm_filter_string(exclude_btm_plants=True)
+        clause = get_commercial_industrial_filter_string(
+            exclude_commercial_industrial_sectors=True
+        )
         for sector in (
             "Industrial NAICS Cogen",
             "Commercial NAICS Non-Cogen",

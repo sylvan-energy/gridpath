@@ -82,7 +82,7 @@ the latest is normally not an annual filing at all:
 
 The reconstruction is a good default for the project steps: every column
 they read — status codes, capacities, operating/retirement dates, the
-sector name behind the ``exclude_btm_plants`` exclusion, and all the
+sector name behind the ``exclude_commercial_industrial_sectors`` exclusion, and all the
 ``aggregation_dimensions`` columns — is populated there. What it lacks
 are the annual-form-only columns (minimum load, multi-fuel and
 carbon-capture flags, second energy source, ownership, cogen status),
@@ -145,7 +145,7 @@ arrangement at a retail meter that runs net, so the netting is
 definitional. ``include_net_metered`` opts them back in; units absent
 from the loaded solar table (all non-solar units, and solar units newer
 than its annual-only vintage) are always kept, and an empty table makes
-the exclusion a no-op (with a loud warning). ``exclude_btm_plants``
+the exclusion a no-op (with a loud warning). ``exclude_commercial_industrial_sectors``
 additionally drops ALL behind-the-meter-type units — the
 commercial/industrial EIA sectors (Commercial/Industrial CHP and
 Non-CHP), whose output typically serves onsite load. This blanket
@@ -190,7 +190,7 @@ Settings
     * planned_inclusion
     * inactive_inclusion
     * include_planned_retirements
-    * exclude_btm_plants
+    * exclude_commercial_industrial_sectors
     * include_net_metered
     * ba_source
     * load_zone_level

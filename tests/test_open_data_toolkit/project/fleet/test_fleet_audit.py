@@ -204,7 +204,7 @@ class TestFleetAudit(unittest.TestCase):
             "in_footprint",
             "passes_date_window",
             "passes_status_retirement",
-            "passes_btm",
+            "passes_commercial_industrial_exclusion",
             "in_fleet",
         ]
         for plant, expected in expected_flags.items():
@@ -250,12 +250,12 @@ class TestFleetAudit(unittest.TestCase):
         self.assertEqual(audit_df.loc[8, "in_fleet"], 1)
         self.assertNotIn("WARNING", output)
 
-    def test_fleet_audit_exclude_btm_and_include_retired(self):
+    def test_fleet_audit_exclude_commercial_industrial_and_include_retired(self):
         audit_df, output = self.run_audit(
-            extra_args=["--exclude_btm_plants", "--include_retired"]
+            extra_args=["--exclude_commercial_industrial_sectors", "--include_retired"]
         )
 
-        self.assertEqual(audit_df.loc[6, "passes_btm"], 0)
+        self.assertEqual(audit_df.loc[6, "passes_commercial_industrial_exclusion"], 0)
         self.assertEqual(audit_df.loc[6, "in_fleet"], 0)
         self.assertEqual(audit_df.loc[4, "passes_status_retirement"], 1)
         self.assertEqual(audit_df.loc[4, "in_fleet"], 1)

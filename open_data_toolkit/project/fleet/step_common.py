@@ -57,7 +57,7 @@ from open_data_toolkit.project.fleet.aggregation import (
 from open_data_toolkit.project.fleet.ba_assignment import add_ba_source_argument
 from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_missing_planned_retirement_data,
-    BTM_SECTOR_COLUMN,
+    SECTOR_COLUMN,
     add_fleet_selection_arguments,
     ensure_net_metering_table,
     get_fleet_relation_sql,
@@ -87,7 +87,7 @@ FLEET_RELATION_SETTINGS = (
     "planned_inclusion",
     "inactive_inclusion",
     "include_planned_retirements",
-    "exclude_btm_plants",
+    "exclude_commercial_industrial_sectors",
     "include_net_metered",
 )
 
@@ -106,7 +106,7 @@ FLEET_SELECTION_SETTINGS = (
     "planned_inclusion",
     "inactive_inclusion",
     "include_planned_retirements",
-    "exclude_btm_plants",
+    "exclude_commercial_industrial_sectors",
     "include_net_metered",
 )
 AGGREGATION_SETTINGS = (
@@ -276,13 +276,13 @@ def warn_on_fleet_data_gaps(
     """
     warn_on_uncovered_status_codes(conn=conn, generators_table=generators_table)
 
-    if getattr(parsed_args, "exclude_btm_plants", False):
+    if getattr(parsed_args, "exclude_commercial_industrial_sectors", False):
         warn_on_null_sector_rows(
             conn=conn,
             generators_table=generators_table,
-            sector_column=BTM_SECTOR_COLUMN[generators_table],
+            sector_column=SECTOR_COLUMN[generators_table],
         )
-        if BTM_SECTOR_COLUMN[generators_table] == "sector_name_eia":
+        if SECTOR_COLUMN[generators_table] == "sector_name_eia":
             warn_on_uncovered_sector_names(conn=conn, generators_table=generators_table)
 
     if not getattr(parsed_args, "include_planned_retirements", True):

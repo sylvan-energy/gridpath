@@ -89,7 +89,7 @@ EIA860M_GENERATOR_FIXTURE_ROWS = [
     ("2024-01-01", "2026-08-01", 15, "1", "OA", "Zone1", 35, None, "CT", "NG", None, None, None),
     ("2024-01-01", "2026-08-01", 16, "1", "OS", "Zone1", 45, None, "CT", "NG", None, None, None),
     # Behind-the-meter-type unit (industrial CHP sector, set in the UPDATE
-    # below): included by default, dropped with exclude_btm_plants
+    # below): included by default, dropped with exclude_commercial_industrial_sectors
     ("2024-01-01", "2026-08-01", 17, "1", "OP", "Zone1", 55, None, "CT", "NG", None, None, None),
     # Zombie: last row says operating, but the generator VANISHED from
     # EIA's monthly files in March 2025 without ever filing a retirement
@@ -461,15 +461,15 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
 
         self.assertIn("17__1", df.index)
 
-    def test_disaggregated_exclude_btm_plants(self):
-        # --exclude_btm_plants opts into dropping the commercial/
+    def test_disaggregated_exclude_commercial_industrial_sectors(self):
+        # --exclude_commercial_industrial_sectors opts into dropping the commercial/
         # industrial sectors; everything else matches the default fleet
         df = self.run_step_and_read_csv(
             scenario_name="as_of_may_excl_btm",
             extra_args=[
                 "--eia860m_as_of_date",
                 "2026-05-01",
-                "--exclude_btm_plants",
+                "--exclude_commercial_industrial_sectors",
             ],
         )
 

@@ -54,7 +54,7 @@ Settings
     * planned_inclusion
     * inactive_inclusion
     * include_planned_retirements
-    * exclude_btm_plants
+    * exclude_commercial_industrial_sectors
     * include_net_metered
     * ba_source
     * load_zone_level
