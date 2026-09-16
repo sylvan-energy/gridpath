@@ -63,6 +63,7 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     get_fleet_relation_sql,
     warn_on_missing_net_metering_data,
     warn_on_null_sector_rows,
+    warn_on_uncovered_sector_names,
     warn_on_uncovered_status_codes,
 )
 from open_data_toolkit.project.fleet.unit_overrides import (
@@ -281,6 +282,8 @@ def warn_on_fleet_data_gaps(
             generators_table=generators_table,
             sector_column=BTM_SECTOR_COLUMN[generators_table],
         )
+        if BTM_SECTOR_COLUMN[generators_table] == "sector_name_eia":
+            warn_on_uncovered_sector_names(conn=conn, generators_table=generators_table)
 
     if not getattr(parsed_args, "include_planned_retirements", True):
         warn_on_missing_planned_retirement_data(

@@ -31,6 +31,10 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_missing_net_metering_data,
 )
 from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
+from open_data_toolkit.project.fleet.fleet_filters import (
+    ALL_KNOWN_SECTOR_NAMES,
+    warn_on_uncovered_sector_names,
+)
 from open_data_toolkit.project.project_data_filters_common import (
     AGGREGATION_DIMENSIONS,
     ALL_KNOWN_STATUS_CODES,
@@ -201,10 +205,12 @@ class TestEIA860EIA860MFilterSymmetry(unittest.TestCase):
 
 class TestBTMFilter(unittest.TestCase):
     def test_btm_sector_constants(self):
-        # The commercial/industrial EIA sectors; the id set is the EIA
-        # standard mapping of the same four sectors (4=Commercial Non-CHP,
-        # 5=Commercial CHP, 6=Industrial Non-CHP, 7=Industrial CHP),
-        # verified against v2026.7.2 unit counts
+        # The commercial/industrial EIA sectors, in BOTH name vocabularies
+        # (PUDL v2026.9.0 added NAICS-style names alongside the old ones,
+        # within a single vintage; ids are stable — 4=Commercial Non-CHP,
+        # 5=Commercial CHP, 6=Industrial Non-CHP, 7=Industrial CHP,
+        # verified against v2026.9.0 name-id co-occurrence). NAICS-22 is
+        # the electric-power sector (ids 2/3) and must NOT be BTM.
         self.assertEqual(
             BTM_SECTOR_NAMES,
             (
@@ -212,9 +218,17 @@ class TestBTMFilter(unittest.TestCase):
                 "Commercial Non-CHP",
                 "Industrial CHP",
                 "Industrial Non-CHP",
+                "Commercial NAICS Cogen",
+                "Commercial NAICS Non-Cogen",
+                "Industrial NAICS Cogen",
+                "Industrial NAICS Non-Cogen",
             ),
         )
         self.assertEqual(BTM_SECTOR_IDS, (4, 5, 6, 7))
+        self.assertNotIn("NAICS-22 Non-Cogen", BTM_SECTOR_NAMES)
+        self.assertIn("NAICS-22 Non-Cogen", ALL_KNOWN_SECTOR_NAMES)
+        # No name in both tiers
+        self.assertEqual(len(ALL_KNOWN_SECTOR_NAMES), len(set(ALL_KNOWN_SECTOR_NAMES)))
 
     def test_no_clause_by_default(self):
         self.assertEqual(get_btm_filter_string(exclude_btm_plants=False), "")
@@ -483,6 +497,66 @@ class TestWarnOnNullSectorRows(unittest.TestCase):
         self.assertEqual((n_null, n_rows), (2, 2))
         self.assertIn("entirely NULL", output)
         self.assertIn("gridpath_pudl_to_gridpath_raw", output)
+
+
+class TestWarnOnUncoveredSectorNames(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        db_path = os.path.join(self.tmp_dir.name, "sector_vocab_test_raw.db")
+        create_database_main(
+            ["--database", db_path, "--db_schema", RAW_DATA_DB_SCHEMA, "--quiet"]
+        )
+        self.conn = sqlite3.connect(db_path)
+        self.addCleanup(self.conn.close)
+
+    def insert_unit(self, plant, sector):
+        self.conn.execute(
+            """
+            INSERT INTO raw_data_eia860_generators
+            (version_num, report_date, plant_id_eia, generator_id,
+            sector_name_eia, capacity_mw)
+            VALUES ('v-test', '2026-01-01', ?, '1', ?, 100)
+            """,
+            (plant, sector),
+        )
+        self.conn.commit()
+
+    def check(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            uncovered = warn_on_uncovered_sector_names(
+                conn=self.conn,
+                generators_table="raw_data_eia860_generators",
+            )
+        return uncovered, out.getvalue()
+
+    def test_known_names_both_vocabularies_are_quiet(self):
+        self.insert_unit(1, "Industrial CHP")
+        self.insert_unit(2, "Industrial NAICS Cogen")
+        self.insert_unit(3, "NAICS-22 Non-Cogen")
+        self.insert_unit(4, None)  # NULLs are the null-sector warning's job
+        uncovered, output = self.check()
+        self.assertEqual(uncovered, [])
+        self.assertEqual(output, "")
+
+    def test_unknown_name_warns(self):
+        self.insert_unit(1, "Industrial Fancy New Label")
+        uncovered, output = self.check()
+        self.assertEqual(uncovered, [("Industrial Fancy New Label", 1, 100.0)])
+        self.assertIn("WARNING", output)
+        self.assertIn("Industrial Fancy New Label", output)
+
+    def test_new_vocabulary_names_are_classified_btm(self):
+        # The v2026.9.0 NAICS-style C&I names must actually trip the BTM
+        # exclusion clause, not just be "known"
+        clause = get_btm_filter_string(exclude_btm_plants=True)
+        for sector in (
+            "Industrial NAICS Cogen",
+            "Commercial NAICS Non-Cogen",
+        ):
+            self.assertIn(sector, clause)
+        self.assertNotIn("NAICS-22", clause.replace("NAICS Cogen", ""))
 
 
 class TestWarnOnUncoveredStatusCodes(unittest.TestCase):

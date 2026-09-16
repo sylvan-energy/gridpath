@@ -71,13 +71,39 @@ NEVER_INCLUDED_STATUS_CODES = ("CN", "IP", "OZ")
 # carries only sector_id_eia — the id-to-name mapping below is the EIA
 # standard, verified against v2026.7.2 unit counts. Units with a NULL
 # sector cannot be classified and are KEPT (see warn_on_null_sector_rows).
+# PUDL v2026.9.0 introduced a SECOND name vocabulary alongside the old one
+# (both appear within a single vintage): the C&I sectors also appear as
+# 'Commercial/Industrial NAICS (Non-)Cogen' (same ids 4-7), and the
+# electric-power sectors as 'NAICS-22 (Non-)Cogen' (ids 2/3 — the IPP
+# sectors, NOT behind-the-meter). The ids are stable; only names drift —
+# ALL_KNOWN_SECTOR_NAMES + warn_on_uncovered_sector_names guard against
+# the next rename silently breaking this classification.
 BTM_SECTOR_NAMES = (
     "Commercial CHP",
     "Commercial Non-CHP",
     "Industrial CHP",
     "Industrial Non-CHP",
+    # the same four sectors under PUDL v2026.9.0's NAICS-style names
+    "Commercial NAICS Cogen",
+    "Commercial NAICS Non-Cogen",
+    "Industrial NAICS Cogen",
+    "Industrial NAICS Non-Cogen",
 )
 BTM_SECTOR_IDS = (4, 5, 6, 7)
+
+# Every sector_name_eia value the classification accounts for — the BTM
+# names above plus the electric-power-industry sectors (never BTM). A name
+# outside this set silently fails the BTM IN test (the unit is then KEPT,
+# like a NULL sector), so warn_on_uncovered_sector_names flags vocabulary
+# changes in future dataset versions loudly.
+NON_BTM_SECTOR_NAMES = (
+    "Electric Utility",
+    "IPP Non-CHP",
+    "IPP CHP",
+    "NAICS-22 Non-Cogen",
+    "NAICS-22 Cogen",
+)
+ALL_KNOWN_SECTOR_NAMES = BTM_SECTOR_NAMES + NON_BTM_SECTOR_NAMES
 
 # Which sector column to test in each generators table, per the vintage
 # note above — used by the BTM filter and by warn_on_null_sector_rows
@@ -184,6 +210,49 @@ def warn_on_null_sector_rows(conn, generators_table, sector_column):
         )
 
     return n_null, null_mw, n_rows
+
+
+def warn_on_uncovered_sector_names(conn, generators_table):
+    """
+    Warn — loudly, regardless of any quiet setting — when
+    *generators_table* contains sector_name_eia values outside
+    ALL_KNOWN_SECTOR_NAMES while the behind-the-meter sector exclusion is
+    active. The BTM test is an IN test against BTM_SECTOR_NAMES, so an
+    unrecognized name means those units silently pass the exclusion (kept,
+    like NULL sectors) — the likely cause is a vocabulary change in a
+    newer dataset version (PUDL v2026.9.0 renamed the sectors once
+    already; the ids are stable but the annual table carries only names
+    at monthly-update vintages). Callers should run this check only when
+    exclude_btm_plants is set, and only for tables classified by name.
+    Returns the list of (name, n_units, capacity_mw) found.
+    """
+    known_names_str = ", ".join(f"'{n}'" for n in ALL_KNOWN_SECTOR_NAMES)
+    uncovered = conn.cursor().execute(f"""
+            SELECT sector_name_eia, COUNT(*), SUM(capacity_mw)
+            FROM {generators_table}
+            WHERE sector_name_eia IS NOT NULL
+            AND sector_name_eia NOT IN ({known_names_str})
+            GROUP BY sector_name_eia
+            ORDER BY sector_name_eia
+            ;
+            """).fetchall()
+
+    if uncovered:
+        uncovered_strs = [
+            f"'{name}' ({n_units} units, {0 if mw is None else round(mw)} MW)"
+            for name, n_units, mw in uncovered
+        ]
+        print(
+            f"WARNING: {generators_table} contains sector_name_eia values "
+            f"not covered by the sector vocabulary in fleet_filters.py: "
+            f"{', '.join(uncovered_strs)}. Units with these sectors PASS "
+            f"the behind-the-meter exclusion (they are kept) regardless of "
+            f"what sector they really are — the dataset's sector "
+            f"vocabulary may have changed; update BTM_SECTOR_NAMES / "
+            f"NON_BTM_SECTOR_NAMES to cover the new names."
+        )
+
+    return uncovered
 
 
 def warn_on_missing_planned_retirement_data(conn, generators_table):
