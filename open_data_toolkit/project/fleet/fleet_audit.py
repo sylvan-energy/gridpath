@@ -39,7 +39,13 @@ unit, the audit CSV (``fleet_audit.csv`` in the output directory) shows:
   ``open_data_toolkit.project.fleet.fleet_filters``);
 * the final verdict (``in_fleet``) and, for in-fleet units, the project
   name the unit lands in under the aggregation settings (stage 3,
-  ``open_data_toolkit.project.fleet.aggregation``).
+  ``open_data_toolkit.project.fleet.aggregation``);
+* the hybrid columns: ``hybrid_pairing`` (why an in-fleet unit is a
+  paired hybrid component — ``direct_support``/``co_located``/empty;
+  pairing is against in-fleet partners, so it follows the fleet-selection
+  settings) and ``storage_coupling`` (the EIA860 energy-storage
+  supplement's coupling flags for batteries with a supplement row — the
+  evidence base for how a study should treat hybrids).
 
 A units/MW waterfall per stage is printed, and the audit CROSS-CHECKS its
 verdicts against the actual fleet relation the input-CSV steps query
@@ -122,11 +128,13 @@ from open_data_toolkit.project.fleet.ba_assignment import (
 from open_data_toolkit.project.fleet.fleet_filters import (
     get_allowed_status_codes,
     get_geographic_filter_string,
+    get_hybrid_pairing_basis_expr,
     get_net_metering_filter_string,
     get_planned_date_window_string,
     get_retired_filter_string,
     get_commercial_industrial_filter_string,
     get_characteristics_filter_string,
+    get_storage_coupling_expr,
 )
 from open_data_toolkit.project.fleet.step_common import (
     connect_and_check_scope,
@@ -176,6 +184,7 @@ def get_fleet_audit_sql(
     exclude_commercial_industrial_sectors,
     include_net_metered,
     project_name_str,
+    fleet_relation_sql,
 ):
     """
     The per-unit audit query: every raw_data_eia860_generators unit with
@@ -183,7 +192,12 @@ def get_fleet_audit_sql(
     the audit's cross-check against the real fleet relation guards this
     mirror), its load zone, a 0/1 flag per selection stage built from the
     SAME filter-string builders the input-CSV steps use, the combined
-    in_fleet verdict, and the stage-3 project name for in-fleet units.
+    in_fleet verdict, and the stage-3 project name for in-fleet units —
+    plus the hybrid columns: hybrid_pairing (why an in-fleet unit is a
+    paired hybrid component — 'direct_support'/'co_located'/empty; built
+    over *fleet_relation_sql*, since units pair only against in-fleet
+    partners) and storage_coupling (the EIA860 energy-storage supplement's
+    coupling flags — the evidence base for choosing a hybrid treatment).
     """
     # The audit joins EIA-930A unconditionally (to SHOW each unit's 930A
     # BAs under either ba_source); the resolution mirrors
@@ -259,6 +273,18 @@ def get_fleet_audit_sql(
             AND COALESCE(({include_override_sql}) = 1, ({characteristics_filter}
             ))"""
 
+    # Hybrid columns: pairing is only meaningful for in-fleet units (and
+    # pairs only against in-fleet partners), so it is gated like the
+    # project column; the coupling flags are raw supplement data and are
+    # shown for every battery with a supplement row
+    hybrid_pairing_expr = get_hybrid_pairing_basis_expr(
+        generators_table="raw_data_eia860_generators",
+        fleet_relation_sql=fleet_relation_sql,
+    )
+    storage_coupling_expr = get_storage_coupling_expr(
+        generators_table="raw_data_eia860_generators"
+    )
+
     return f"""
     SELECT
         plant_id_eia,
@@ -290,6 +316,9 @@ def get_fleet_audit_sql(
         {load_zone_override_sql} AS override_load_zone,
         CASE WHEN {in_fleet_predicate}
             THEN 1 ELSE 0 END AS in_fleet,
+        CASE WHEN {in_fleet_predicate}
+            THEN {hybrid_pairing_expr} END AS hybrid_pairing,
+        {storage_coupling_expr} AS storage_coupling,
         CASE WHEN {in_fleet_predicate}
             THEN {project_name_str} END AS project
     FROM (
@@ -348,6 +377,9 @@ def print_fleet_waterfall(audit_df):
     if force_excluded.any():
         line("    force-excluded by unit override", force_excluded)
     line("IN FLEET (all stages)", in_fleet)
+    hybrid_components = in_fleet & audit_df["hybrid_pairing"].notna()
+    if hybrid_components.any():
+        line("    of which paired hybrid components", hybrid_components)
     n_projects = audit_df.loc[in_fleet, "project"].nunique()
     print(f"    {'stage 3: aggregated into projects':<58}{n_projects:>7} projects")
 
@@ -411,6 +443,7 @@ def main(args=None):
         exclude_commercial_industrial_sectors=parsed_args.exclude_commercial_industrial_sectors,
         include_net_metered=parsed_args.include_net_metered,
         project_name_str=project_name_str,
+        fleet_relation_sql=fleet_relation_sql,
     )
 
     conn = connect_and_check_scope(parsed_args)

@@ -151,6 +151,42 @@ CREATE TABLE raw_data_eia860_solar
     PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
 );
 
+-- Per-battery detail from the EIA860 energy-storage supplement (from
+-- pudl_eia860_energy_storage.csv): the direct-support pairing links and
+-- coupling flags behind the project steps' hybrid-component pairing (the
+-- 'hybrid' aggregation dimension and the fleet audit's hybrid columns),
+-- plus the charge/discharge power ratings. Like the solar supplement it
+-- is annual-form-only — the convert step pins one (by default the latest
+-- annual) vintage, so newer batteries are absent (pairing then falls
+-- back to plant co-location for them); the coupling flags and support
+-- links are only populated from the 2023 vintage on. An EMPTY table
+-- degrades pairing to plant co-location only (the steps warn loudly when
+-- the hybrid dimension is in use); fleet_filters.py mirrors this DDL as
+-- CREATE TABLE IF NOT EXISTS so pre-existing raw databases get the table
+-- on first use — keep the two in sync.
+DROP TABLE IF EXISTS raw_data_eia860_energy_storage;
+CREATE TABLE raw_data_eia860_energy_storage
+(
+    version_num                          TEXT,
+    report_date                          DATETIME,
+    plant_id_eia                         INTEGER,
+    generator_id                         TEXT,
+    max_charge_rate_mw                   REAL,
+    max_discharge_rate_mw                REAL,
+    is_ac_coupled                        INTEGER,
+    is_dc_coupled                        INTEGER,
+    is_dc_coupled_tightly                INTEGER,
+    is_independent                       INTEGER,
+    is_direct_support                    INTEGER,
+    plant_id_eia_direct_support_1        INTEGER,
+    generator_id_direct_support_1        TEXT,
+    plant_id_eia_direct_support_2        INTEGER,
+    generator_id_direct_support_2        TEXT,
+    plant_id_eia_direct_support_3        INTEGER,
+    generator_id_direct_support_3        TEXT,
+    PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
+);
+
 DROP TABLE IF EXISTS raw_data_eia930_hourly_interchange;
 CREATE TABLE raw_data_eia930_hourly_interchange
 (

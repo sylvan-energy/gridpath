@@ -381,6 +381,264 @@ def get_net_metering_filter_string(include_net_metered):
      )"""
 
 
+# Mirror of the raw_data_eia860_energy_storage DDL in raw_data_db_schema.sql
+# (as CREATE TABLE IF NOT EXISTS, so pre-existing raw databases get the table
+# on first use) — keep the two in sync
+ENERGY_STORAGE_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS raw_data_eia860_energy_storage
+(
+    version_num                          TEXT,
+    report_date                          DATETIME,
+    plant_id_eia                         INTEGER,
+    generator_id                         TEXT,
+    max_charge_rate_mw                   REAL,
+    max_discharge_rate_mw                REAL,
+    is_ac_coupled                        INTEGER,
+    is_dc_coupled                        INTEGER,
+    is_dc_coupled_tightly                INTEGER,
+    is_independent                       INTEGER,
+    is_direct_support                    INTEGER,
+    plant_id_eia_direct_support_1        INTEGER,
+    generator_id_direct_support_1        TEXT,
+    plant_id_eia_direct_support_2        INTEGER,
+    generator_id_direct_support_2        TEXT,
+    plant_id_eia_direct_support_3        INTEGER,
+    generator_id_direct_support_3        TEXT,
+    PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
+);
+"""
+
+# The prime-mover codes hybrid pairing considers: the storage side (battery
+# units) and the variable side (solar PV and onshore/offshore wind turbines)
+HYBRID_STORAGE_PRIME_MOVERS = ("BA",)
+HYBRID_VARIABLE_PRIME_MOVERS = ("PV", "WT")
+
+
+def ensure_energy_storage_table(conn):
+    """
+    Create the (empty) raw_data_eia860_energy_storage table if this raw
+    database predates it, so the hybrid-pairing subqueries (and the fleet
+    audit's hybrid columns) never fail on a missing table. An empty table
+    degrades pairing to plant co-location only — which
+    warn_on_missing_energy_storage_data reports loudly when the hybrid
+    dimension is in use, since it usually means the energy-storage CSV was
+    never loaded rather than that no battery filed the supplement.
+    """
+    conn.execute(ENERGY_STORAGE_TABLE_DDL)
+    conn.commit()
+
+
+def warn_on_missing_energy_storage_data(conn):
+    """
+    Warn — loudly, regardless of any quiet setting — when hybrid pairing
+    is in use (the 'hybrid' aggregation dimension) but
+    raw_data_eia860_energy_storage is empty: pairing then silently falls
+    back to plant co-location only, losing the direct-support links
+    (including cross-plant ones) and the is_independent exclusions. The
+    usual cause is a raw database loaded before
+    pudl_eia860_energy_storage.csv existed (September 2026) — re-run
+    gridpath_pudl_to_gridpath_raw and load the new CSV. Callers should
+    skip this check when the hybrid dimension is not requested. Returns
+    the table's row count.
+    """
+    n_rows = (
+        conn.cursor()
+        .execute("SELECT COUNT(*) FROM raw_data_eia860_energy_storage")
+        .fetchone()[0]
+    )
+
+    if not n_rows:
+        print(
+            "WARNING: hybrid pairing is in use (the 'hybrid' aggregation "
+            "dimension), but raw_data_eia860_energy_storage is EMPTY, so "
+            "pairing falls back to plant co-location only — no "
+            "direct-support links (including cross-plant ones) and no "
+            "is_independent exclusions. Load "
+            "pudl_eia860_energy_storage.csv (added to the convert step in "
+            "September 2026 — re-run gridpath_pudl_to_gridpath_raw if the "
+            "raw CSVs predate it)."
+        )
+
+    return n_rows
+
+
+def _get_hybrid_pairing_subqueries(generators_table, fleet_relation_sql):
+    """
+    The three building-block subqueries of hybrid pairing, over the study
+    fleet selected by *fleet_relation_sql* (a get_fleet_relation_sql
+    FROM/JOIN/WHERE block for *generators_table*): the in-fleet,
+    non-independent batteries; the in-fleet variable (PV/WT) units; and
+    the batteries' direct-support links from the EIA860 energy-storage
+    supplement (all three link slots, cross-plant links included). All
+    three are self-contained — no correlation to the outer query — so
+    SQLite materializes each once. (The inner column references are
+    qualified with the generators-table name: the fleet relation also
+    joins user_defined_eia_gridpath_key, which has its own
+    prime_mover_code column; the qualification binds to the relation's
+    OWN aliased generators table, not the outer query's, since the inner
+    alias shadows it within the subquery.)
+    """
+    stor_pm_sql = ", ".join(f"'{pm}'" for pm in HYBRID_STORAGE_PRIME_MOVERS)
+    var_pm_sql = ", ".join(f"'{pm}'" for pm in HYBRID_VARIABLE_PRIME_MOVERS)
+
+    fleet_batteries_sql = f"""
+        SELECT fb.plant_id_eia, fb.generator_id
+        FROM (SELECT {generators_table}.plant_id_eia,
+                  {generators_table}.generator_id,
+                  {generators_table}.prime_mover_code
+              {fleet_relation_sql}) fb
+        WHERE fb.prime_mover_code IN ({stor_pm_sql})
+        AND (fb.plant_id_eia, fb.generator_id) NOT IN (
+            SELECT plant_id_eia, generator_id
+            FROM raw_data_eia860_energy_storage
+            WHERE is_independent = 1
+        )"""
+
+    fleet_var_units_sql = f"""
+        SELECT fv.plant_id_eia, fv.generator_id
+        FROM (SELECT {generators_table}.plant_id_eia,
+                  {generators_table}.generator_id,
+                  {generators_table}.prime_mover_code
+              {fleet_relation_sql}) fv
+        WHERE fv.prime_mover_code IN ({var_pm_sql})"""
+
+    support_links_sql = " UNION ".join(f"""
+        SELECT plant_id_eia AS batt_plant, generator_id AS batt_gen,
+            plant_id_eia_direct_support_{slot} AS supported_plant,
+            generator_id_direct_support_{slot} AS supported_gen
+        FROM raw_data_eia860_energy_storage
+        WHERE plant_id_eia_direct_support_{slot} IS NOT NULL
+        AND generator_id_direct_support_{slot} IS NOT NULL""" for slot in (1, 2, 3))
+
+    return fleet_batteries_sql, fleet_var_units_sql, support_links_sql
+
+
+def _get_hybrid_pairing_branches(generators_table, fleet_relation_sql):
+    """
+    The four WHEN conditions of hybrid pairing for a *generators_table*
+    row, as SQL boolean expressions: (battery via direct-support link,
+    battery via plant co-location, variable unit via direct-support link,
+    variable unit via plant co-location). A unit is a hybrid component
+    when EITHER basis holds for its side; the direct-support links are the
+    primary evidence (they are the battery's own attestation and can cross
+    plant IDs), plant co-location the fallback. Both sides pair only
+    against IN-FLEET partners — a hybrid whose partner is not in the
+    study-year fleet (not yet built, already retired, excluded by a
+    filter) is not a hybrid component in that study — and batteries the
+    supplement flags is_independent never pair.
+    """
+    fleet_batteries_sql, fleet_var_units_sql, support_links_sql = (
+        _get_hybrid_pairing_subqueries(
+            generators_table=generators_table,
+            fleet_relation_sql=fleet_relation_sql,
+        )
+    )
+    stor_pm_sql = ", ".join(f"'{pm}'" for pm in HYBRID_STORAGE_PRIME_MOVERS)
+    var_pm_sql = ", ".join(f"'{pm}'" for pm in HYBRID_VARIABLE_PRIME_MOVERS)
+
+    battery_side_sql = f"""{generators_table}.prime_mover_code
+            IN ({stor_pm_sql})
+        AND ({generators_table}.plant_id_eia, {generators_table}.generator_id)
+            IN ({fleet_batteries_sql})"""
+    battery_link_sql = f"""{battery_side_sql}
+        AND ({generators_table}.plant_id_eia, {generators_table}.generator_id)
+            IN (SELECT l.batt_plant, l.batt_gen
+                FROM ({support_links_sql}) l
+                WHERE (l.supported_plant, l.supported_gen)
+                    IN ({fleet_var_units_sql}))"""
+    battery_colocation_sql = f"""{battery_side_sql}
+        AND {generators_table}.plant_id_eia
+            IN (SELECT fvp.plant_id_eia FROM ({fleet_var_units_sql}) fvp)"""
+
+    var_side_sql = f"""{generators_table}.prime_mover_code
+            IN ({var_pm_sql})"""
+    var_link_sql = f"""{var_side_sql}
+        AND ({generators_table}.plant_id_eia, {generators_table}.generator_id)
+            IN (SELECT l.supported_plant, l.supported_gen
+                FROM ({support_links_sql}) l
+                WHERE (l.batt_plant, l.batt_gen) IN ({fleet_batteries_sql}))"""
+    var_colocation_sql = f"""{var_side_sql}
+        AND {generators_table}.plant_id_eia
+            IN (SELECT fbp.plant_id_eia FROM ({fleet_batteries_sql}) fbp)"""
+
+    return battery_link_sql, battery_colocation_sql, var_link_sql, var_colocation_sql
+
+
+def get_hybrid_pairing_expr(generators_table, fleet_relation_sql):
+    """
+    SQL expression evaluating to 'Hybrid' when the *generators_table* row
+    is a paired hybrid component — a battery, or a solar/wind unit, whose
+    partner is in the study fleet selected by *fleet_relation_sql* — and
+    NULL otherwise (see _get_hybrid_pairing_branches for the pairing
+    rules). This is the runtime-built expression behind the 'hybrid'
+    aggregation dimension: as a NULL-when-not dimension value it
+    contributes a '_Hybrid' name token only for paired components,
+    splitting e.g. Solar_CISO into Solar_CISO and Solar_Hybrid_CISO.
+    """
+    battery_link_sql, battery_colocation_sql, var_link_sql, var_colocation_sql = (
+        _get_hybrid_pairing_branches(
+            generators_table=generators_table,
+            fleet_relation_sql=fleet_relation_sql,
+        )
+    )
+
+    return f"""CASE
+        WHEN ({battery_link_sql})
+            OR ({battery_colocation_sql})
+            OR ({var_link_sql})
+            OR ({var_colocation_sql})
+        THEN 'Hybrid'
+        END"""
+
+
+def get_hybrid_pairing_basis_expr(generators_table, fleet_relation_sql):
+    """
+    SQL expression labeling WHY a *generators_table* row is a hybrid
+    component: 'direct_support' when an EIA860 energy-storage supplement
+    link pairs it (the primary evidence — reported by the battery itself,
+    and able to cross plant IDs), 'co_located' when only plant co-location
+    does, NULL when the row is not a hybrid component. Same pairing rules
+    as get_hybrid_pairing_expr; used by the fleet audit.
+    """
+    battery_link_sql, battery_colocation_sql, var_link_sql, var_colocation_sql = (
+        _get_hybrid_pairing_branches(
+            generators_table=generators_table,
+            fleet_relation_sql=fleet_relation_sql,
+        )
+    )
+
+    return f"""CASE
+        WHEN ({battery_link_sql}) OR ({var_link_sql}) THEN 'direct_support'
+        WHEN ({battery_colocation_sql}) OR ({var_colocation_sql})
+            THEN 'co_located'
+        END"""
+
+
+def get_storage_coupling_expr(generators_table):
+    """
+    SQL expression reporting how the EIA860 energy-storage supplement says
+    a battery row is coupled: 'independent', 'dc_coupled_tightly',
+    'dc_coupled', or 'ac_coupled' (in that precedence), NULL for rows
+    without a supplement entry (non-batteries, and batteries newer than
+    the loaded vintage or filed before the flags existed — they are only
+    populated from the 2023 vintage on). Used by the fleet audit; the
+    coupling mix is the evidence base for choosing a hybrid treatment
+    (tightly-DC-coupled batteries can only charge from the co-located
+    field, the gen_var_stor_hyb semantics; AC-coupled ones share only the
+    interconnection, the power-output-group semantics).
+    """
+    return f"""(SELECT CASE
+            WHEN es.is_independent = 1 THEN 'independent'
+            WHEN es.is_dc_coupled_tightly = 1 THEN 'dc_coupled_tightly'
+            WHEN es.is_dc_coupled = 1 THEN 'dc_coupled'
+            WHEN es.is_ac_coupled = 1 THEN 'ac_coupled'
+            END
+        FROM raw_data_eia860_energy_storage es
+        WHERE es.plant_id_eia = {generators_table}.plant_id_eia
+        AND es.generator_id = {generators_table}.generator_id
+        LIMIT 1)"""
+
+
 def get_allowed_status_codes(planned_inclusion, inactive_inclusion="none"):
     """
     The operational status codes allowed through the EIA860(M) filters.

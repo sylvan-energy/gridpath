@@ -29,6 +29,7 @@ previous step in order to create the following files in the user-specified
 raw data directory.
 
 * pudl_eia860_generators.csv
+* pudl_eia860_energy_storage.csv
 * pudl_eia860_solar.csv
 * pudl_eia860m_generators.csv
 * pudl_eia923_plant_fuel_generation.csv
@@ -104,6 +105,11 @@ monthly_update vintage: the ``eia860_solar_report_date`` setting defaults
 to the latest (most recent annual) vintage, typically one report year
 behind a monthly_update fleet, and solar units newer than it are simply
 absent — see ``get_eia860_solar_data_from_pudl_parquet``.
+``pudl_eia860_energy_storage.csv`` (the per-battery direct-support links,
+coupling flags, and charge/discharge ratings from the EIA860
+energy-storage supplement, the basis of the project steps' hybrid
+pairing) works the same way via ``eia860_energy_storage_report_date`` —
+see ``get_eia860_energy_storage_data_from_pudl_parquet``.
 
 This step selects data VINTAGES only (the EIA860 report date, defaulting
 to the latest available, the EIA860M latest-entries default vs the
@@ -239,6 +245,21 @@ def parse_arguments(args):
         "newer than this vintage are simply absent, and therefore not "
         "flagged as net-metered downstream. A date with no rows is "
         "rejected.",
+    )
+
+    parser.add_argument(
+        "-esdate",
+        "--eia860_energy_storage_report_date",
+        default=None,
+        help="EIA860 report date (YYYY-MM-DD) to pull the energy-storage "
+        "generator detail table for (the hybrid direct-support links, "
+        "coupling flags and charge/discharge ratings). Like the solar "
+        "table, an annual-form-only supplement with NO monthly_update "
+        "vintage — this defaults to the LATEST report date in the "
+        "downloaded energy-storage data, which typically lags the "
+        "--eia860_report_date fleet by a report year: batteries newer than "
+        "this vintage are simply absent, and hybrid pairing falls back to "
+        "plant co-location for them. A date with no rows is rejected.",
     )
 
     parser.add_argument(
@@ -853,6 +874,106 @@ def get_eia860_solar_data_from_pudl_parquet(
         )
 
 
+def get_eia860_energy_storage_data_from_pudl_parquet(
+    raw_data_directory,
+    pudl_download_directory,
+    energy_storage_report_date,
+    pudl_version,
+    quiet=False,
+):
+    """
+    Per-battery detail from the EIA860 energy-storage supplement
+    (core_eia860__scd_generators_energy_storage) — the direct-support
+    pairing links and AC/DC-coupling flags that drive the project steps'
+    hybrid-component pairing (the ``hybrid`` aggregation dimension and the
+    fleet audit's hybrid columns), plus the max charge/discharge power
+    ratings. Like the solar supplement, it is filed with the annual form
+    only, so it has NO monthly_update vintage: the default
+    *energy_storage_report_date* is the latest (most recent annual)
+    vintage, typically one report year behind a monthly_update fleet —
+    batteries newer than it are absent from the CSV, and hybrid pairing
+    falls back to plant co-location for them. The flags are written as
+    0/1 integers (empty = the source row's NULL); note the coupling flags
+    and support links are only populated from the 2023 vintage on. Loads
+    into raw_data_eia860_energy_storage.
+    """
+    filepath = os.path.join(raw_data_directory, "pudl_eia860_energy_storage.csv")
+
+    if determine_proceed(filepath):
+        if not quiet:
+            print(
+                f"Getting EIA860 energy-storage generator detail from PUDL "
+                f"parquet files to {filepath}..."
+            )
+        energy_storage_parquet_path = os.path.join(
+            pudl_download_directory,
+            "core_eia860__scd_generators_energy_storage.parquet",
+        )
+        if not os.path.exists(energy_storage_parquet_path):
+            raise FileNotFoundError(
+                f"{energy_storage_parquet_path} not found. The energy-storage "
+                f"generator detail table was added to the PUDL download list "
+                f"in September 2026 (it provides the hybrid pairing links and "
+                f"coupling flags); re-run gridpath_get_pudl_data to download "
+                f"it."
+            )
+
+        available_report_dates = get_available_eia860_report_dates(
+            generators_parquet_path=energy_storage_parquet_path
+        )
+        if energy_storage_report_date is None:
+            energy_storage_report_date = available_report_dates[-1]
+        elif energy_storage_report_date not in available_report_dates:
+            raise ValueError(
+                f"eia860_energy_storage_report_date "
+                f"'{energy_storage_report_date}' is not a report date in the "
+                f"downloaded energy-storage data, so the energy-storage CSV "
+                f"would come out empty. Available report dates: "
+                f"{', '.join(available_report_dates)}."
+            )
+
+        query = f"""
+            SELECT
+                '{pudl_version}' AS version_num,
+                CAST(report_date AS VARCHAR) AS report_date,
+                plant_id_eia,
+                generator_id,
+                max_charge_rate_mw,
+                max_discharge_rate_mw,
+                CAST(is_ac_coupled AS INTEGER) AS is_ac_coupled,
+                CAST(is_dc_coupled AS INTEGER) AS is_dc_coupled,
+                CAST(is_dc_coupled_tightly AS INTEGER)
+                    AS is_dc_coupled_tightly,
+                CAST(is_independent AS INTEGER) AS is_independent,
+                CAST(is_direct_support AS INTEGER) AS is_direct_support,
+                plant_id_eia_direct_support_1,
+                generator_id_direct_support_1,
+                plant_id_eia_direct_support_2,
+                generator_id_direct_support_2,
+                plant_id_eia_direct_support_3,
+                generator_id_direct_support_3
+            FROM read_parquet('{energy_storage_parquet_path}')
+            WHERE report_date = '{energy_storage_report_date}'
+            ORDER BY plant_id_eia, generator_id
+        """
+
+        energy_storage_gens = duckdb.sql(query).df()
+        energy_storage_gens.to_csv(
+            filepath,
+            index=False,
+        )
+
+        log_data_metadata(
+            directory=raw_data_directory,
+            script="pudl_to_gridpath_raw_data",
+            output_file="pudl_eia860_energy_storage.csv",
+            settings={
+                "eia860_energy_storage_report_date": energy_storage_report_date,
+                "pudl_version": pudl_version,
+            },
+        )
+
+
 def get_eia_baa_codes_from_pudl_parquet(
     raw_data_directory, pudl_download_directory, quiet=False
 ):
@@ -1317,6 +1438,20 @@ def main(args=None):
             pudl_download_directory=parsed_args.pudl_download_directory,
             pudl_version=parsed_args.pudl_version,
             source_file="core_eia860__scd_generators_solar.parquet",
+        ),
+        quiet=parsed_args.quiet,
+    )
+
+    # Energy-storage generator detail (hybrid pairing links, coupling
+    # flags, charge/discharge ratings)
+    get_eia860_energy_storage_data_from_pudl_parquet(
+        raw_data_directory=parsed_args.raw_data_directory,
+        pudl_download_directory=parsed_args.pudl_download_directory,
+        energy_storage_report_date=parsed_args.eia860_energy_storage_report_date,
+        pudl_version=determine_pudl_version(
+            pudl_download_directory=parsed_args.pudl_download_directory,
+            pudl_version=parsed_args.pudl_version,
+            source_file="core_eia860__scd_generators_energy_storage.parquet",
         ),
         quiet=parsed_args.quiet,
     )

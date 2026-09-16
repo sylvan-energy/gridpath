@@ -36,6 +36,7 @@ MAIN_TABLE_NAMES = [
     "core_eia860__scd_plants",
     "core_eia__entity_generators",
     "core_eia860__scd_generators_solar",
+    "core_eia860__scd_generators_energy_storage",
     "core_eia860m__changelog_generators",
     "core_eia__codes_balancing_authorities",
     "core_eiaaeo__yearly_projected_fuel_cost_in_electric_sector_by_type",

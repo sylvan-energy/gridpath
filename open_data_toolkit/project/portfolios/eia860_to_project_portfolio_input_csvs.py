@@ -36,7 +36,24 @@ value for a unit contribute nothing (e.g. with the ``duration`` dimension,
 storage aggregates become ``Batteries_4h_<zone>`` while non-storage names
 are unchanged). See AGGREGATION_DIMENSIONS in
 ``open_data_toolkit.project.fleet.aggregation`` for the menu: technology_description,
-vintage_decade, duration, status.
+vintage_decade, duration, status, hybrid.
+
+The ``hybrid`` dimension splits out the components of hybrid plants —
+e.g. ``Solar_Hybrid_CISO`` and ``Batteries_Hybrid_CISO`` next to the
+standalone ``Solar_CISO`` / ``Batteries_CISO`` aggregates. A battery and
+a solar/wind unit pair when the battery's EIA860 energy-storage
+supplement filing (``raw_data_eia860_energy_storage``) names the unit as
+directly supported (the primary evidence — it can cross plant IDs), or,
+failing that, when the two are co-located at one plant; batteries the
+supplement flags ``is_independent`` never pair. Pairing is evaluated
+against the STUDY FLEET: a component whose partner is excluded (not yet
+built by the study year, retired, filtered out) is not a hybrid
+component in that study, so the pairing follows the fleet-selection
+settings. With an empty supplement table (a raw database predating it),
+pairing silently degrades to plant co-location only and the steps warn
+loudly. The fleet audit reports each unit's pairing and the supplement's
+coupling flags (AC/DC/tightly-DC-coupled/independent) — the evidence
+base for how a study should treat hybrids.
 
 By default aggregation happens at the load-zone level itself; the
 ``aggregation_level`` setting decouples the two, naming (and thereby
@@ -58,9 +75,12 @@ carve a plant into its own aggregate project (e.g. ``Hydro_Hoover``), or
 override its load zone. See
 ``open_data_toolkit.project.fleet.unit_overrides`` for the semantics.
 
-.. note:: Hybrid projects are currently not treated separately by this
-    module: their generation and storage components show up as individual
-    units.
+.. note:: Hybrid plants' generation and storage components are separate
+    projects (individual units, or — with the ``hybrid`` aggregation
+    dimension — hybrid-component aggregates split from the standalone
+    fleet). No step yet generates the coupling between them (a shared
+    interconnection limit via GridPath's power output groups, or the
+    merged ``gen_var_stor_hyb`` operational type).
 
 Project portfolios are created from whichever EIA860 data vintage was
 loaded into the raw database — the ``eia860_report_date`` chosen at
@@ -200,8 +220,10 @@ Settings
     * project_portfolio_scenario_id
     * project_portfolio_scenario_name
 
-TODO: disaggregate the hybrids out of the wind/solar project and combine
-     with their battery components
+TODO: generate the coupling between hybrid components (a shared
+     interconnection limit via power output groups, or the merged
+     gen_var_stor_hyb operational type); the 'hybrid' aggregation
+     dimension already splits them out
 """
 
 from argparse import ArgumentParser

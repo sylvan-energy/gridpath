@@ -34,6 +34,7 @@ from open_data_toolkit.raw_data.pudl.pudl_to_gridpath_raw_data import (
     get_eia_baa_codes_from_pudl_parquet,
     get_eia_generator_data_from_pudl_parquet,
     get_eia860_solar_data_from_pudl_parquet,
+    get_eia860_energy_storage_data_from_pudl_parquet,
     main as pudl_to_gridpath_raw_data_main,
     warn_on_baa_coverage,
 )
@@ -122,6 +123,38 @@ SOLAR_FIXTURE_SQL = """
     ) t(report_date, plant_id_eia, generator_id,
         uses_net_metering_agreement, net_metering_capacity_mwdc,
         uses_virtual_net_metering_agreement, virtual_net_metering_capacity_mwdc)
+"""
+
+# Two energy-storage vintages: the 2024 filing has only plant 3's battery
+# (co-located, no flags yet); the 2025 filing adds plant 4's battery with a
+# cross-plant direct-support link to plant 1's generator and DC coupling,
+# and flags plant 3's battery independent
+ENERGY_STORAGE_FIXTURE_SQL = """
+    SELECT * FROM (VALUES
+        (DATE '2024-01-01', 3, 'B1', 10.0, 12.0,
+         CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+         CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
+         CAST(NULL AS BOOLEAN),
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR)),
+        (DATE '2025-01-01', 3, 'B1', 10.0, 12.0,
+         FALSE, FALSE, FALSE, TRUE, FALSE,
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR)),
+        (DATE '2025-01-01', 4, 'B2', 5.0, 5.5,
+         FALSE, TRUE, TRUE, FALSE, TRUE,
+         1, '1',
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR))
+    ) t(report_date, plant_id_eia, generator_id,
+        max_charge_rate_mw, max_discharge_rate_mw,
+        is_ac_coupled, is_dc_coupled, is_dc_coupled_tightly,
+        is_independent, is_direct_support,
+        plant_id_eia_direct_support_1, generator_id_direct_support_1,
+        plant_id_eia_direct_support_2, generator_id_direct_support_2,
+        plant_id_eia_direct_support_3, generator_id_direct_support_3)
 """
 
 EIA860M_FIXTURE_SQL = """
@@ -266,6 +299,10 @@ class TestPudlToGridPathRawData(unittest.TestCase):
             ("core_eia860__scd_plants", PLANTS_FIXTURE_SQL),
             ("core_eia__entity_generators", ENTITY_GENERATORS_FIXTURE_SQL),
             ("core_eia860__scd_generators_solar", SOLAR_FIXTURE_SQL),
+            (
+                "core_eia860__scd_generators_energy_storage",
+                ENERGY_STORAGE_FIXTURE_SQL,
+            ),
             ("core_eia860m__changelog_generators", EIA860M_FIXTURE_SQL),
             (
                 "core_eiaaeo__yearly_projected_fuel_cost_in_electric_sector" "_by_type",
@@ -1095,6 +1132,57 @@ class TestPudlToGridPathRawData(unittest.TestCase):
     def test_solar_bad_vintage_raises(self):
         with self.assertRaisesRegex(ValueError, "eia860_solar_report_date"):
             self.get_solar_csv(solar_report_date="2026-06-15")
+
+    def get_energy_storage_csv(self, energy_storage_report_date=None):
+        raw_data_directory = tempfile.mkdtemp(dir=self.tmp_dir.name)
+        get_eia860_energy_storage_data_from_pudl_parquet(
+            raw_data_directory=raw_data_directory,
+            pudl_download_directory=self.tmp_dir.name,
+            energy_storage_report_date=energy_storage_report_date,
+            pudl_version="v-test",
+            quiet=True,
+        )
+        return pd.read_csv(
+            os.path.join(raw_data_directory, "pudl_eia860_energy_storage.csv"),
+            dtype={"generator_id": str, "generator_id_direct_support_1": str},
+        )
+
+    def test_energy_storage_defaults_to_latest_vintage(self):
+        # The 2025 vintage: plant 3's battery flagged independent, plant
+        # 4's DC-coupled with a cross-plant support link to unit 1-1
+        df = self.get_energy_storage_csv()
+        self.assertEqual(df["report_date"].unique().tolist(), ["2025-01-01"])
+        self.assertEqual(len(df), 2)
+        df = df.set_index(["plant_id_eia", "generator_id"])
+        self.assertEqual(int(df.loc[(3, "B1"), "is_independent"]), 1)
+        self.assertEqual(int(df.loc[(4, "B2"), "is_dc_coupled_tightly"]), 1)
+        self.assertEqual(int(df.loc[(4, "B2"), "plant_id_eia_direct_support_1"]), 1)
+        self.assertEqual(df.loc[(4, "B2"), "generator_id_direct_support_1"], "1")
+        self.assertEqual(float(df.loc[(4, "B2"), "max_discharge_rate_mw"]), 5.5)
+
+    def test_energy_storage_pinned_vintage(self):
+        # The 2024 vintage predates the coupling flags: NULLs ride through
+        # as empty cells, the ratings are populated
+        df = self.get_energy_storage_csv(energy_storage_report_date="2024-01-01")
+        self.assertEqual(len(df), 1)
+        self.assertEqual(int(df["plant_id_eia"].iloc[0]), 3)
+        self.assertTrue(pd.isna(df["is_independent"].iloc[0]))
+        self.assertEqual(float(df["max_charge_rate_mw"].iloc[0]), 10.0)
+
+    def test_energy_storage_bad_vintage_raises(self):
+        with self.assertRaisesRegex(ValueError, "eia860_energy_storage_report_date"):
+            self.get_energy_storage_csv(energy_storage_report_date="2026-06-15")
+
+    def test_energy_storage_missing_parquet_raises(self):
+        empty_download_dir = tempfile.mkdtemp(dir=self.tmp_dir.name)
+        with self.assertRaisesRegex(FileNotFoundError, "gridpath_get_pudl_data"):
+            get_eia860_energy_storage_data_from_pudl_parquet(
+                raw_data_directory=tempfile.mkdtemp(dir=self.tmp_dir.name),
+                pudl_download_directory=empty_download_dir,
+                energy_storage_report_date=None,
+                pudl_version="v-test",
+                quiet=True,
+            )
 
     def test_solar_missing_parquet_raises(self):
         empty_download_dir = tempfile.mkdtemp(dir=self.tmp_dir.name)

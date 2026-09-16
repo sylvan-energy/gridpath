@@ -107,6 +107,7 @@ from open_data_toolkit.project.fleet.step_common import (
     connect_and_check_scope,
     get_fleet_relation_sql_from_args,
     get_project_name_str_from_args,
+    requests_hybrid_dimension,
     warn_on_fleet_data_gaps,
     add_shared_project_step_arguments,
 )
@@ -252,8 +253,12 @@ def main(args=None):
 
     os.makedirs(parsed_args.output_directory, exist_ok=True)
 
-    # The fleet relation is built after connecting, since the as-of-date
-    # default is read from the changelog
+    # This early call validates the aggregation settings before any
+    # database work; the fleet relation itself is built after connecting,
+    # since the as-of-date default is read from the changelog — and when
+    # the 'hybrid' dimension is requested, the project name embeds that
+    # relation (pairing is against IN-FLEET partners), so the name is
+    # rebuilt below with the as-of filter
     project_name_str = get_project_name_str_from_args(
         parsed_args, generators_table=EIA860M_GENERATORS_TABLE
     )
@@ -266,11 +271,19 @@ def main(args=None):
     as_of_date = determine_as_of_date(
         conn=conn, eia860m_as_of_date=parsed_args.eia860m_as_of_date
     )
+    as_of_filter_string = get_eia860m_as_of_date_filter_string(as_of_date=as_of_date)
+
+    if requests_hybrid_dimension(parsed_args):
+        project_name_str = get_project_name_str_from_args(
+            parsed_args,
+            generators_table=EIA860M_GENERATORS_TABLE,
+            extra_where=as_of_filter_string,
+        )
 
     fleet_relation_sql = get_fleet_relation_sql_from_args(
         parsed_args,
         generators_table=EIA860M_GENERATORS_TABLE,
-        extra_where=get_eia860m_as_of_date_filter_string(as_of_date=as_of_date),
+        extra_where=as_of_filter_string,
     )
 
     get_project_capacity(

@@ -188,10 +188,22 @@ what gets modeled. They apply, in order:
    aggregate wind/solar/hydro and keep thermal units individual). The
    ``aggregation_dimensions`` setting splits aggregates finer by named
    unit characteristics (EIA technology description, vintage decade,
-   storage duration, operational status), and the ``aggregation_level``
-   setting aggregates at a finer geographic level than the load zones
-   (e.g. per-BA projects assigned to custom zones) — again see the
-   portfolio step's documentation for details.
+   storage duration, operational status, hybrid pairing), and the
+   ``aggregation_level`` setting aggregates at a finer geographic level
+   than the load zones (e.g. per-BA projects assigned to custom zones) —
+   again see the portfolio step's documentation for details. The
+   ``hybrid`` dimension is special: it splits out the components of
+   hybrid plants (e.g. ``Solar_Hybrid_CISO`` and
+   ``Batteries_Hybrid_CISO`` next to the standalone ``Solar_CISO`` /
+   ``Batteries_CISO``), pairing a battery with a co-located solar/wind
+   unit — or with the specific generators its EIA-860 energy-storage
+   supplement filing says it directly supports, which can cross plant
+   IDs — when BOTH components are in the study fleet; batteries the
+   supplement flags as independent never pair. The supplement rides the
+   standard download/convert/load chain into
+   ``raw_data_eia860_energy_storage`` (annual-form-only, so pinned to an
+   annual vintage like the solar table); with an empty table, pairing
+   degrades to plant co-location only and the steps warn loudly.
 
 Individual units can be pinned past all three stages with the optional
 ``user_defined_unit_overrides`` table — force a unit into or out of the
@@ -214,7 +226,11 @@ after) generating inputs, run the ``fleet_audit`` step with the same
 settings: it reports, unit by unit, each stage's decision — resolved BA
 and load zone, each filter passed or failed, final project name — plus
 a units-and-MW waterfall of what each stage excluded (see
-:mod:`open_data_toolkit.project.fleet.fleet_audit` below).
+:mod:`open_data_toolkit.project.fleet.fleet_audit` below). The audit
+also reports each in-fleet unit's hybrid pairing (``direct_support`` /
+``co_located`` / empty) and each battery's supplement coupling flags
+(``storage_coupling``: AC-coupled, DC-coupled, tightly DC-coupled, or
+independent) — the evidence base for how a study should treat hybrids.
 
 ********************************
 Generate the GridPath Input CSVs

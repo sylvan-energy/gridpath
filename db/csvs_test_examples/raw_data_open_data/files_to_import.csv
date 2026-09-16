@@ -3,6 +3,7 @@ import,filename,table
 1,./geographies/pudl_eia_baa_codes.csv,raw_data_eia_baa_codes
 1,./project/pudl_eia860_generators.csv,raw_data_eia860_generators
 1,./project/pudl_eia860_solar.csv,raw_data_eia860_solar
+1,./project/pudl_eia860_energy_storage.csv,raw_data_eia860_energy_storage
 1,./project/user_defined_eia_gridpath_key.csv,user_defined_eia_gridpath_key
 1,./project/user_defined_heat_rate_curve.csv,user_defined_heat_rate_curve
 1,./fuels/pudl_eiaaeo_fuel_prices.csv,raw_data_eiaaeo_fuel_prices

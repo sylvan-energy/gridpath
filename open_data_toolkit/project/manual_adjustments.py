@@ -76,6 +76,14 @@ Settings
     * aggregation_level
     * battery_duration
     * pumped_storage_duration
+
+.. note:: With the ``hybrid`` aggregation dimension, project names embed
+    the hybrid pairing, which is evaluated against the fleet the
+    FLEET-SELECTION settings choose. This step deliberately takes no
+    fleet-selection settings (it patches a superset fleet), so its names
+    use the pairing under the DEFAULT fleet selection — if the study's
+    other steps run with non-default fleet-selection settings AND the
+    hybrid dimension, verify this step's patches still hit their rows.
 """
 
 from argparse import ArgumentParser

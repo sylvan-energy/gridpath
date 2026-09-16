@@ -86,6 +86,22 @@ AGGREGATION_DIMENSIONS = {
         "expr": "operational_status_code",
         "columns": ["operational_status_code"],
     },
+    # 'Hybrid' for paired hybrid components — a battery, or a solar/wind
+    # unit, whose partner is in the study fleet (paired by the EIA860
+    # energy-storage supplement's direct-support links, with plant
+    # co-location as the fallback; see
+    # open_data_toolkit.project.fleet.fleet_filters.get_hybrid_pairing_expr)
+    # — splitting e.g. Solar_CISO into Solar_CISO and Solar_Hybrid_CISO.
+    # Unlike the other dimensions, its expression depends on the step's
+    # fleet-selection settings (a unit only pairs against IN-FLEET
+    # partners), so it is built at runtime and passed down as
+    # hybrid_pairing_expr — the steps' shared
+    # get_project_name_str_from_args adapter does this; a direct
+    # get_aggregation_dimensions_sql caller must pass it explicitly.
+    "hybrid": {
+        "expr": None,
+        "columns": ["plant_id_eia", "generator_id", "prime_mover_code"],
+    },
 }
 
 
@@ -139,14 +155,20 @@ def add_project_aggregation_arguments(parser):
 
 
 def get_aggregation_dimensions_sql(
-    aggregation_dimensions, generators_table="raw_data_eia860_generators"
+    aggregation_dimensions,
+    generators_table="raw_data_eia860_generators",
+    hybrid_pairing_expr=None,
 ):
     """
     The SQL snippet appending the requested aggregation dimensions (a
     comma-separated string or an iterable of names from
     AGGREGATION_DIMENSIONS) to the aggregate project name. Unknown dimension
     names and dimensions whose columns the *generators_table* doesn't carry
-    raise ValueError.
+    raise ValueError. The 'hybrid' dimension has no static expression — its
+    pairing rules depend on the step's fleet-selection settings — so
+    requesting it requires passing the runtime-built *hybrid_pairing_expr*
+    (see fleet_filters.get_hybrid_pairing_expr); the steps' shared
+    get_project_name_str_from_args adapter supplies it.
     """
     if isinstance(aggregation_dimensions, str):
         aggregation_dimensions = [
@@ -173,6 +195,17 @@ def get_aggregation_dimensions_sql(
                 f"carry — drop the dimension or use an EIA860-based step."
             )
         expr = AGGREGATION_DIMENSIONS[dimension]["expr"]
+        if expr is None:
+            if hybrid_pairing_expr is None:
+                raise ValueError(
+                    f"The '{dimension}' aggregation dimension has no static "
+                    f"expression — it depends on the step's fleet-selection "
+                    f"settings — so it needs the runtime-built "
+                    f"hybrid_pairing_expr (see "
+                    f"fleet_filters.get_hybrid_pairing_expr; the steps' "
+                    f"get_project_name_str_from_args adapter builds it)."
+                )
+            expr = hybrid_pairing_expr
         snippet += f" || COALESCE('_' || {expr}, '')"
 
     return snippet
@@ -184,6 +217,7 @@ def get_agg_project_name_str(
     aggregation_dimensions="",
     generators_table="raw_data_eia860_generators",
     aggregation_level=None,
+    hybrid_pairing_expr=None,
 ):
     """
     Aggregated projects are named
@@ -213,6 +247,7 @@ def get_agg_project_name_str(
     dimensions_sql = get_aggregation_dimensions_sql(
         aggregation_dimensions=aggregation_dimensions,
         generators_table=generators_table,
+        hybrid_pairing_expr=hybrid_pairing_expr,
     )
     return (
         "COALESCE(agg_project, gridpath_technology)"
@@ -229,6 +264,7 @@ def get_project_name_str(
     aggregation_dimensions="",
     generators_table="raw_data_eia860_generators",
     aggregation_level=None,
+    hybrid_pairing_expr=None,
 ):
     """
     The project-name SQL expression for the chosen *project_aggregation*
@@ -255,6 +291,7 @@ def get_project_name_str(
         aggregation_dimensions=aggregation_dimensions,
         generators_table=generators_table,
         aggregation_level=aggregation_level,
+        hybrid_pairing_expr=hybrid_pairing_expr,
     )
     if project_aggregation == "all":
         return agg_name_str

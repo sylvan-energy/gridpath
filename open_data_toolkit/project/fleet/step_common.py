@@ -34,8 +34,11 @@ The steps call these in the following order, which matters:
    the units themselves (unknown status codes, NULL sectors).
 
 Steps whose fleet relation depends on something read from the database
-(the EIA860M step's default as-of date) necessarily build it after step 2;
-they still resolve the project name first.
+(the EIA860M step's default as-of date) necessarily build it after step 2 —
+and, because the 'hybrid' aggregation dimension embeds the fleet relation
+in the project name (a unit pairs only against IN-FLEET partners), such a
+step builds the project name after step 2 too, passing its fleet-relation
+overrides to :func:`get_project_name_str_from_args`.
 
 The wrappers pull the shared settings off the parsed arguments by name, so
 a step that omits one of them — the fuel and heat-rate steps take no
@@ -59,8 +62,11 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_missing_planned_retirement_data,
     SECTOR_COLUMN,
     add_fleet_selection_arguments,
+    ensure_energy_storage_table,
     ensure_net_metering_table,
     get_fleet_relation_sql,
+    get_hybrid_pairing_expr,
+    warn_on_missing_energy_storage_data,
     warn_on_missing_net_metering_data,
     warn_on_null_sector_rows,
     warn_on_uncovered_sector_names,
@@ -180,14 +186,46 @@ def get_shared_project_step_settings(
     return settings
 
 
+def requests_hybrid_dimension(parsed_args):
+    """
+    Whether the step's parsed arguments request the 'hybrid' aggregation
+    dimension — i.e. whether the project names need the runtime-built
+    hybrid-pairing expression. False in the disaggregated ('none') mode,
+    where dimensions never apply.
+    """
+    if getattr(parsed_args, "project_aggregation", "none") == "none":
+        return False
+    dimensions = getattr(parsed_args, "aggregation_dimensions", "")
+    if isinstance(dimensions, str):
+        dimensions = [d.strip() for d in dimensions.split(",") if d.strip()]
+
+    return "hybrid" in dimensions
+
+
 def get_project_name_str_from_args(
-    parsed_args, generators_table=EIA860_GENERATORS_TABLE
+    parsed_args, generators_table=EIA860_GENERATORS_TABLE, **fleet_overrides
 ):
     """
     The stage-3 project-name expression for a step's parsed arguments (see
     open_data_toolkit.project.fleet.aggregation.get_project_name_str). Call before
     connecting: it validates the aggregation settings.
+
+    When the 'hybrid' aggregation dimension is requested, this also builds
+    the hybrid-pairing expression it needs, embedding the step's fleet
+    relation (a unit pairs only against IN-FLEET partners) — pass the same
+    *fleet_overrides* the step passes to get_fleet_relation_sql_from_args
+    so the two agree, and call this AFTER any override only the database
+    can supply is known (the EIA860M step's as-of-date filter).
     """
+    hybrid_pairing_expr = None
+    if requests_hybrid_dimension(parsed_args):
+        hybrid_pairing_expr = get_hybrid_pairing_expr(
+            generators_table=generators_table,
+            fleet_relation_sql=get_fleet_relation_sql_from_args(
+                parsed_args, generators_table=generators_table, **fleet_overrides
+            ),
+        )
+
     return get_project_name_str(
         project_aggregation=parsed_args.project_aggregation,
         load_zone_level=parsed_args.load_zone_level,
@@ -195,6 +233,7 @@ def get_project_name_str_from_args(
         aggregation_dimensions=parsed_args.aggregation_dimensions,
         generators_table=generators_table,
         aggregation_level=getattr(parsed_args, "aggregation_level", None),
+        hybrid_pairing_expr=hybrid_pairing_expr,
     )
 
 
@@ -236,10 +275,13 @@ def connect_and_check_scope(parsed_args):
 
     try:
         # The fleet relation references user_defined_unit_overrides
-        # unconditionally (and raw_data_eia860_solar when the net-metered
-        # exclusion is on); create them empty on databases that predate them
+        # unconditionally (raw_data_eia860_solar when the net-metered
+        # exclusion is on, and raw_data_eia860_energy_storage when hybrid
+        # pairing is — the fleet audit's hybrid columns always); create
+        # them empty on databases that predate them
         ensure_unit_overrides_table(conn=conn)
         ensure_net_metering_table(conn=conn)
+        ensure_energy_storage_table(conn=conn)
         report_footprint_type(
             conn=conn, footprint=parsed_args.footprint, quiet=parsed_args.quiet
         )
@@ -269,10 +311,12 @@ def warn_on_fleet_data_gaps(
     Warn about raw-data gaps that would silently distort the fleet
     selection: operational status codes the filter tiers don't account
     for; when behind-the-meter units are being excluded, units with no
-    sector to classify them by; and when planned retirements are being
+    sector to classify them by; when planned retirements are being
     excluded, an entirely empty planned-retirement column (which makes
-    that exclusion silently inert). All warn regardless of any quiet
-    setting, by design.
+    that exclusion silently inert); and when the 'hybrid' aggregation
+    dimension is in use, an empty energy-storage supplement table (which
+    silently degrades pairing to plant co-location only). All warn
+    regardless of any quiet setting, by design.
     """
     warn_on_uncovered_status_codes(conn=conn, generators_table=generators_table)
 
@@ -292,3 +336,6 @@ def warn_on_fleet_data_gaps(
 
     if not getattr(parsed_args, "include_net_metered", True):
         warn_on_missing_net_metering_data(conn=conn)
+
+    if requests_hybrid_dimension(parsed_args):
+        warn_on_missing_energy_storage_data(conn=conn)
