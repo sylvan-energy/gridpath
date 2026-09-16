@@ -58,6 +58,7 @@ Settings
     * project_aggregation
     * aggregation_dimensions
     * aggregation_level
+    * hybrid_treatment
     * project_specified_capacity_scenario_id
     * project_specified_capacity_scenario_name
 

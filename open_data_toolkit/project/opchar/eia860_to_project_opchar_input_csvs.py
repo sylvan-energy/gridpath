@@ -61,6 +61,7 @@ Settings
     * project_aggregation
     * aggregation_dimensions
     * aggregation_level
+    * hybrid_treatment
     * project_operational_chars_scenario_id
     * project_operational_chars_scenario_name
     * project_fuel_scenario_id
@@ -81,8 +82,10 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     FUEL_FILTER_STR,
     HEAT_RATE_FILTER_STR,
     STOR_FILTER_STR,
+    get_hybrid_var_component_condition,
 )
 from open_data_toolkit.project.fleet.step_common import (
+    EIA860_GENERATORS_TABLE,
     connect_and_check_scope,
     get_fleet_relation_sql_from_args,
     get_project_name_str_from_args,
@@ -157,10 +160,14 @@ def get_project_opchar(
     hy_id,
     aggregate_projects=False,
     hydro_balancing_type=None,
+    var_operational_type_expr="gridpath_operational_type",
 ):
     # Variable gen and hydro get different opchar columns (profile / hydro
     # opchar scenario IDs), so the query is a UNION of three branches split
-    # by the operational-type filter strings
+    # by the operational-type filter strings. The variable branch's
+    # operational type is an expression: under the power_output_group
+    # hybrid treatment, paired variable components flip from
+    # gen_var_must_take to the curtailable gen_var (see main)
 
     non_var_opchars_str = make_opchar_sql_str(
         technology="gridpath_technology",
@@ -180,7 +187,7 @@ def get_project_opchar(
 
     var_opchars_str = make_opchar_sql_str(
         technology="gridpath_technology",
-        operational_type="gridpath_operational_type",
+        operational_type=var_operational_type_expr,
         balancing_type_project="gridpath_balancing_type",
         variable_om_cost_per_mwh="default_variable_om_cost_per_mwh",
         variable_generator_profile_scenario_id=f"{var_id}",
@@ -478,6 +485,21 @@ def main(args=None):
     project_name_str = get_project_name_str_from_args(parsed_args)
     fleet_relation_sql = get_fleet_relation_sql_from_args(parsed_args)
 
+    # Under the power_output_group hybrid treatment, paired variable
+    # components must be curtailable (a must-take unit that can exceed the
+    # shared interconnection limit makes the group max infeasible), so
+    # their key operational type flips gen_var_must_take -> gen_var
+    var_operational_type_expr = "gridpath_operational_type"
+    if parsed_args.hybrid_treatment == "power_output_group":
+        hybrid_var_condition = get_hybrid_var_component_condition(
+            generators_table=EIA860_GENERATORS_TABLE,
+            fleet_relation_sql=fleet_relation_sql,
+        )
+        var_operational_type_expr = f"""CASE
+            WHEN {hybrid_var_condition}
+                AND gridpath_operational_type = 'gen_var_must_take'
+            THEN 'gen_var' ELSE gridpath_operational_type END"""
+
     conn = connect_and_check_scope(parsed_args)
     warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
 
@@ -499,6 +521,7 @@ def main(args=None):
         hy_id=parsed_args.hydro_operational_chars_scenario_id,
         aggregate_projects=parsed_args.project_aggregation != "none",
         hydro_balancing_type=parsed_args.hydro_balancing_type,
+        var_operational_type_expr=var_operational_type_expr,
     )
 
     conn.close()

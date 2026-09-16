@@ -211,6 +211,31 @@ def get_aggregation_dimensions_sql(
     return snippet
 
 
+def get_geographic_token_str(
+    load_zone_level,
+    footprint,
+    generators_table="raw_data_eia860_generators",
+    aggregation_level=None,
+):
+    """
+    The SQL expression for a unit's GEOGRAPHIC NAME TOKEN — the value the
+    aggregate project names end in: the unit's zone at the load-zone level
+    (or at *aggregation_level* when set — see get_agg_project_name_str),
+    overridden per unit by an 'aggregation' value in
+    user_defined_unit_overrides. Exposed separately from the name
+    expression so steps grouping OTHER things by the same geography (the
+    hybrid power-output-group step) can't drift from the names.
+    """
+    map_token_str = get_load_zone_str(
+        (load_zone_level if aggregation_level is None else aggregation_level),
+        footprint,
+    )
+    aggregation_override_sql = get_unit_override_sql(
+        column="aggregation", generators_table=generators_table
+    )
+    return f"COALESCE({aggregation_override_sql}, {map_token_str})"
+
+
 def get_agg_project_name_str(
     load_zone_level,
     footprint,
@@ -236,14 +261,12 @@ def get_agg_project_name_str(
     open_data_toolkit.project.fleet.unit_overrides) — an empty overrides
     table is a no-op.
     """
-    map_token_str = get_load_zone_str(
-        (load_zone_level if aggregation_level is None else aggregation_level),
-        footprint,
+    geographic_token_str = get_geographic_token_str(
+        load_zone_level=load_zone_level,
+        footprint=footprint,
+        generators_table=generators_table,
+        aggregation_level=aggregation_level,
     )
-    aggregation_override_sql = get_unit_override_sql(
-        column="aggregation", generators_table=generators_table
-    )
-    geographic_token_str = f"COALESCE({aggregation_override_sql}, {map_token_str})"
     dimensions_sql = get_aggregation_dimensions_sql(
         aggregation_dimensions=aggregation_dimensions,
         generators_table=generators_table,

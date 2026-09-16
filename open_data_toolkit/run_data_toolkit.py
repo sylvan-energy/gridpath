@@ -107,6 +107,7 @@ PROJECT_STEP_SCRIPTS = [
     "eia860_to_project_fixed_cost_input_csvs",
     "eia860_to_project_availability_input_csvs",
     "eia860_to_project_opchar_input_csvs",
+    "eia860_to_project_power_output_group_input_csvs",
     "eia860_to_project_fuel_input_csvs",
     "eia860_to_project_heat_rate_input_csvs",
     "manual_adjustments",

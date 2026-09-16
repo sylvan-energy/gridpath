@@ -43,6 +43,7 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_missing_energy_storage_data,
 )
 from open_data_toolkit.project.fleet.step_common import (
+    check_hybrid_treatment_settings,
     get_fleet_relation_sql_from_args,
     get_project_name_str_from_args,
     requests_hybrid_dimension,
@@ -306,6 +307,33 @@ class TestHybridPairing(unittest.TestCase):
                 footprint="Interconnect1",
                 aggregation_dimensions="hybrid",
             )
+
+    def test_hybrid_treatment_requires_dimension_when_aggregating(self):
+        # Aggregated mode + a non-independent treatment without the
+        # 'hybrid' dimension: hybrid and standalone components would share
+        # aggregates, so the combination is refused (through the shared
+        # name adapter, i.e. in every step)
+        invalid = self.make_step_args(
+            aggregation_dimensions="", hybrid_treatment="power_output_group"
+        )
+        with self.assertRaisesRegex(ValueError, "hybrid.*dimension"):
+            check_hybrid_treatment_settings(invalid)
+        with self.assertRaisesRegex(ValueError, "hybrid.*dimension"):
+            get_project_name_str_from_args(invalid)
+
+        # Fine: disaggregated mode (no aggregates to mix), and aggregated
+        # mode with the dimension or with the default treatment
+        check_hybrid_treatment_settings(
+            self.make_step_args(
+                project_aggregation="none",
+                aggregation_dimensions="",
+                hybrid_treatment="power_output_group",
+            )
+        )
+        check_hybrid_treatment_settings(
+            self.make_step_args(hybrid_treatment="power_output_group")
+        )
+        check_hybrid_treatment_settings(self.make_step_args(aggregation_dimensions=""))
 
     def test_pairing_on_the_eia860m_table(self):
         # The same pairing rules against the changelog table: the inner

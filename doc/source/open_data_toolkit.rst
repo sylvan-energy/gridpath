@@ -203,7 +203,15 @@ what gets modeled. They apply, in order:
    standard download/convert/load chain into
    ``raw_data_eia860_energy_storage`` (annual-form-only, so pinned to an
    annual vintage like the solar table); with an empty table, pairing
-   degrades to plant co-location only and the steps warn loudly.
+   degrades to plant co-location only and the steps warn loudly. The
+   ``hybrid_treatment`` setting decides whether paired components are
+   COUPLED: the default keeps them independent, while
+   ``power_output_group`` caps each hybrid's combined output at its
+   shared interconnection limit — the
+   ``eia860_to_project_power_output_group_input_csvs`` step generates the
+   group CSVs (EIA-860 collects no interconnection capacity, so the limit
+   is a documented default with an override path) and the opchar step
+   flips paired variable components to the curtailable ``gen_var``.
 
 Individual units can be pinned past all three stages with the optional
 ``user_defined_unit_overrides`` table — force a unit into or out of the
@@ -390,6 +398,7 @@ when to pin an as-filed vintage instead.
 .. automodule:: open_data_toolkit.project.capacity_specified.eia860m_to_project_specified_capacity_input_csvs
 .. automodule:: open_data_toolkit.project.fixed_cost.eia860_to_project_fixed_cost_input_csvs
 .. automodule:: open_data_toolkit.project.opchar.eia860_to_project_opchar_input_csvs
+.. automodule:: open_data_toolkit.project.opchar.power_output_groups.eia860_to_project_power_output_group_input_csvs
 .. automodule:: open_data_toolkit.project.opchar.fuels.eia860_to_project_fuel_input_csvs
 .. automodule:: open_data_toolkit.project.opchar.heat_rates.eia860_to_project_heat_rate_input_csvs
 .. automodule:: open_data_toolkit.project.manual_adjustments

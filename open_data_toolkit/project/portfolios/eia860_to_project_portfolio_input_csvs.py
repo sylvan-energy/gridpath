@@ -78,9 +78,19 @@ override its load zone. See
 .. note:: Hybrid plants' generation and storage components are separate
     projects (individual units, or — with the ``hybrid`` aggregation
     dimension — hybrid-component aggregates split from the standalone
-    fleet). No step yet generates the coupling between them (a shared
-    interconnection limit via GridPath's power output groups, or the
-    merged ``gen_var_stor_hyb`` operational type).
+    fleet). The ``hybrid_treatment`` setting decides whether they are
+    COUPLED: 'independent' (the default) models them as unrelated
+    projects; 'power_output_group' caps each hybrid's combined output at
+    its shared interconnection limit via GridPath's power output groups —
+    the ``eia860_to_project_power_output_group_input_csvs`` step generates
+    the group CSVs (and documents the POI-limit assumption), and the
+    opchar step flips paired variable components from gen_var_must_take
+    to the curtailable gen_var. In an aggregated mode, a non-independent
+    treatment requires the ``hybrid`` dimension (hybrid and standalone
+    components must not share an aggregate); the setting must be
+    consistent across the project-level steps. A merged
+    ``gen_var_stor_hyb`` treatment (one project per hybrid, field-only
+    charging) is designed but not implemented.
 
 Project portfolios are created from whichever EIA860 data vintage was
 loaded into the raw database — the ``eia860_report_date`` chosen at
@@ -217,13 +227,13 @@ Settings
     * project_aggregation
     * aggregation_dimensions
     * aggregation_level
+    * hybrid_treatment
     * project_portfolio_scenario_id
     * project_portfolio_scenario_name
 
-TODO: generate the coupling between hybrid components (a shared
-     interconnection limit via power output groups, or the merged
-     gen_var_stor_hyb operational type); the 'hybrid' aggregation
-     dimension already splits them out
+TODO: a merged gen_var_stor_hyb hybrid treatment (one project per
+     hybrid, field-only charging); the power_output_group treatment and
+     the 'hybrid' aggregation dimension are implemented
 """
 
 from argparse import ArgumentParser

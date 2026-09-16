@@ -74,6 +74,7 @@ Settings
     * project_aggregation
     * aggregation_dimensions
     * aggregation_level
+    * hybrid_treatment
     * battery_duration
     * pumped_storage_duration
 

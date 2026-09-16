@@ -59,6 +59,7 @@ Settings
     * project_aggregation
     * aggregation_dimensions
     * aggregation_level
+    * hybrid_treatment
     * project_fixed_cost_scenario_id
     * project_fixed_cost_scenario_name
 

@@ -75,6 +75,7 @@ Settings
     * project_aggregation
     * aggregation_dimensions
     * aggregation_level
+    * hybrid_treatment
     * project_load_zone_scenario_id
     * project_load_zone_scenario_name
 

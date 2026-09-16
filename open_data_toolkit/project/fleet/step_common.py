@@ -62,6 +62,7 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     warn_on_missing_planned_retirement_data,
     SECTOR_COLUMN,
     add_fleet_selection_arguments,
+    add_hybrid_treatment_argument,
     ensure_energy_storage_table,
     ensure_net_metering_table,
     get_fleet_relation_sql,
@@ -119,6 +120,7 @@ AGGREGATION_SETTINGS = (
     "project_aggregation",
     "aggregation_dimensions",
     "aggregation_level",
+    "hybrid_treatment",
 )
 
 
@@ -163,6 +165,7 @@ def add_shared_project_step_arguments(
 
     if aggregation:
         add_project_aggregation_arguments(parser=parser)
+        add_hybrid_treatment_argument(parser=parser)
 
 
 def get_shared_project_step_settings(
@@ -184,6 +187,31 @@ def get_shared_project_step_settings(
         settings += AGGREGATION_SETTINGS
 
     return settings
+
+
+def check_hybrid_treatment_settings(parsed_args):
+    """
+    In an aggregated mode, a non-independent hybrid treatment REQUIRES the
+    'hybrid' aggregation dimension: without it, hybrid and standalone
+    components share technology-zone aggregates, and the treatment's
+    per-component changes (the opchar step's gen_var_must_take -> gen_var
+    flip, the power-output-group memberships) would apply to mixed groups.
+    Raises ValueError on the invalid combination; a no-op for steps that
+    take no hybrid_treatment argument.
+    """
+    hybrid_treatment = getattr(parsed_args, "hybrid_treatment", "independent")
+    if (
+        hybrid_treatment != "independent"
+        and getattr(parsed_args, "project_aggregation", "none") != "none"
+        and not requests_hybrid_dimension(parsed_args)
+    ):
+        raise ValueError(
+            f"hybrid_treatment '{hybrid_treatment}' with project_aggregation "
+            f"'{parsed_args.project_aggregation}' requires the 'hybrid' "
+            f"aggregation dimension (add it to aggregation_dimensions): "
+            f"without it, hybrid and standalone components share aggregates "
+            f"and the treatment cannot apply cleanly."
+        )
 
 
 def requests_hybrid_dimension(parsed_args):
@@ -217,6 +245,8 @@ def get_project_name_str_from_args(
     so the two agree, and call this AFTER any override only the database
     can supply is known (the EIA860M step's as-of-date filter).
     """
+    check_hybrid_treatment_settings(parsed_args)
+
     hybrid_pairing_expr = None
     if requests_hybrid_dimension(parsed_args):
         hybrid_pairing_expr = get_hybrid_pairing_expr(

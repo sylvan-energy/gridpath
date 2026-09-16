@@ -70,6 +70,10 @@ STEP_PROFILES = {
         "open_data_toolkit.project.opchar",
         DEFAULT_PROFILE,
     ),
+    "eia860_to_project_power_output_group_input_csvs": (
+        "open_data_toolkit.project.opchar.power_output_groups",
+        DEFAULT_PROFILE,
+    ),
     "fleet_audit": ("open_data_toolkit.project.fleet", DEFAULT_PROFILE),
     "eia860_to_project_fuel_input_csvs": (
         "open_data_toolkit.project.opchar.fuels",
