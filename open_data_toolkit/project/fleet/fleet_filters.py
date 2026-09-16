@@ -60,8 +60,12 @@ NEVER_INCLUDED_STATUS_CODES = ("CN", "IP", "OZ")
 # appearing in any BA's generation telemetry (measured July 2026: these
 # sectors dominate the large-unit capacity absent from every BA's EIA-930A
 # Schedule 2). Modeling them as supply resources alongside 930-derived
-# load double-counts their energy, so the project steps exclude them by
-# default (the include_btm_plants setting opts them back in). The annual
+# load can therefore double-count their energy — but the sector is an
+# ownership-based proxy that also catches genuinely BA-metered exporting
+# cogens, so the project steps KEEP these units by default and offer the
+# blanket sector exclusion as the opt-in exclude_btm_plants setting (the
+# per-generator net-metering flag and user_defined_unit_overrides are the
+# sharper per-unit instruments). The annual
 # generators table carries only sector_name_eia at monthly-update
 # vintages (sector_id_eia is annual-form-only and NULL there); EIA860M
 # carries only sector_id_eia — the id-to-name mapping below is the EIA
@@ -141,13 +145,15 @@ def warn_on_null_sector_rows(conn, generators_table, sector_column):
     """
     Warn — loudly, regardless of any quiet setting — when
     *generators_table* has NULL values in *sector_column* while the
-    behind-the-meter exclusion is active (the default). NULL-sector units
+    behind-the-meter sector exclusion is active (exclude_btm_plants set).
+    NULL-sector units
     cannot be classified and are KEPT in the fleet, so BTM capacity may
     leak through; an entirely NULL column almost certainly means the raw
     CSVs predate the July 2026 sector columns — re-run
     gridpath_pudl_to_gridpath_raw (after re-downloading with
-    gridpath_get_pudl_data) to fill them. Callers should skip this check
-    when include_btm_plants is set. Returns (n_null_units, null_mw, n_rows).
+    gridpath_get_pudl_data) to fill them. Callers should run this check
+    only when exclude_btm_plants is set. Returns (n_null_units, null_mw,
+    n_rows).
     """
     n_null, null_mw, n_rows = conn.cursor().execute(f"""
             SELECT SUM({sector_column} IS NULL),
@@ -281,13 +287,13 @@ def get_net_metering_filter_string(include_net_metered):
     """
     The net-metered exclusion part of the EIA860(M) filters: drop units
     the EIA860 solar supplement flags as operating under a net-metering
-    agreement — their output serves onsite load and is netted out of the
-    metered demand that EIA-930-derived load is built from, so modeling
-    them as supply alongside that load double-counts their energy (the
-    same physical concern as the behind-the-meter SECTOR exclusion, on
-    different evidence: the flag is per-generator and mostly marks small
-    distributed solar in the utility/IPP sectors the sector exclusion
-    keeps). Empty with *include_net_metered*; a unit absent from
+    agreement — net metering is a billing arrangement at a retail meter
+    that runs net, so the flagged output is by definition netted out of
+    the metered demand that EIA-930-derived load is built from, and
+    modeling it as supply alongside that load double-counts its energy
+    (the same physical concern as the opt-in behind-the-meter SECTOR
+    exclusion, on per-generator, billing-based evidence rather than an
+    ownership proxy). Empty with *include_net_metered*; a unit absent from
     raw_data_eia860_solar — any non-solar unit, and solar units newer
     than the loaded solar vintage — is never excluded.
     """
@@ -355,7 +361,7 @@ def get_eia860_sql_filter_string(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    include_btm_plants=False,
+    exclude_btm_plants=False,
     btm_sector_column="sector_name_eia",
     btm_sector_values=BTM_SECTOR_NAMES,
     include_net_metered=False,
@@ -380,12 +386,15 @@ def get_eia860_sql_filter_string(
     Units whose EIA-reported PLANNED retirement date falls before the
     end of the study year are also excluded by default;
     *include_planned_retirements* keeps them (see
-    get_retired_filter_string). By default,
-    behind-the-meter-type units — the commercial/industrial EIA sectors,
-    whose output is netted out of the metered demand that EIA-930-derived
-    load is built from — are excluded so their energy isn't double-counted
-    against that load; *include_btm_plants* keeps them (see
-    BTM_SECTOR_NAMES; NULL-sector units are always kept).
+    get_retired_filter_string). *exclude_btm_plants* opts into the
+    blanket behind-the-meter SECTOR exclusion — dropping the
+    commercial/industrial EIA sectors, whose output typically serves
+    onsite load and is netted out of the metered demand that
+    EIA-930-derived load is built from (see BTM_SECTOR_NAMES; NULL-sector
+    units are always kept). It is OFF by default: the sector is an
+    ownership-based proxy that also catches BA-metered exporting cogens,
+    so per-unit instruments (the default net-metered exclusion,
+    user_defined_unit_overrides) are preferred.
     *load_zone_level* excludes units in BAs that have no load zone at
     that level (see get_footprint_scope_sql); zone-agnostic callers
     (fuels, heat rates) can keep the 'baa' default, since generating
@@ -406,7 +415,7 @@ def get_eia860_sql_filter_string(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        include_btm_plants=include_btm_plants,
+        exclude_btm_plants=exclude_btm_plants,
         btm_sector_column=btm_sector_column,
         btm_sector_values=btm_sector_values,
         include_net_metered=include_net_metered,
@@ -443,7 +452,7 @@ def get_characteristics_filter_string(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    include_btm_plants=False,
+    exclude_btm_plants=False,
     btm_sector_column="sector_name_eia",
     btm_sector_values=BTM_SECTOR_NAMES,
     include_net_metered=False,
@@ -467,7 +476,7 @@ def get_characteristics_filter_string(
         include_planned_retirements=include_planned_retirements,
     )
     btm_filter_string = get_btm_filter_string(
-        include_btm_plants=include_btm_plants,
+        exclude_btm_plants=exclude_btm_plants,
         sector_column=btm_sector_column,
         btm_sector_values=btm_sector_values,
     )
@@ -500,7 +509,7 @@ def get_eia860m_sql_filter_string(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    include_btm_plants=False,
+    exclude_btm_plants=False,
     include_net_metered=False,
 ):
     """
@@ -521,7 +530,7 @@ def get_eia860m_sql_filter_string(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        include_btm_plants=include_btm_plants,
+        exclude_btm_plants=exclude_btm_plants,
         btm_sector_column="sector_id_eia",
         btm_sector_values=BTM_SECTOR_IDS,
         include_net_metered=include_net_metered,
@@ -568,19 +577,19 @@ def get_retired_filter_string(
 
 
 def get_btm_filter_string(
-    include_btm_plants,
+    exclude_btm_plants,
     sector_column="sector_name_eia",
     btm_sector_values=BTM_SECTOR_NAMES,
 ):
     """
-    The behind-the-meter part of the EIA860(M) filters: by default,
-    exclude units in the commercial/industrial EIA sectors (see
-    BTM_SECTOR_NAMES/BTM_SECTOR_IDS), keeping NULL-sector units — they
-    can't be classified, and silently dropping them would be worse than
-    keeping them (warn_on_null_sector_rows makes them loud). With
-    *include_btm_plants*, no sector filtering at all.
+    The behind-the-meter sector part of the EIA860(M) filters: with
+    *exclude_btm_plants*, exclude units in the commercial/industrial EIA
+    sectors (see BTM_SECTOR_NAMES/BTM_SECTOR_IDS), keeping NULL-sector
+    units — they can't be classified, and silently dropping them would be
+    worse than keeping them (warn_on_null_sector_rows makes them loud).
+    Without it (the default), no sector filtering at all.
     """
-    if include_btm_plants:
+    if not exclude_btm_plants:
         return ""
 
     sector_values_string = ", ".join(
@@ -638,7 +647,7 @@ def get_fleet_relation_sql(
     planned_inclusion="under_construction",
     inactive_inclusion="none",
     include_planned_retirements=False,
-    include_btm_plants=False,
+    exclude_btm_plants=False,
     include_net_metered=False,
     generators_table="raw_data_eia860_generators",
     join_ba_map=True,
@@ -692,7 +701,7 @@ def get_fleet_relation_sql(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        include_btm_plants=include_btm_plants,
+        exclude_btm_plants=exclude_btm_plants,
         btm_sector_column=btm_sector_column,
         btm_sector_values=btm_sector_values,
         include_net_metered=include_net_metered,
@@ -745,7 +754,7 @@ def add_fleet_selection_arguments(parser):
     """
     Add the shared fleet-selection arguments — ``--include_retired``,
     ``--planned_inclusion``, ``--inactive_inclusion``,
-    ``--include_planned_retirements``, ``--include_btm_plants``,
+    ``--include_planned_retirements``, ``--exclude_btm_plants``,
     ``--include_net_metered`` — to a project-level step's argument parser.
     Single-sourced here (like add_project_aggregation_arguments) so the
     settings and their --help texts can't drift across the steps; they
@@ -799,18 +808,21 @@ def add_fleet_selection_arguments(parser):
         "no planned retirement date are always kept.",
     )
     parser.add_argument(
-        "-btm",
-        "--include_btm_plants",
+        "-xbtm",
+        "--exclude_btm_plants",
         default=False,
         action="store_true",
-        help="Also include behind-the-meter-type units (the "
+        help="Exclude ALL behind-the-meter-type units (the "
         "commercial/industrial EIA sectors: "
-        f"{', '.join(BTM_SECTOR_NAMES)}). These are excluded by default "
-        "because their output typically serves onsite load — it is netted "
-        "out of the metered demand that EIA-930-derived load is built "
-        "from and absent from BA generation telemetry, so modeling them "
-        "as supply resources alongside that load double-counts their "
-        "energy. Units with no sector in the raw data are always kept.",
+        f"{', '.join(BTM_SECTOR_NAMES)}). Much of these sectors' output "
+        "serves onsite load — netted out of the metered demand that "
+        "EIA-930-derived load is built from — so counting it as supply "
+        "double-counts its energy; but the sector is an ownership-based "
+        "proxy that also catches genuinely BA-metered exporting cogens, "
+        "so this blanket exclusion is OFF by default in favor of the "
+        "per-unit instruments (the default net-metered exclusion and "
+        "user_defined_unit_overrides). Units with no sector in the raw "
+        "data are always kept.",
     )
     parser.add_argument(
         "-nm",
@@ -819,11 +831,12 @@ def add_fleet_selection_arguments(parser):
         action="store_true",
         help="Also include units the EIA860 solar supplement flags as "
         "operating under a net-metering agreement (raw_data_eia860_solar). "
-        "These are excluded by default for the same physical reason as the "
-        "behind-the-meter sectors — their output serves onsite load and is "
-        "netted out of EIA-930-derived demand — but on different evidence: "
-        "the flag is per-generator and mostly marks small distributed "
-        "solar in the utility/IPP sectors that the sector exclusion keeps. "
+        "These are excluded by default: net metering is a billing "
+        "arrangement at a retail meter that runs net, so the flagged "
+        "output is BY DEFINITION netted out of the metered demand that "
+        "EIA-930-derived load is built from, and counting it as supply "
+        "would double-count its energy. The flag is per-generator and "
+        "mostly marks small distributed solar in the utility/IPP sectors. "
         "Units absent from the solar table (non-solar units, and solar "
         "units newer than the loaded solar vintage) are always kept; an "
         "empty table makes the exclusion a no-op (warned loudly).",

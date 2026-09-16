@@ -89,7 +89,7 @@ EIA860M_GENERATOR_FIXTURE_ROWS = [
     ("2024-01-01", "2026-08-01", 15, "1", "OA", "Zone1", 35, None, "CT", "NG", None, None, None),
     ("2024-01-01", "2026-08-01", 16, "1", "OS", "Zone1", 45, None, "CT", "NG", None, None, None),
     # Behind-the-meter-type unit (industrial CHP sector, set in the UPDATE
-    # below): excluded by default, included with include_btm_plants
+    # below): included by default, dropped with exclude_btm_plants
     ("2024-01-01", "2026-08-01", 17, "1", "OP", "Zone1", 55, None, "CT", "NG", None, None, None),
     # Zombie: last row says operating, but the generator VANISHED from
     # EIA's monthly files in March 2025 without ever filing a retirement
@@ -250,6 +250,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
             {
                 "1__1": (120, None),  # latest changelog row wins (not 100)
                 "5__1": (200, None),  # under construction ('V') included
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "6__W1": (30, None),
                 "6__W2": (50, None),
@@ -273,6 +274,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
             df,
             {
                 "1__1": (100, None),  # pre-uprate row at this as-of date
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "18__1": (65, None),  # still in EIA's files at this date
                 "6__W1": (30, None),
@@ -292,6 +294,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
             {
                 "1__1": (120, None),
                 "5__1": (200, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "10__1": (70, None),
                 "6__W1": (30, None),
@@ -330,6 +333,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
             {
                 "1__1": (120, None),
                 "5__1": (200, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "10__1": (70, None),
                 "6__W1": (30, None),
@@ -359,6 +363,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
                 "2__1": (300, None),  # retired 2020, allowed by the flag
                 "3__1": (80, None),  # retires mid-study, window dropped
                 "5__1": (200, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "6__W1": (30, None),
                 "6__W2": (50, None),
@@ -445,26 +450,26 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
                 extra_args=["--load_zone_level", "custom"],
             )
 
-    def test_disaggregated_btm_excluded_by_default(self):
+    def test_disaggregated_btm_included_by_default(self):
         # Plant 17 (industrial CHP, sector_id_eia 7) is behind-the-meter
-        # type: excluded with no extra flags (its output would be netted
-        # into EIA-930-derived load, so including it double-counts)
+        # type: the blanket sector exclusion is OFF by default, so it is
+        # in the fleet with no extra flags
         df = self.run_step_and_read_csv(
             scenario_name="as_of_may_btm_default",
             extra_args=["--eia860m_as_of_date", "2026-05-01"],
         )
 
-        self.assertNotIn("17__1", df.index)
+        self.assertIn("17__1", df.index)
 
-    def test_disaggregated_include_btm_plants(self):
-        # --include_btm_plants opts the commercial/industrial sectors back
-        # in; everything else matches the default fleet
+    def test_disaggregated_exclude_btm_plants(self):
+        # --exclude_btm_plants opts into dropping the commercial/
+        # industrial sectors; everything else matches the default fleet
         df = self.run_step_and_read_csv(
-            scenario_name="as_of_may_incl_btm",
+            scenario_name="as_of_may_excl_btm",
             extra_args=[
                 "--eia860m_as_of_date",
                 "2026-05-01",
-                "--include_btm_plants",
+                "--exclude_btm_plants",
             ],
         )
 
@@ -477,7 +482,6 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
                 "6__W1": (30, None),
                 "6__W2": (50, None),
                 "7__W1": (20, None),
-                "17__1": (55, None),  # BTM unit allowed by the flag
             },
         )
 
@@ -499,6 +503,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
             df,
             {
                 "1__1": (120, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "6__W1": (30, None),
                 "6__W2": (50, None),
@@ -526,6 +531,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
                 "1__1": (120, None),
                 "5__1": (200, None),
                 "13__1": (150, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "6__W1": (30, None),
                 "6__W2": (50, None),
@@ -542,6 +548,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
         baseline = {
             "1__1": (120, None),
             "5__1": (200, None),
+            "17__1": (55, None),  # BTM-sector unit, kept by default
             "8__B1": (50, 200),
             "6__W1": (30, None),
             "6__W2": (50, None),
@@ -587,6 +594,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
             {
                 "1__1": (120, None),
                 "5__1": (200, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
                 "6__W1": (30, None),
                 "6__W2": (50, None),
@@ -612,7 +620,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
         self.assert_capacity(
             df,
             {
-                "Gas_Region1": (320, None),  # 120 + 200
+                "Gas_Region1": (375, None),  # 120 + 200 + 55 (BTM unit)
                 "Batteries_Region1": (50, 200),
                 "Wind_Region1": (100, None),
             },
@@ -636,7 +644,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
         self.assert_capacity(
             df,
             {
-                "Gas_Interconnect1": (320, None),  # 120 + 200
+                "Gas_Interconnect1": (375, None),  # 120 + 200 + 55 (BTM unit)
                 "Batteries_Interconnect1": (50, 200),
                 "Wind_Interconnect1": (100, None),
             },
@@ -664,7 +672,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
         self.assert_capacity(
             df,
             {
-                "Gas_Interconnect1": (320, None),  # 120 + 200
+                "Gas_Interconnect1": (375, None),  # 120 + 200 + 55 (BTM unit)
                 "Batteries_Interconnect1": (50, 200),
                 "Wind_Interconnect1": (100, None),
             },
@@ -693,6 +701,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
                 "6__W1": (30, None),
                 "6__W2": (50, None),
                 "7__W1": (20, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "9__1": (400, None),
                 "11__1": (60, None),
             },
@@ -756,6 +765,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
 
         expected_without_1__1 = {
             "5__1": (200, None),
+            "17__1": (55, None),  # BTM-sector unit, kept by default
             "8__B1": (50, 200),
             "6__W1": (30, None),
             "6__W2": (50, None),
@@ -778,7 +788,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
         self.assert_capacity(
             df,
             {
-                "Gas_Zone1": (320, None),  # 120 + 200
+                "Gas_Zone1": (375, None),  # 120 + 200 + 55 (BTM unit)
                 "Batteries_Zone1": (50, 200),
                 "Wind_Zone1": (80, None),
                 "Wind_Zone2": (20, None),
@@ -806,6 +816,7 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
                 "Wind_Zone2": (20, None),
                 "1__1": (120, None),  # per-unit, not aggregated
                 "5__1": (200, None),
+                "17__1": (55, None),  # BTM-sector unit, kept by default
                 "8__B1": (50, 200),
             },
         )
@@ -831,7 +842,10 @@ class TestEIA860MToProjectSpecifiedCapacityInputCsvs(unittest.TestCase):
         self.assert_capacity(
             df,
             {
-                "Gas_Natural_Gas_Fired_Combustion_Turbine_OP_Zone1": (120, None),
+                "Gas_Natural_Gas_Fired_Combustion_Turbine_OP_Zone1": (
+                    175,
+                    None,
+                ),  # 120 + 55
                 "Gas_Natural_Gas_Fired_Combustion_Turbine_V_Zone1": (200, None),
                 "Batteries_Batteries_4h_OP_Zone1": (50, 200),
                 "Wind_Onshore_Wind_Turbine_OP_Zone1": (80, None),

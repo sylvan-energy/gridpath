@@ -50,7 +50,7 @@ ZONE_AWARE_SETTINGS = dict(
     include_retired=False,
     planned_inclusion="under_construction",
     inactive_inclusion="none",
-    include_btm_plants=False,
+    exclude_btm_plants=True,
     project_aggregation="agg_project_keyed",
     aggregation_dimensions="technology_description",
     quiet=True,
@@ -85,7 +85,7 @@ class TestStepCommonWrappers(unittest.TestCase):
                 include_retired=False,
                 planned_inclusion="under_construction",
                 inactive_inclusion="none",
-                include_btm_plants=False,
+                exclude_btm_plants=True,
             ),
         )
 
@@ -105,7 +105,7 @@ class TestStepCommonWrappers(unittest.TestCase):
                 include_retired=False,
                 planned_inclusion="under_construction",
                 inactive_inclusion="none",
-                include_btm_plants=False,
+                exclude_btm_plants=True,
                 join_ba_map=False,
             ),
         )
@@ -127,7 +127,7 @@ class TestStepCommonWrappers(unittest.TestCase):
                 include_retired=False,
                 planned_inclusion="under_construction",
                 inactive_inclusion="none",
-                include_btm_plants=False,
+                exclude_btm_plants=True,
                 generators_table=EIA860M_GENERATORS_TABLE,
                 extra_where="1 = 0",
             ),

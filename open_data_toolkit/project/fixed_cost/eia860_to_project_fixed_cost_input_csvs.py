@@ -52,7 +52,7 @@ Settings
     * planned_inclusion
     * inactive_inclusion
     * include_planned_retirements
-    * include_btm_plants
+    * exclude_btm_plants
     * include_net_metered
     * ba_source
     * load_zone_level

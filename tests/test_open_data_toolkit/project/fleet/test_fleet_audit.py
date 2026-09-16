@@ -195,7 +195,7 @@ class TestFleetAudit(unittest.TestCase):
             3: (1, 0, 1, 1, 1, 0),  # out of footprint
             4: (1, 1, 1, 0, 1, 0),  # retired
             5: (1, 1, 0, 1, 1, 0),  # online after Jan 1 of study year
-            6: (1, 1, 1, 1, 0, 0),  # behind-the-meter sector
+            6: (1, 1, 1, 1, 1, 1),  # BTM sector — kept by default
             7: (1, 1, 1, 1, 1, 1),  # in footprint via the EIA-930A BA
             8: (1, 1, 1, 1, 1, 1),  # in footprint via the manual override
         }
@@ -233,8 +233,8 @@ class TestFleetAudit(unittest.TestCase):
         self.assertIn("EIA-860 units in the raw data", output)
         self.assertIn("8 units", output)  # raw
         self.assertIn("IN FLEET", output)
-        self.assertIn("3 units", output)  # in fleet
-        self.assertIn("3 projects", output)
+        self.assertIn("4 units", output)  # in fleet
+        self.assertIn("4 projects", output)
 
         # The cross-check against the real fleet relation passed silently
         self.assertNotIn("WARNING", output)
@@ -250,13 +250,13 @@ class TestFleetAudit(unittest.TestCase):
         self.assertEqual(audit_df.loc[8, "in_fleet"], 1)
         self.assertNotIn("WARNING", output)
 
-    def test_fleet_audit_include_btm_and_retired(self):
+    def test_fleet_audit_exclude_btm_and_include_retired(self):
         audit_df, output = self.run_audit(
-            extra_args=["--include_btm_plants", "--include_retired"]
+            extra_args=["--exclude_btm_plants", "--include_retired"]
         )
 
-        self.assertEqual(audit_df.loc[6, "passes_btm"], 1)
-        self.assertEqual(audit_df.loc[6, "in_fleet"], 1)
+        self.assertEqual(audit_df.loc[6, "passes_btm"], 0)
+        self.assertEqual(audit_df.loc[6, "in_fleet"], 0)
         self.assertEqual(audit_df.loc[4, "passes_status_retirement"], 1)
         self.assertEqual(audit_df.loc[4, "in_fleet"], 1)
         self.assertNotIn("WARNING", output)

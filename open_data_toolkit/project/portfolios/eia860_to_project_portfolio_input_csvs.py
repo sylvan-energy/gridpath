@@ -82,7 +82,7 @@ the latest is normally not an annual filing at all:
 
 The reconstruction is a good default for the project steps: every column
 they read — status codes, capacities, operating/retirement dates, the
-sector name behind the ``include_btm_plants`` exclusion, and all the
+sector name behind the ``exclude_btm_plants`` exclusion, and all the
 ``aggregation_dimensions`` columns — is populated there. What it lacks
 are the annual-form-only columns (minimum load, multi-fuel and
 carbon-capture flags, second energy source, ownership, cogen status),
@@ -133,27 +133,34 @@ how available they are: ``standby`` adds standby/backup units (available
 for service but not normally used); ``out_of_service_short_term`` also
 adds out-of-service units expected back in service within the next
 calendar year; ``all`` also adds long-term out-of-service units; the
-default ``none`` adds none of them. Behind-the-meter-type units — the
-commercial/industrial EIA sectors (Commercial/Industrial CHP and
-Non-CHP) — are excluded by default: their output typically serves onsite
-load, so it is netted out of the metered demand that EIA-930-derived
-load is built from and absent from BA generation telemetry, and modeling
-them as supply resources alongside that load would double-count their
-energy. ``include_btm_plants`` opts them back in; units with no sector
-in the raw data cannot be classified and are always kept (with a loud
-warning). Net-metered units — those the EIA860 solar supplement
+default ``none`` adds none of them.
+
+Two more settings deal with generation whose output may already be
+NETTED OUT of the metered demand that EIA-930-derived load is built
+from — counting such units as supply alongside that load double-counts
+their energy. Net-metered units — those the EIA860 solar supplement
 (raw_data_eia860_solar) flags as operating under a net-metering
-agreement — are excluded by default for the same physical reason, on
-different evidence: the sector exclusion classifies by WHO owns the
-plant (commercial/industrial), the net-metering flag by HOW its output
-is billed, and the two populations barely overlap (net-metered solar is
-mostly small IPP- and utility-sector distributed systems the sector
-exclusion keeps, while most C&I-sector capacity is not net metered).
-``include_net_metered`` opts them back in; units absent from the loaded
-solar table (all non-solar units, and solar units newer than its
-annual-only vintage) are always kept, and an empty table makes the
-exclusion a no-op (with a loud warning). The same window (and the same
-settings) applies in all the
+agreement — are excluded by default: net metering is a billing
+arrangement at a retail meter that runs net, so the netting is
+definitional. ``include_net_metered`` opts them back in; units absent
+from the loaded solar table (all non-solar units, and solar units newer
+than its annual-only vintage) are always kept, and an empty table makes
+the exclusion a no-op (with a loud warning). ``exclude_btm_plants``
+additionally drops ALL behind-the-meter-type units — the
+commercial/industrial EIA sectors (Commercial/Industrial CHP and
+Non-CHP), whose output typically serves onsite load. This blanket
+sector exclusion is OFF by default: the sector is an ownership-based
+PROXY for the netting, right for most of these units (measured July
+2026: these sectors dominate the large-unit capacity absent from every
+BA's EIA-930A Schedule 2 generation inventory) but wrong for the
+genuinely BA-metered exporting cogens it would also delete (measured
+Sep 2026, western 2030 fleet: of 4.6 GW of C&I-sector capacity, 2.0 GW
+IS listed in BA inventories). Where the sector-level answer is not good
+enough, resolve per unit — e.g. against EIA-930A Schedule 2 presence —
+and encode the outcome with ``user_defined_unit_overrides``; units with
+no sector in the raw data cannot be classified and are always kept
+(with a loud warning when the exclusion is on). The same window (and
+the same settings) applies in all the
 EIA860(M)-based project steps and should be set consistently across
 them.
 
@@ -183,7 +190,7 @@ Settings
     * planned_inclusion
     * inactive_inclusion
     * include_planned_retirements
-    * include_btm_plants
+    * exclude_btm_plants
     * include_net_metered
     * ba_source
     * load_zone_level

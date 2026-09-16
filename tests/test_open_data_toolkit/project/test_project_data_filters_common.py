@@ -153,8 +153,8 @@ class TestEIA860EIA860MFilterSymmetry(unittest.TestCase):
         # never diverge silently (the status-code vocabularies are
         # identical in current PUDL data). The one intended difference is
         # the behind-the-meter sector clause — 860M only carries the
-        # numeric sector_id_eia — checked separately below; with
-        # include_btm_plants there is no sector clause and the filters
+        # numeric sector_id_eia — checked separately below; at the default
+        # (no sector exclusion) there is no sector clause and the filters
         # must be byte-identical
         for include_retired, planned, inactive, incl_pret in itertools.product(
             (False, True),
@@ -170,20 +170,24 @@ class TestEIA860EIA860MFilterSymmetry(unittest.TestCase):
                 planned_inclusion=planned,
                 inactive_inclusion=inactive,
                 include_planned_retirements=incl_pret,
-                include_btm_plants=True,
             )
             self.assertEqual(
                 get_eia860m_sql_filter_string(**kwargs),
                 get_eia860_sql_filter_string(**kwargs),
             )
 
-    def test_default_filters_differ_only_by_the_btm_sector_clause(self):
-        kwargs = dict(study_year=2030, footprint="western", load_zone_level="region")
+    def test_excluding_filters_differ_only_by_the_btm_sector_clause(self):
+        kwargs = dict(
+            study_year=2030,
+            footprint="western",
+            load_zone_level="region",
+            exclude_btm_plants=True,
+        )
         filter_860 = get_eia860_sql_filter_string(**kwargs)
         filter_860m = get_eia860m_sql_filter_string(**kwargs)
-        clause_860 = get_btm_filter_string(include_btm_plants=False)
+        clause_860 = get_btm_filter_string(exclude_btm_plants=True)
         clause_860m = get_btm_filter_string(
-            include_btm_plants=False,
+            exclude_btm_plants=True,
             sector_column="sector_id_eia",
             btm_sector_values=BTM_SECTOR_IDS,
         )
@@ -212,8 +216,8 @@ class TestBTMFilter(unittest.TestCase):
         )
         self.assertEqual(BTM_SECTOR_IDS, (4, 5, 6, 7))
 
-    def test_include_btm_plants_removes_the_clause(self):
-        self.assertEqual(get_btm_filter_string(include_btm_plants=True), "")
+    def test_no_clause_by_default(self):
+        self.assertEqual(get_btm_filter_string(exclude_btm_plants=False), "")
 
     def test_clause_excludes_btm_and_keeps_null_sector_rows(self):
         # Behavior-level check against sqlite: BTM-sector units drop,
@@ -232,10 +236,10 @@ class TestBTMFilter(unittest.TestCase):
             ],
         )
         name_clause = get_btm_filter_string(
-            include_btm_plants=False, sector_column="name_col"
+            exclude_btm_plants=True, sector_column="name_col"
         )
         id_clause = get_btm_filter_string(
-            include_btm_plants=False,
+            exclude_btm_plants=True,
             sector_column="id_col",
             btm_sector_values=BTM_SECTOR_IDS,
         )

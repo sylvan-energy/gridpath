@@ -166,11 +166,15 @@ what gets modeled. They apply, in order:
    not-yet-operational units expected online by it — minus units with a
    filed PLANNED retirement date before the study year's end. The
    ``planned_inclusion``, ``inactive_inclusion``, ``include_retired``,
-   ``include_planned_retirements``, ``include_btm_plants``, and
+   ``include_planned_retirements``, ``exclude_btm_plants``, and
    ``include_net_metered`` settings
    widen or narrow this default window (how speculative a planned unit
    to admit; whether to count standby/out-of-service units, retired
-   units, units planning to retire, and behind-the-meter units). The
+   units, units planning to retire, net-metered units — excluded by
+   default, since their output is by definition netted out of
+   EIA-930-derived demand — and the commercial/industrial
+   "behind-the-meter" sectors, kept by default with a blanket opt-in
+   exclusion). The
    full narrative of these settings is in the
    :mod:`portfolio step's documentation
    <open_data_toolkit.project.portfolios.eia860_to_project_portfolio_input_csvs>`

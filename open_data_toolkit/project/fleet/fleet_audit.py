@@ -90,7 +90,7 @@ Settings
 * planned_inclusion
 * inactive_inclusion
 * include_planned_retirements
-* include_btm_plants
+* exclude_btm_plants
 * include_net_metered
 * ba_source
 * load_zone_level
@@ -173,7 +173,7 @@ def get_fleet_audit_sql(
     planned_inclusion,
     inactive_inclusion,
     include_planned_retirements,
-    include_btm_plants,
+    exclude_btm_plants,
     include_net_metered,
     project_name_str,
 ):
@@ -217,7 +217,7 @@ def get_fleet_audit_sql(
         planned_inclusion=planned_inclusion,
         inactive_inclusion=inactive_inclusion,
         include_planned_retirements=include_planned_retirements,
-        include_btm_plants=include_btm_plants,
+        exclude_btm_plants=exclude_btm_plants,
         include_net_metered=include_net_metered,
     )
     # Sub-flags: the individual pieces the characteristics filter is
@@ -234,7 +234,7 @@ def get_fleet_audit_sql(
         include_planned_retirements=include_planned_retirements,
     )
     btm_predicate = "1 = 1 " + get_btm_filter_string(
-        include_btm_plants=include_btm_plants
+        exclude_btm_plants=exclude_btm_plants
     )
     net_metering_predicate = "1 = 1 " + get_net_metering_filter_string(
         include_net_metered=include_net_metered
@@ -408,7 +408,7 @@ def main(args=None):
         planned_inclusion=parsed_args.planned_inclusion,
         inactive_inclusion=parsed_args.inactive_inclusion,
         include_planned_retirements=parsed_args.include_planned_retirements,
-        include_btm_plants=parsed_args.include_btm_plants,
+        exclude_btm_plants=parsed_args.exclude_btm_plants,
         include_net_metered=parsed_args.include_net_metered,
         project_name_str=project_name_str,
     )

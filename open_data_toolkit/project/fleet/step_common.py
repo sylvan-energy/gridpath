@@ -86,7 +86,7 @@ FLEET_RELATION_SETTINGS = (
     "planned_inclusion",
     "inactive_inclusion",
     "include_planned_retirements",
-    "include_btm_plants",
+    "exclude_btm_plants",
     "include_net_metered",
 )
 
@@ -105,7 +105,7 @@ FLEET_SELECTION_SETTINGS = (
     "planned_inclusion",
     "inactive_inclusion",
     "include_planned_retirements",
-    "include_btm_plants",
+    "exclude_btm_plants",
     "include_net_metered",
 )
 AGGREGATION_SETTINGS = (
@@ -275,7 +275,7 @@ def warn_on_fleet_data_gaps(
     """
     warn_on_uncovered_status_codes(conn=conn, generators_table=generators_table)
 
-    if not parsed_args.include_btm_plants:
+    if getattr(parsed_args, "exclude_btm_plants", False):
         warn_on_null_sector_rows(
             conn=conn,
             generators_table=generators_table,
