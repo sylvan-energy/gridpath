@@ -193,9 +193,12 @@ def add_model_components(
     | Determines the previous period for each period other than the first     |
     | period, which doesn't have a previous period. This parameter is         |
     | optional and will default to the period with index i-1 in the ordered   |
-    | set PERIODS if not specified. The parameter shoud be specified when     |
-    | using GridPath to create stochastic problems to define future tree      |
-    | trajectories.                                                           |
+    | set PERIODS if not specified. Specify it for every period but the       |
+    | first to define a scenario tree for a stochastic problem: periods       |
+    | that share a previous period are alternative futures (branches), and    |
+    | each period is on the "trajectory" of its ancestors only. Capacity      |
+    | built in a period is available in the periods on that period's          |
+    | trajectory and in no sibling branch.                                    |
     +-------------------------------------------------------------------------+
     | | :code:`hours_in_subproblem_period`                                    |
     | | *Defined over*: :code:`PERIODS`                                       |
@@ -311,8 +314,9 @@ def add_model_components(
 
     def find_all_periods_on_future_trajectory_of_period(mod, period):
         """
-        Find all periods that are on the future trajectory of the given period.
-        This will include previous periods as well as future periods.
+        Find all periods that are on the future trajectory of the given period,
+        i.e. the period itself and all of its descendants in the period tree
+        (the periods whose list of previous periods includes this period).
         This list will be used as the relevant study periods when determining
         operational vintages. In other words, a vintage can only be
         operational in a period if that period is on the vintage's
@@ -593,3 +597,93 @@ def validate_inputs(
         severity="Mid",
         errors=validate_values(df, valid_numeric_columns, "period", min=0),
     )
+
+    # Check that prev_period (if specified) defines a valid period tree
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_temporal_periods",
+        severity="High",
+        errors=validate_period_tree(df),
+    )
+
+
+def validate_period_tree(df):
+    """
+    Check that the prev_period column defines a valid period tree.
+
+    :param df: dataframe with one row per period and the columns period,
+        period_start_year, period_end_year and prev_period (NULL/NaN when
+        not specified)
+    :return: list of error strings (empty if the inputs are valid)
+
+    If prev_period is not specified for any period, the periods form a
+    single chain in order and there is nothing to check. Otherwise
+    prev_period must be specified for every period but exactly one root;
+    the root must be the first period; every prev_period must be one of the
+    periods; following prev_period from any period must reach the root
+    (no cycles); and a period must start no earlier than its previous
+    period ends.
+    """
+    errors = []
+
+    periods = [int(p) for p in df["period"]]
+    prev_specified = df["prev_period"].notna()
+    if not prev_specified.any():
+        return errors
+
+    prev_by_period = {
+        int(row["period"]): int(row["prev_period"])
+        for _, row in df[prev_specified].iterrows()
+    }
+    roots = [p for p in periods if p not in prev_by_period]
+    first_period = min(periods)
+
+    if len(roots) != 1:
+        errors.append(
+            "prev_period must be specified for every period but the first when "
+            "it is specified for any period; periods without a prev_period: "
+            f"{roots}"
+        )
+    elif roots[0] != first_period:
+        errors.append(
+            f"The period without a prev_period (the root of the period tree) "
+            f"must be the first period {first_period}; found {roots[0]}"
+        )
+
+    unknown = {p: prev for p, prev in prev_by_period.items() if prev not in periods}
+    if unknown:
+        errors.append(
+            "prev_period must be one of the periods in the temporal scenario; "
+            f"unknown prev_period by period: {unknown}"
+        )
+
+    for p in prev_by_period:
+        seen = [p]
+        current = p
+        while current in prev_by_period and prev_by_period[current] in periods:
+            current = prev_by_period[current]
+            if current in seen:
+                errors.append(
+                    f"Following prev_period from period {p} never reaches a "
+                    f"root period (cycle {seen + [current]})"
+                )
+                break
+            seen.append(current)
+
+    start_year = dict(zip(periods, df["period_start_year"]))
+    end_year = dict(zip(periods, df["period_end_year"]))
+    for p, prev in prev_by_period.items():
+        if prev in periods and start_year[p] < end_year[prev]:
+            errors.append(
+                f"Period {p} starts in {start_year[p]}, before its prev_period "
+                f"{prev} ends in {end_year[prev]}"
+            )
+
+    return errors

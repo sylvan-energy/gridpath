@@ -2544,10 +2544,51 @@ class TestExamples(unittest.TestCase):
     def test_example_2periods_new_build_2zones_new_build_transmission_stochastic(self):
         """
         Check validation and objective function values of
-        "single_stage_prod_cost_w_startup_limit" example
+        "2periods_new_build_2zones_new_build_transmission_stochastic" example
         :return:
         """
         scenario_name = "2periods_new_build_2zones_new_build_transmission_stochastic"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_new_build_transmission_stochastic_identical_branches(
+        self,
+    ):
+        """
+        Check validation and objective function values of
+        "2periods_new_build_2zones_new_build_transmission_stochastic_identical_branches"
+        example: two 2030 branches with identical data and probability 0.5
+        each; its objective must equal that of the deterministic twin
+        "2periods_new_build_2zones_new_build_transmission_deterministic_twin"
+        :return:
+        """
+        scenario_name = "2periods_new_build_2zones_new_build_transmission_stochastic_identical_branches"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_new_build_transmission_deterministic_twin(
+        self,
+    ):
+        """
+        Check validation and objective function values of
+        "2periods_new_build_2zones_new_build_transmission_deterministic_twin"
+        example (deterministic twin of the identical-branches stochastic
+        example)
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_new_build_transmission_deterministic_twin"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_3stage_new_build_2zones_new_build_transmission_stochastic_tree(
+        self,
+    ):
+        """
+        Check validation and objective function values of
+        "3stage_new_build_2zones_new_build_transmission_stochastic_tree"
+        example (three-stage scenario tree with four leaves)
+        :return:
+        """
+        scenario_name = "3stage_new_build_2zones_new_build_transmission_stochastic_tree"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_test_new_build_gen_var_stor_hyb_as_pwr_grp(self):
