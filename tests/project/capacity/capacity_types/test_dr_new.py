@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +19,7 @@ from importlib import import_module
 import os.path
 import sys
 import unittest
+from types import SimpleNamespace
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 
@@ -192,6 +194,38 @@ class TestDRNew(unittest.TestCase):
         expected_op_per = sorted([("Shift_DR", 2020), ("Shift_DR", 2030)])
         actual_op_per = sorted([(prj, per) for (prj, per) in instance.DR_NEW_OPR_PRDS])
         self.assertListEqual(expected_op_per, actual_op_per)
+
+    def test_energy_stor_capacity_follows_period_tree(self):
+        """
+        Cumulative DR build in a period must sum the build in that period and
+        its ancestors only. On a stochastic scenario tree (2020 -> 20301 and
+        2020 -> 20302), build in the sibling branch 20301 must not count
+        toward capacity in 20302 even though 20301 < 20302 numerically.
+        """
+        build = {
+            ("Shift_DR", 2020): 1.0,
+            ("Shift_DR", 20301): 10.0,
+            ("Shift_DR", 20302): 100.0,
+        }
+        trajectory_prev_periods = {
+            2020: [2020],
+            20301: [20301, 2020],
+            20302: [20302, 2020],
+        }
+        mock_mod = SimpleNamespace(
+            PERIODS=[2020, 20301, 20302],
+            DRNew_Build_MWh=build,
+            FUTURE_TRAJECTORY_PREV_PERIODS_BY_PERIOD=trajectory_prev_periods,
+        )
+
+        expected = {2020: 1.0, 20301: 11.0, 20302: 101.0}
+        actual = {
+            p: MODULE_BEING_TESTED.dr_new_energy_stor_capacity_rule(
+                mock_mod, "Shift_DR", p
+            )
+            for p in mock_mod.PERIODS
+        }
+        self.assertDictEqual(expected, actual)
 
 
 if __name__ == "__main__":
