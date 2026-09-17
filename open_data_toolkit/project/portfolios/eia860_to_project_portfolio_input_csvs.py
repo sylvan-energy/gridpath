@@ -189,7 +189,21 @@ IS listed in BA inventories). Where the sector-level answer is not good
 enough, resolve per unit — e.g. against EIA-930A Schedule 2 presence —
 and encode the outcome with ``user_defined_unit_overrides``; units with
 no sector in the raw data cannot be classified and are always kept
-(with a loud warning when the exclusion is on). The same window (and
+(with a loud warning when the exclusion is on).
+
+Finally, ``require_plant_in_eia860_vintage`` (off by default) restricts
+the fleet to units whose PLANT exists in a pinned EIA860 annual filing
+(the raw_data_eia860_plant_vintages index) — for reproducing external
+fleet lists that gate on membership in a specific annual vintage, whose
+plant-level metadata they need for every unit. Be aware of what the
+gate costs: it drops exactly the plants EIA first listed after that
+filing — the newest tranche of the build pipeline, currently dominated
+by under-construction storage (measured western 2030, July-2026 860M
+fleet vs the 2025-01-01 vintage: 62 units / 2.0 GW) — and the cost
+grows with every EIA860M month. The test is plant-level, so new units
+at plants the vintage does contain still pass; a pinned date with no
+index rows would exclude everything, and the steps refuse to run
+against one. The same window (and
 the same settings) applies in all the
 EIA860(M)-based project steps and should be set consistently across
 them.
@@ -222,6 +236,7 @@ Settings
     * include_planned_retirements
     * exclude_commercial_industrial_sectors
     * include_net_metered
+    * require_plant_in_eia860_vintage
     * ba_source
     * load_zone_level
     * project_aggregation

@@ -63,6 +63,7 @@ Settings
     * include_planned_retirements
     * exclude_commercial_industrial_sectors
     * include_net_metered
+    * require_plant_in_eia860_vintage
     * ba_source
     * project_fuel_scenario_id
     * project_fuel_scenario_name

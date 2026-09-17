@@ -25,9 +25,12 @@ from open_data_toolkit.geographic_scope import (
     check_aggregation_level_refines_zone_level,
 )
 from open_data_toolkit.project.fleet.fleet_filters import (
+    check_plant_vintage_filter_ready,
     ensure_net_metering_table,
+    ensure_plant_vintages_table,
     get_fleet_relation_sql,
     get_net_metering_filter_string,
+    get_plant_vintage_filter_string,
     warn_on_missing_net_metering_data,
 )
 from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
@@ -943,6 +946,150 @@ class TestNetMeteringFilter(unittest.TestCase):
         self.conn.commit()
         ensure_net_metering_table(conn=self.conn)
         self.assertEqual(self.query_fleet(), ["1__1", "2__1", "3__1"])
+
+
+class TestPlantVintageFilter(unittest.TestCase):
+    """
+    The optional plant-vintage fleet filter
+    (require_plant_in_eia860_vintage against the
+    raw_data_eia860_plant_vintages index): off by default, plant-level
+    membership when set (new units at indexed plants pass), an include=1
+    unit override bypasses it, and a pinned vintage with no index rows
+    REFUSES to run (listing available dates) instead of silently
+    excluding everything.
+    """
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        db_path = os.path.join(self.tmp_dir.name, "plant_vintage_test_raw.db")
+        create_database_main(
+            ["--database", db_path, "--db_schema", RAW_DATA_DB_SCHEMA, "--quiet"]
+        )
+        self.conn = sqlite3.connect(db_path)
+        self.addCleanup(self.conn.close)
+        self.conn.execute(
+            "INSERT INTO raw_data_eia_baa_codes (baa, region, interconnect) "
+            "VALUES ('BA1', 'Region1', 'Interconnect1')"
+        )
+        self.conn.execute("""
+            INSERT INTO user_defined_eia_gridpath_key
+            (prime_mover_code, energy_source_code, gridpath_capacity_type,
+            gridpath_operational_type, gridpath_technology, agg_project)
+            VALUES ('PV', 'SUN', 'gen_spec', 'gen_var', 'Solar', 'Solar')
+            """)
+        # Plant 1: two units (one older, one NEW — the plant-level test
+        # keeps both); plant 2: a unit at a plant absent from the pinned
+        # vintage (dropped); plant 3: absent from the vintage but at an
+        # older one (dropped at 2025, kept at 2024)
+        self.conn.executemany(
+            """
+            INSERT INTO raw_data_eia860_generators
+            (version_num, report_date, plant_id_eia, generator_id,
+            balancing_authority_code_eia, prime_mover_code,
+            energy_source_code_1, operational_status_code, sector_name_eia,
+            capacity_mw)
+            VALUES ('v-test', '2026-01-01', ?, ?, 'BA1', 'PV', 'SUN', 'OP',
+            'Electric Utility', 100)
+            """,
+            [(1, "OLD1"), (1, "NEW1"), (2, "1"), (3, "1")],
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO raw_data_eia860_plant_vintages
+            (version_num, report_date, plant_id_eia)
+            VALUES ('v-test', ?, ?)
+            """,
+            [("2024-01-01", 1), ("2024-01-01", 3), ("2025-01-01", 1)],
+        )
+        self.conn.commit()
+
+    def query_fleet(self, **kwargs):
+        sql = f"""
+            SELECT plant_id_eia || '__' || generator_id AS project
+            {get_fleet_relation_sql(
+                ba_source="eia860",
+                study_year=2030,
+                footprint="Interconnect1",
+                **kwargs,
+            )}
+            ORDER BY project
+            ;
+            """
+        return [p for (p,) in self.conn.cursor().execute(sql)]
+
+    def test_off_by_default(self):
+        self.assertEqual(self.query_fleet(), ["1__NEW1", "1__OLD1", "2__1", "3__1"])
+
+    def test_plant_level_membership_at_pinned_vintage(self):
+        # Plant-level: BOTH plant-1 units pass (including the new one);
+        # plants 2 and 3 are absent from the 2025 vintage and drop
+        self.assertEqual(
+            self.query_fleet(require_plant_in_eia860_vintage="2025-01-01"),
+            ["1__NEW1", "1__OLD1"],
+        )
+
+    def test_earlier_vintage_selects_its_own_membership(self):
+        self.assertEqual(
+            self.query_fleet(require_plant_in_eia860_vintage="2024-01-01"),
+            ["1__NEW1", "1__OLD1", "3__1"],
+        )
+
+    def test_include_override_bypasses_the_filter(self):
+        self.conn.execute(
+            "INSERT INTO user_defined_unit_overrides "
+            "(plant_id_eia, generator_id, include) VALUES (2, '1', 1)"
+        )
+        self.conn.commit()
+        self.assertEqual(
+            self.query_fleet(require_plant_in_eia860_vintage="2025-01-01"),
+            ["1__NEW1", "1__OLD1", "2__1"],
+        )
+
+    def test_clause_present_only_when_set(self):
+        self.assertIn(
+            "raw_data_eia860_plant_vintages",
+            get_plant_vintage_filter_string(
+                require_plant_in_eia860_vintage="2025-01-01"
+            ),
+        )
+        self.assertEqual(
+            get_plant_vintage_filter_string(require_plant_in_eia860_vintage=None),
+            "",
+        )
+
+    def test_check_passes_on_a_populated_vintage(self):
+        check_plant_vintage_filter_ready(
+            conn=self.conn, require_plant_in_eia860_vintage="2025-01-01"
+        )
+
+    def test_check_is_a_noop_when_unset(self):
+        self.conn.execute("DELETE FROM raw_data_eia860_plant_vintages")
+        self.conn.commit()
+        check_plant_vintage_filter_ready(
+            conn=self.conn, require_plant_in_eia860_vintage=None
+        )
+
+    def test_vintage_with_no_rows_raises_listing_dates(self):
+        with self.assertRaisesRegex(ValueError, "2024-01-01, 2025-01-01") as raised:
+            check_plant_vintage_filter_ready(
+                conn=self.conn, require_plant_in_eia860_vintage="2026-06-15"
+            )
+        self.assertIn("EVERY unit", str(raised.exception))
+
+    def test_empty_table_raises_with_load_hint(self):
+        self.conn.execute("DELETE FROM raw_data_eia860_plant_vintages")
+        self.conn.commit()
+        with self.assertRaisesRegex(ValueError, "pudl_eia860_plant_vintages.csv"):
+            check_plant_vintage_filter_ready(
+                conn=self.conn, require_plant_in_eia860_vintage="2025-01-01"
+            )
+
+    def test_table_created_on_first_use(self):
+        self.conn.execute("DROP TABLE raw_data_eia860_plant_vintages")
+        self.conn.commit()
+        ensure_plant_vintages_table(conn=self.conn)
+        self.assertEqual(self.query_fleet(), ["1__NEW1", "1__OLD1", "2__1", "3__1"])
 
 
 class TestBAAssignmentPrecedence(unittest.TestCase):

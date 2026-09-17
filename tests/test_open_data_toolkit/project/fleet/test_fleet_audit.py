@@ -261,6 +261,38 @@ class TestFleetAudit(unittest.TestCase):
         self.assertEqual(audit_df.loc[4, "in_fleet"], 1)
         self.assertNotIn("WARNING", output)
 
+    def test_fleet_audit_plant_vintage_filter(self):
+        # Index only plant 1 (and the footprint-external plants, so the
+        # filter's effect is isolated to unit 6): every other in-fleet
+        # plant drops with passes_plant_vintage = 0
+        conn = sqlite3.connect(self.db_path)
+        conn.executemany(
+            """
+            INSERT INTO raw_data_eia860_plant_vintages
+            (version_num, report_date, plant_id_eia)
+            VALUES ('v-test', '2025-01-01', ?)
+            """,
+            [(1,), (7,), (8,)],
+        )
+        conn.commit()
+        conn.close()
+        try:
+            audit_df, output = self.run_audit(
+                extra_args=["--require_plant_in_eia860_vintage", "2025-01-01"]
+            )
+
+            self.assertEqual(audit_df.loc[1, "passes_plant_vintage"], 1)
+            self.assertEqual(audit_df.loc[1, "in_fleet"], 1)
+            self.assertEqual(audit_df.loc[6, "passes_plant_vintage"], 0)
+            self.assertEqual(audit_df.loc[6, "in_fleet"], 0)
+            self.assertIn("pass plant-vintage filter", output)
+            self.assertNotIn("WARNING", output)
+        finally:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute("DELETE FROM raw_data_eia860_plant_vintages")
+            conn.commit()
+            conn.close()
+
     def test_fleet_audit_aggregated_project_names(self):
         audit_df, output = self.run_audit(extra_args=["--project_aggregation", "all"])
 

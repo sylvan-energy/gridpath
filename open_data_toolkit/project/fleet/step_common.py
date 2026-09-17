@@ -63,8 +63,10 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     SECTOR_COLUMN,
     add_fleet_selection_arguments,
     add_hybrid_treatment_argument,
+    check_plant_vintage_filter_ready,
     ensure_energy_storage_table,
     ensure_net_metering_table,
+    ensure_plant_vintages_table,
     get_fleet_relation_sql,
     get_hybrid_pairing_expr,
     warn_on_missing_energy_storage_data,
@@ -96,6 +98,7 @@ FLEET_RELATION_SETTINGS = (
     "include_planned_retirements",
     "exclude_commercial_industrial_sectors",
     "include_net_metered",
+    "require_plant_in_eia860_vintage",
 )
 
 # The settings the EIA860(M)-based project steps SHARE — the ones that
@@ -115,6 +118,7 @@ FLEET_SELECTION_SETTINGS = (
     "include_planned_retirements",
     "exclude_commercial_industrial_sectors",
     "include_net_metered",
+    "require_plant_in_eia860_vintage",
 )
 AGGREGATION_SETTINGS = (
     "project_aggregation",
@@ -312,6 +316,15 @@ def connect_and_check_scope(parsed_args):
         ensure_unit_overrides_table(conn=conn)
         ensure_net_metering_table(conn=conn)
         ensure_energy_storage_table(conn=conn)
+        ensure_plant_vintages_table(conn=conn)
+        # A plant vintage with no index rows would exclude EVERY unit and
+        # silently empty every output, so this raises rather than warns
+        check_plant_vintage_filter_ready(
+            conn=conn,
+            require_plant_in_eia860_vintage=getattr(
+                parsed_args, "require_plant_in_eia860_vintage", None
+            ),
+        )
         report_footprint_type(
             conn=conn, footprint=parsed_args.footprint, quiet=parsed_args.quiet
         )

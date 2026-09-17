@@ -98,6 +98,7 @@ Settings
 * include_planned_retirements
 * exclude_commercial_industrial_sectors
 * include_net_metered
+* require_plant_in_eia860_vintage
 * ba_source
 * load_zone_level
 * project_aggregation
@@ -131,6 +132,7 @@ from open_data_toolkit.project.fleet.fleet_filters import (
     get_geographic_filter_string,
     get_hybrid_pairing_basis_expr,
     get_net_metering_filter_string,
+    get_plant_vintage_filter_string,
     get_planned_date_window_string,
     get_retired_filter_string,
     get_commercial_industrial_filter_string,
@@ -184,6 +186,7 @@ def get_fleet_audit_sql(
     include_planned_retirements,
     exclude_commercial_industrial_sectors,
     include_net_metered,
+    require_plant_in_eia860_vintage,
     project_name_str,
     fleet_relation_sql,
 ):
@@ -234,6 +237,7 @@ def get_fleet_audit_sql(
         include_planned_retirements=include_planned_retirements,
         exclude_commercial_industrial_sectors=exclude_commercial_industrial_sectors,
         include_net_metered=include_net_metered,
+        require_plant_in_eia860_vintage=require_plant_in_eia860_vintage,
     )
     # Sub-flags: the individual pieces the characteristics filter is
     # composed of; the AND-prefixed builders become bare predicates by
@@ -253,6 +257,9 @@ def get_fleet_audit_sql(
     )
     net_metering_predicate = "1 = 1 " + get_net_metering_filter_string(
         include_net_metered=include_net_metered
+    )
+    plant_vintage_predicate = "1 = 1 " + get_plant_vintage_filter_string(
+        require_plant_in_eia860_vintage=require_plant_in_eia860_vintage
     )
 
     load_zone_str = get_project_load_zone_str(
@@ -312,6 +319,8 @@ def get_fleet_audit_sql(
         CASE WHEN {sector_exclusion_predicate} THEN 1 ELSE 0 END AS passes_commercial_industrial_exclusion,
         CASE WHEN {net_metering_predicate} THEN 1 ELSE 0 END
             AS passes_net_metering,
+        CASE WHEN {plant_vintage_predicate} THEN 1 ELSE 0 END
+            AS passes_plant_vintage,
         {include_override_sql} AS override_include,
         {aggregation_override_sql} AS override_aggregation,
         {load_zone_override_sql} AS override_load_zone,
@@ -361,6 +370,7 @@ def print_fleet_waterfall(audit_df):
     status_ok = in_footprint & (audit_df["passes_status_retirement"] == 1)
     ci_ok = in_footprint & (audit_df["passes_commercial_industrial_exclusion"] == 1)
     net_metering_ok = in_footprint & (audit_df["passes_net_metering"] == 1)
+    plant_vintage_ok = in_footprint & (audit_df["passes_plant_vintage"] == 1)
     in_fleet = audit_df["in_fleet"] == 1
 
     print("Fleet selection waterfall (units passing this AND previous stages):")
@@ -371,6 +381,7 @@ def print_fleet_waterfall(audit_df):
     line("stage 2:   pass status/retirement selection", status_ok)
     line("stage 2:   pass commercial/industrial sector exclusion", ci_ok)
     line("stage 2:   pass net-metered exclusion", net_metering_ok)
+    line("stage 2:   pass plant-vintage filter", plant_vintage_ok)
     force_included = in_fleet & in_footprint & (audit_df["override_include"] == 1)
     force_excluded = in_footprint & keyed & (audit_df["override_include"] == 0)
     if force_included.any():
@@ -443,6 +454,7 @@ def main(args=None):
         include_planned_retirements=parsed_args.include_planned_retirements,
         exclude_commercial_industrial_sectors=parsed_args.exclude_commercial_industrial_sectors,
         include_net_metered=parsed_args.include_net_metered,
+        require_plant_in_eia860_vintage=parsed_args.require_plant_in_eia860_vintage,
         project_name_str=project_name_str,
         fleet_relation_sql=fleet_relation_sql,
     )

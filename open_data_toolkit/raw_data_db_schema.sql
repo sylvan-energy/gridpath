@@ -151,6 +151,28 @@ CREATE TABLE raw_data_eia860_solar
     PRIMARY KEY (version_num, report_date, plant_id_eia, generator_id)
 );
 
+-- Plant-vintage index from the EIA860 plants table (from
+-- pudl_eia860_plant_vintages.csv): one row per (report_date, plant) --
+-- which plants exist in which EIA860 vintage. Unlike the supplement
+-- tables the convert step loads EVERY vintage (the vintage IS the data
+-- dimension), so any vintage can be pinned by the project steps'
+-- optional require_plant_in_eia860_vintage fleet filter (drop units
+-- whose plant is absent from a pinned annual vintage -- reproducing
+-- external fleet lists that gate on membership in a specific annual
+-- filing). With the filter unset the table is never read. When the
+-- filter IS set, a table with no rows at the pinned date would empty
+-- every output, so the steps RAISE rather than warn; fleet_filters.py
+-- mirrors this DDL as CREATE TABLE IF NOT EXISTS so pre-existing raw
+-- databases get the table on first use -- keep the two in sync.
+DROP TABLE IF EXISTS raw_data_eia860_plant_vintages;
+CREATE TABLE raw_data_eia860_plant_vintages
+(
+    version_num                          TEXT,
+    report_date                          DATETIME,
+    plant_id_eia                         INTEGER,
+    PRIMARY KEY (version_num, report_date, plant_id_eia)
+);
+
 -- Per-battery detail from the EIA860 energy-storage supplement (from
 -- pudl_eia860_energy_storage.csv): the direct-support pairing links and
 -- coupling flags behind the project steps' hybrid-component pairing (the

@@ -11,3 +11,4 @@ import,filename,table
 1,./fuels/user_defined_eiaaeo_region_key.csv,user_defined_eiaaeo_region_key
 1,./project/pudl_eia860m_generators.csv,raw_data_eia860m_generators
 1,./project/user_defined_project_fuel_region_key.csv,user_defined_project_fuel_region_key
+1,./project/pudl_eia860_plant_vintages.csv,raw_data_eia860_plant_vintages

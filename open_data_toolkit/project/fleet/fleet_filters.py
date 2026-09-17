@@ -381,6 +381,103 @@ def get_net_metering_filter_string(include_net_metered):
      )"""
 
 
+# Mirror of the raw_data_eia860_plant_vintages DDL in
+# raw_data_db_schema.sql (as CREATE TABLE IF NOT EXISTS, so pre-existing
+# raw databases get the table on first use) -- keep the two in sync
+PLANT_VINTAGES_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS raw_data_eia860_plant_vintages
+(
+    version_num                          TEXT,
+    report_date                          DATETIME,
+    plant_id_eia                         INTEGER,
+    PRIMARY KEY (version_num, report_date, plant_id_eia)
+);
+"""
+
+
+def ensure_plant_vintages_table(conn):
+    """
+    Create the (empty) raw_data_eia860_plant_vintages table if this raw
+    database predates it. With the require_plant_in_eia860_vintage filter
+    unset (the default) the table is never read, so an empty table is
+    harmless; with the filter SET, check_plant_vintage_filter_ready
+    refuses to run against a vintage with no rows.
+    """
+    conn.execute(PLANT_VINTAGES_TABLE_DDL)
+    conn.commit()
+
+
+def check_plant_vintage_filter_ready(conn, require_plant_in_eia860_vintage):
+    """
+    When the plant-vintage fleet filter is set, verify
+    raw_data_eia860_plant_vintages actually has rows at the pinned report
+    date — a vintage with no rows would exclude EVERY unit and silently
+    empty every output, so this RAISES (unlike the warn-and-continue
+    checks for filters whose failure merely keeps extra units). A no-op
+    when the filter is unset.
+    """
+    if require_plant_in_eia860_vintage is None:
+        return
+
+    cursor = conn.cursor()
+    n_rows = cursor.execute(
+        """SELECT COUNT(*) FROM raw_data_eia860_plant_vintages
+           WHERE report_date = ?;""",
+        (require_plant_in_eia860_vintage,),
+    ).fetchone()[0]
+
+    if not n_rows:
+        available_dates = [
+            date for (date,) in cursor.execute("""SELECT DISTINCT report_date
+                   FROM raw_data_eia860_plant_vintages
+                   ORDER BY report_date;""")
+        ]
+        if available_dates:
+            raise ValueError(
+                f"require_plant_in_eia860_vintage "
+                f"'{require_plant_in_eia860_vintage}' matches no rows in "
+                f"raw_data_eia860_plant_vintages, so EVERY unit would be "
+                f"excluded. Available report dates: "
+                f"{', '.join(available_dates)}."
+            )
+        raise ValueError(
+            f"require_plant_in_eia860_vintage "
+            f"'{require_plant_in_eia860_vintage}' is set but "
+            f"raw_data_eia860_plant_vintages is EMPTY, so EVERY unit "
+            f"would be excluded. Load pudl_eia860_plant_vintages.csv "
+            f"(added to the convert step in September 2026 — re-run "
+            f"gridpath_pudl_to_gridpath_raw if the raw CSVs predate it), "
+            f"or unset the filter."
+        )
+
+
+def get_plant_vintage_filter_string(require_plant_in_eia860_vintage):
+    """
+    The plant-vintage part of the EIA860(M) filters: drop units whose
+    PLANT is absent from the pinned EIA860 annual vintage (the
+    raw_data_eia860_plant_vintages index) — i.e. plants EIA first listed
+    after that filing. Off (empty) by default; the setting exists to
+    reproduce external fleet lists that gate on membership in a specific
+    annual filing, whose plant-level metadata they need for every unit.
+    NOTE the cost grows with data freshness: each new EIA860M month adds
+    plants that postdate the pinned vintage, and what it drops is
+    precisely the newest tranche of the build pipeline (measured western
+    2030, July-2026 860M vs the 2025-01-01 vintage: 62 units / 2,011 MW,
+    dominated by under-construction batteries due online 2026-2028).
+    The test is plant-level: a new unit at a plant that IS in the vintage
+    passes. check_plant_vintage_filter_ready guards against a vintage
+    with no rows, which would exclude everything.
+    """
+    if require_plant_in_eia860_vintage is None:
+        return ""
+
+    return f"""AND plant_id_eia IN (
+         SELECT plant_id_eia
+         FROM raw_data_eia860_plant_vintages
+         WHERE report_date = '{require_plant_in_eia860_vintage}'
+     )"""
+
+
 # Mirror of the raw_data_eia860_energy_storage DDL in raw_data_db_schema.sql
 # (as CREATE TABLE IF NOT EXISTS, so pre-existing raw databases get the table
 # on first use) — keep the two in sync
@@ -772,6 +869,7 @@ def get_eia860_sql_filter_string(
     sector_column="sector_name_eia",
     sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
     include_net_metered=False,
+    require_plant_in_eia860_vintage=None,
 ):
     """
     With *include_retired*, retired units are allowed through: the 'RE'
@@ -826,6 +924,7 @@ def get_eia860_sql_filter_string(
         sector_column=sector_column,
         sector_values=sector_values,
         include_net_metered=include_net_metered,
+        require_plant_in_eia860_vintage=require_plant_in_eia860_vintage,
     )
     eia860_sql_filter_string = f"""
     {geographic_filter_string}
@@ -863,15 +962,18 @@ def get_characteristics_filter_string(
     sector_column="sector_name_eia",
     sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_NAMES,
     include_net_metered=False,
+    require_plant_in_eia860_vintage=None,
 ):
     """
     The generator-characteristics part of the EIA860(M) filters (pipeline
     stage 2): the planned-operating-date window vs the study year, the
     operational-status / retirement-date selection (see
     get_retired_filter_string and the tier constants), the
-    behind-the-meter sector exclusion (see get_commercial_industrial_filter_string), and
-    the net-metered exclusion (see get_net_metering_filter_string).
-    Everything about WHAT the unit is; nothing about where it is.
+    behind-the-meter sector exclusion (see get_commercial_industrial_filter_string),
+    the net-metered exclusion (see get_net_metering_filter_string), and
+    the optional plant-vintage filter (see
+    get_plant_vintage_filter_string). Everything about WHAT the unit is;
+    nothing about where it is.
     """
     retired_filter_string = get_retired_filter_string(
         study_year=study_year,
@@ -890,11 +992,15 @@ def get_characteristics_filter_string(
     net_metering_filter_string = get_net_metering_filter_string(
         include_net_metered=include_net_metered
     )
+    plant_vintage_filter_string = get_plant_vintage_filter_string(
+        require_plant_in_eia860_vintage=require_plant_in_eia860_vintage
+    )
     planned_date_window_string = get_planned_date_window_string(study_year=study_year)
     return f"""{planned_date_window_string}
      {retired_filter_string}
      {commercial_industrial_filter_string}
-     {net_metering_filter_string}"""
+     {net_metering_filter_string}
+     {plant_vintage_filter_string}"""
 
 
 def get_planned_date_window_string(study_year):
@@ -918,6 +1024,7 @@ def get_eia860m_sql_filter_string(
     include_planned_retirements=False,
     exclude_commercial_industrial_sectors=False,
     include_net_metered=False,
+    require_plant_in_eia860_vintage=None,
 ):
     """
     EIA860M equivalent of get_eia860_sql_filter_string, for use against
@@ -941,6 +1048,7 @@ def get_eia860m_sql_filter_string(
         sector_column="sector_id_eia",
         sector_values=COMMERCIAL_INDUSTRIAL_SECTOR_IDS,
         include_net_metered=include_net_metered,
+        require_plant_in_eia860_vintage=require_plant_in_eia860_vintage,
     )
 
 
@@ -1056,6 +1164,7 @@ def get_fleet_relation_sql(
     include_planned_retirements=False,
     exclude_commercial_industrial_sectors=False,
     include_net_metered=False,
+    require_plant_in_eia860_vintage=None,
     generators_table="raw_data_eia860_generators",
     join_ba_map=True,
     extra_joins="",
@@ -1112,6 +1221,7 @@ def get_fleet_relation_sql(
         sector_column=sector_column,
         sector_values=sector_values,
         include_net_metered=include_net_metered,
+        require_plant_in_eia860_vintage=require_plant_in_eia860_vintage,
     )
     include_override_sql = get_unit_override_sql(
         column="include", generators_table=generators_table
@@ -1162,7 +1272,8 @@ def add_fleet_selection_arguments(parser):
     Add the shared fleet-selection arguments — ``--include_retired``,
     ``--planned_inclusion``, ``--inactive_inclusion``,
     ``--include_planned_retirements``, ``--exclude_commercial_industrial_sectors``,
-    ``--include_net_metered`` — to a project-level step's argument parser.
+    ``--include_net_metered``, ``--require_plant_in_eia860_vintage`` — to
+    a project-level step's argument parser.
     Single-sourced here (like add_project_aggregation_arguments) so the
     settings and their --help texts can't drift across the steps; they
     must be set consistently across the EIA860(M)-based project steps.
@@ -1247,4 +1358,23 @@ def add_fleet_selection_arguments(parser):
         "Units absent from the solar table (non-solar units, and solar "
         "units newer than the loaded solar vintage) are always kept; an "
         "empty table makes the exclusion a no-op (warned loudly).",
+    )
+    parser.add_argument(
+        "-pvint",
+        "--require_plant_in_eia860_vintage",
+        default=None,
+        metavar="REPORT_DATE",
+        help="Optionally require every unit's PLANT to exist in the "
+        "EIA860 annual vintage with this report date (YYYY-MM-DD, e.g. "
+        "2025-01-01), per the raw_data_eia860_plant_vintages index — "
+        "dropping plants EIA first listed after that filing. Off by "
+        "default; it exists to reproduce external fleet lists that gate "
+        "on membership in a specific annual filing (whose plant-level "
+        "metadata they need for every unit). NOTE what it drops is "
+        "precisely the newest tranche of the build pipeline — currently "
+        "dominated by under-construction storage — and the cost grows "
+        "with every EIA860M month. The test is plant-level: a new unit "
+        "at a plant that IS in the vintage passes. A vintage with no "
+        "rows in the index would exclude everything, so the steps "
+        "refuse to run against one (listing the available dates).",
     )

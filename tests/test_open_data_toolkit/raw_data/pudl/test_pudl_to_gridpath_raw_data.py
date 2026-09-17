@@ -33,6 +33,7 @@ from open_data_toolkit.raw_data.pudl.pudl_to_gridpath_raw_data import (
     get_eia860m_generator_data_from_pudl_parquet,
     get_eia_baa_codes_from_pudl_parquet,
     get_eia_generator_data_from_pudl_parquet,
+    get_eia860_plant_vintages_from_pudl_parquet,
     get_eia860_solar_data_from_pudl_parquet,
     get_eia860_energy_storage_data_from_pudl_parquet,
     main as pudl_to_gridpath_raw_data_main,
@@ -1180,6 +1181,45 @@ class TestPudlToGridPathRawData(unittest.TestCase):
                 raw_data_directory=tempfile.mkdtemp(dir=self.tmp_dir.name),
                 pudl_download_directory=empty_download_dir,
                 energy_storage_report_date=None,
+                pudl_version="v-test",
+                quiet=True,
+            )
+
+    def test_plant_vintages_index_covers_every_vintage(self):
+        # ALL (report_date, plant) pairs, no vintage selection: the plants
+        # fixture has plants 1 and 2 at 2024 and 1, 2, 3 at 2025
+        raw_data_directory = tempfile.mkdtemp(dir=self.tmp_dir.name)
+        get_eia860_plant_vintages_from_pudl_parquet(
+            raw_data_directory=raw_data_directory,
+            pudl_download_directory=self.tmp_dir.name,
+            pudl_version="v-test",
+            quiet=True,
+        )
+        df = pd.read_csv(
+            os.path.join(raw_data_directory, "pudl_eia860_plant_vintages.csv")
+        )
+        self.assertEqual(
+            list(df.columns), ["version_num", "report_date", "plant_id_eia"]
+        )
+        self.assertEqual(
+            list(
+                df[["report_date", "plant_id_eia"]].itertuples(index=False, name=None)
+            ),
+            [
+                ("2024-01-01", 1),
+                ("2024-01-01", 2),
+                ("2025-01-01", 1),
+                ("2025-01-01", 2),
+                ("2025-01-01", 3),
+            ],
+        )
+
+    def test_plant_vintages_missing_parquet_raises(self):
+        empty_download_dir = tempfile.mkdtemp(dir=self.tmp_dir.name)
+        with self.assertRaisesRegex(FileNotFoundError, "gridpath_get_pudl_data"):
+            get_eia860_plant_vintages_from_pudl_parquet(
+                raw_data_directory=tempfile.mkdtemp(dir=self.tmp_dir.name),
+                pudl_download_directory=empty_download_dir,
                 pudl_version="v-test",
                 quiet=True,
             )

@@ -30,6 +30,7 @@ raw data directory.
 
 * pudl_eia860_generators.csv
 * pudl_eia860_energy_storage.csv
+* pudl_eia860_plant_vintages.csv
 * pudl_eia860_solar.csv
 * pudl_eia860m_generators.csv
 * pudl_eia923_plant_fuel_generation.csv
@@ -110,6 +111,11 @@ coupling flags, and charge/discharge ratings from the EIA860
 energy-storage supplement, the basis of the project steps' hybrid
 pairing) works the same way via ``eia860_energy_storage_report_date`` —
 see ``get_eia860_energy_storage_data_from_pudl_parquet``.
+``pudl_eia860_plant_vintages.csv`` is the one exception to
+single-vintage selection: a (report_date, plant) index over EVERY EIA860
+vintage (the vintage is the data dimension), so the project steps'
+optional ``require_plant_in_eia860_vintage`` fleet filter can pin any
+annual filing — see ``get_eia860_plant_vintages_from_pudl_parquet``.
 
 This step selects data VINTAGES only (the EIA860 report date, defaulting
 to the latest available, the EIA860M latest-entries default vs the
@@ -874,6 +880,66 @@ def get_eia860_solar_data_from_pudl_parquet(
         )
 
 
+def get_eia860_plant_vintages_from_pudl_parquet(
+    raw_data_directory,
+    pudl_download_directory,
+    pudl_version,
+    quiet=False,
+):
+    """
+    The plant-vintage index from the EIA860 plants table
+    (core_eia860__scd_plants): one row per (report_date, plant) over
+    EVERY vintage in the downloaded data — which plants exist in which
+    EIA860 filing. Unlike the other EIA860 outputs no single vintage is
+    selected here: the vintage IS the data dimension, and loading the
+    whole index lets the project steps' optional
+    ``require_plant_in_eia860_vintage`` fleet filter pin any annual
+    filing without re-running this step (a date with no rows makes the
+    steps raise, listing the dates the index does carry). Loads into
+    raw_data_eia860_plant_vintages.
+    """
+    filepath = os.path.join(raw_data_directory, "pudl_eia860_plant_vintages.csv")
+
+    if determine_proceed(filepath):
+        if not quiet:
+            print(
+                f"Getting EIA860 plant-vintage index from PUDL parquet "
+                f"files to {filepath}..."
+            )
+        plants_parquet_path = os.path.join(
+            pudl_download_directory, "core_eia860__scd_plants.parquet"
+        )
+        if not os.path.exists(plants_parquet_path):
+            raise FileNotFoundError(
+                f"{plants_parquet_path} not found; re-run "
+                f"gridpath_get_pudl_data to download it."
+            )
+
+        query = f"""
+            SELECT DISTINCT
+                '{pudl_version}' AS version_num,
+                CAST(report_date AS VARCHAR) AS report_date,
+                plant_id_eia
+            FROM read_parquet('{plants_parquet_path}')
+            ORDER BY report_date, plant_id_eia
+        """
+
+        plant_vintages = duckdb.sql(query).df()
+        plant_vintages.to_csv(
+            filepath,
+            index=False,
+        )
+
+        log_data_metadata(
+            directory=raw_data_directory,
+            script="pudl_to_gridpath_raw_data",
+            output_file="pudl_eia860_plant_vintages.csv",
+            settings={
+                "pudl_version": pudl_version,
+            },
+        )
+
+
 def get_eia860_energy_storage_data_from_pudl_parquet(
     raw_data_directory,
     pudl_download_directory,
@@ -1452,6 +1518,18 @@ def main(args=None):
             pudl_download_directory=parsed_args.pudl_download_directory,
             pudl_version=parsed_args.pudl_version,
             source_file="core_eia860__scd_generators_energy_storage.parquet",
+        ),
+        quiet=parsed_args.quiet,
+    )
+
+    # Plant-vintage index (which plants exist in which EIA860 vintage)
+    get_eia860_plant_vintages_from_pudl_parquet(
+        raw_data_directory=parsed_args.raw_data_directory,
+        pudl_download_directory=parsed_args.pudl_download_directory,
+        pudl_version=determine_pudl_version(
+            pudl_download_directory=parsed_args.pudl_download_directory,
+            pudl_version=parsed_args.pudl_version,
+            source_file="core_eia860__scd_plants.parquet",
         ),
         quiet=parsed_args.quiet,
     )
