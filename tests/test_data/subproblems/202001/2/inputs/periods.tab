@@ -1,2 +1,2 @@
-period	discount_factor	hours_in_period_timepoints	period_start_year	period_end_year	prev_period
-2020	1	8760	2020	2030	.
+period	discount_factor	hours_in_period_timepoints	period_start_year	period_end_year	prev_period	probability
+2020	1	8760	2020	2030	.	.

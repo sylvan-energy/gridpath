@@ -1,0 +1,2 @@
+version_num,report_date,plant_id_eia,generator_id,max_charge_rate_mw,max_discharge_rate_mw,is_ac_coupled,is_dc_coupled,is_dc_coupled_tightly,is_independent,is_direct_support,plant_id_eia_direct_support_1,generator_id_direct_support_1,plant_id_eia_direct_support_2,generator_id_direct_support_2,plant_id_eia_direct_support_3,generator_id_direct_support_3
+v-test,2025-01-01,999999,ES0,1.0,1.0,,,,1,,,,,,,

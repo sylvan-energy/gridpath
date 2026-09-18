@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +17,9 @@
 from importlib import import_module
 import os.path
 import pandas as pd
+import shutil
 import sys
+import tempfile
 import unittest
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
@@ -252,6 +255,265 @@ class TestPeriods(unittest.TestCase):
             msg="Data for param 'hours_in_subproblem_period' "
             "param not loaded correctly",
         )
+
+    def test_period_tree_sets(self):
+        """
+        Build the periods module on a three-level period tree and check the
+        trajectory sets. Tree: 2020 -> {2030, 20302}; 2030 -> {20401, 20402};
+        20302 -> {20403}. The timepoints.tab of the test data (periods 2020
+        and 2030 only) is reused as is.
+        """
+        tree_periods_tab = (
+            "period\tdiscount_factor\thours_in_period_timepoints\t"
+            "period_start_year\tperiod_end_year\tprev_period\tprobability\n"
+            "2020\t1\t8760\t2020\t2030\t.\t.\n"
+            "2030\t0.8\t8760\t2030\t2040\t2020\t0.6\n"
+            "20302\t0.8\t8760\t2030\t2040\t2020\t0.4\n"
+            "20401\t0.5\t8760\t2040\t2050\t2030\t0.2\n"
+            "20402\t0.5\t8760\t2040\t2050\t2030\t0.4\n"
+            "20403\t0.5\t8760\t2040\t2050\t20302\t0.4\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(TEST_DATA_DIRECTORY, "inputs"),
+                os.path.join(tmp_dir, "inputs"),
+            )
+            with open(os.path.join(tmp_dir, "inputs", "periods.tab"), "w") as f:
+                f.write(tree_periods_tab)
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=tmp_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
+
+        expected_prev_period = {
+            2030: 2020,
+            20302: 2020,
+            20401: 2030,
+            20402: 2030,
+            20403: 20302,
+        }
+        actual_prev_period = {
+            p: instance.prev_period[p] for p in instance.NOT_FIRST_PRDS
+        }
+        self.assertDictEqual(expected_prev_period, actual_prev_period)
+
+        # Each period with its ancestors, nearest first
+        expected_prev_periods_on_trajectory = {
+            2020: [2020],
+            2030: [2030, 2020],
+            20302: [20302, 2020],
+            20401: [20401, 2030, 2020],
+            20402: [20402, 2030, 2020],
+            20403: [20403, 20302, 2020],
+        }
+        actual_prev_periods_on_trajectory = {
+            p: list(instance.FUTURE_TRAJECTORY_PREV_PERIODS_BY_PERIOD[p])
+            for p in instance.PERIODS
+        }
+        self.assertDictEqual(
+            expected_prev_periods_on_trajectory, actual_prev_periods_on_trajectory
+        )
+
+        # Each period and its descendants, sorted: the periods in which
+        # capacity of that vintage can be operational
+        expected_future_trajectory = {
+            2020: [2020, 2030, 20302, 20401, 20402, 20403],
+            2030: [2030, 20401, 20402],
+            20302: [20302, 20403],
+            20401: [20401],
+            20402: [20402],
+            20403: [20403],
+        }
+        actual_future_trajectory = {
+            p: list(instance.PERIOD_FUTURE_TRAJECTORY[p]) for p in instance.PERIODS
+        }
+        self.assertDictEqual(expected_future_trajectory, actual_future_trajectory)
+
+        # Params: probability (default 1 for the root) and the weight used in
+        # the objective function, discount_factor * probability
+        expected_probability = {
+            2020: 1,
+            2030: 0.6,
+            20302: 0.4,
+            20401: 0.2,
+            20402: 0.4,
+            20403: 0.4,
+        }
+        expected_weight = {
+            2020: 1.0,
+            2030: 0.48,
+            20302: 0.32,
+            20401: 0.1,
+            20402: 0.2,
+            20403: 0.2,
+        }
+        for period in instance.PERIODS:
+            self.assertAlmostEqual(
+                expected_probability[period], instance.probability[period]
+            )
+            self.assertAlmostEqual(
+                expected_weight[period],
+                instance.probability_weighted_discount_factor[period],
+            )
+
+    def test_validate_period_tree(self):
+        """
+        Check the prev_period validation on valid and invalid period trees
+        """
+        validate = MODULE_BEING_TESTED.validate_period_tree
+
+        def make_df(rows):
+            return pd.DataFrame(
+                rows,
+                columns=[
+                    "period",
+                    "period_start_year",
+                    "period_end_year",
+                    "prev_period",
+                ],
+            )
+
+        # Deterministic problem: nothing specified, nothing to check
+        self.assertListEqual(
+            [], validate(make_df([(2020, 2020, 2030, None), (2030, 2030, 2040, None)]))
+        )
+        # Valid two-branch tree
+        self.assertListEqual(
+            [],
+            validate(
+                make_df(
+                    [
+                        (2020, 2020, 2030, None),
+                        (20301, 2030, 2040, 2020),
+                        (20302, 2030, 2040, 2020),
+                    ]
+                )
+            ),
+        )
+        # Partially specified: the second branch would silently default to
+        # the first branch as its previous period
+        errors = validate(
+            make_df(
+                [
+                    (2020, 2020, 2030, None),
+                    (20301, 2030, 2040, 2020),
+                    (20302, 2030, 2040, None),
+                ]
+            )
+        )
+        self.assertEqual(1, len(errors))
+        self.assertIn("periods without a prev_period: [2020, 20302]", errors[0])
+        # Root is not the first period
+        errors = validate(make_df([(2020, 2020, 2030, 2030), (2030, 2030, 2040, None)]))
+        self.assertTrue(any("must be the first period 2020" in e for e in errors))
+        # Unknown previous period
+        errors = validate(make_df([(2020, 2020, 2030, None), (2030, 2030, 2040, 2025)]))
+        self.assertEqual(1, len(errors))
+        self.assertIn("unknown prev_period by period: {2030: 2025}", errors[0])
+        # Cycle
+        errors = validate(
+            make_df(
+                [
+                    (2020, 2020, 2030, None),
+                    (20301, 2030, 2040, 20302),
+                    (20302, 2030, 2040, 20301),
+                ]
+            )
+        )
+        self.assertTrue(any("never reaches a root period" in e for e in errors))
+        # Child starts before its parent ends
+        errors = validate(make_df([(2020, 2020, 2030, None), (2025, 2025, 2035, 2020)]))
+        self.assertEqual(1, len(errors))
+        self.assertIn(
+            "Period 2025 starts in 2025, before its prev_period 2020 ends in 2030",
+            errors[0],
+        )
+
+    def test_validate_period_probabilities(self):
+        """
+        Check the probability validation against the period tree: the
+        probability of reaching a period; the root is 1 and the periods
+        following a period sum to that period's probability.
+        """
+        validate = MODULE_BEING_TESTED.validate_period_probabilities
+
+        def make_df(rows):
+            return pd.DataFrame(rows, columns=["period", "prev_period", "probability"])
+
+        # Valid two-branch tree, root unspecified (defaults to 1)
+        self.assertListEqual(
+            [],
+            validate(
+                make_df([(2020, None, None), (20301, 2020, 0.5), (20302, 2020, 0.5)])
+            ),
+        )
+        # Valid three-stage tree: leaves sum to their parent's 0.5
+        self.assertListEqual(
+            [],
+            validate(
+                make_df(
+                    [
+                        (2020, None, 1.0),
+                        (20301, 2020, 0.5),
+                        (20302, 2020, 0.5),
+                        (20401, 20301, 0.2),
+                        (20402, 20301, 0.3),
+                        (20403, 20302, 0.5),
+                    ]
+                )
+            ),
+        )
+        # Valid: deterministic, nothing specified; single child defaults to 1
+        self.assertListEqual(
+            [], validate(make_df([(2020, None, None), (2030, None, None)]))
+        )
+        self.assertListEqual(
+            [], validate(make_df([(2020, None, None), (2030, 2020, None)]))
+        )
+        # A probability without a tree
+        errors = validate(make_df([(2020, None, None), (2030, None, 0.5)]))
+        self.assertEqual(1, len(errors))
+        self.assertIn("requires a period tree", errors[0])
+        # Children not summing to their parent's probability
+        errors = validate(
+            make_df([(2020, None, None), (20301, 2020, 0.5), (20302, 2020, 0.4)])
+        )
+        self.assertEqual(1, len(errors))
+        self.assertIn("must sum to its probability 1.0", errors[0])
+        self.assertIn("periods [20301, 20302] sum to 0.9", errors[0])
+        # Leaves given as if conditional (0.5 each under a 0.5 parent)
+        errors = validate(
+            make_df(
+                [
+                    (2020, None, None),
+                    (20301, 2020, 0.5),
+                    (20302, 2020, 0.5),
+                    (20401, 20301, 0.5),
+                    (20402, 20301, 0.5),
+                ]
+            )
+        )
+        self.assertEqual(1, len(errors))
+        self.assertIn(
+            "following period 20301 must sum to its probability 0.5", errors[0]
+        )
+        # Root probability other than 1
+        errors = validate(make_df([(2020, None, 0.9), (20301, 2020, 0.9)]))
+        self.assertEqual(1, len(errors))
+        self.assertIn("root period 2020 must have a probability of 1", errors[0])
+        # Out of range
+        errors = validate(
+            make_df([(2020, None, None), (20301, 2020, 1.5), (20302, 2020, -0.5)])
+        )
+        self.assertTrue(any("between 0 and 1" in e for e in errors))
 
 
 if __name__ == "__main__":

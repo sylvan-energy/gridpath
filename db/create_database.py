@@ -27,7 +27,7 @@ are resolved against the current working directory.
 .. _database-structure-section-ref:
 
 To create a database for GridPath raw data, point *--db_schema* to the
-raw_data_db_schema.sql file in the data_toolkit package directory instead
+raw_data_db_schema.sql file in the open_data_toolkit package directory instead
 and also specify the --omit_data flag.
 
 """

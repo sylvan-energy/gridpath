@@ -42,7 +42,7 @@ def add_model_components(
         return sum(
             mod.Carbon_Tax_Cost[z, p]
             * mod.number_years_represented[p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             for (z, p) in mod.CARBON_TAX_ZONE_PERIODS_WITH_CARBON_TAX
         )
 

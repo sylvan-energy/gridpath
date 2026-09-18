@@ -31,6 +31,8 @@ def export_results(scenario_directory, subproblem, stage, m, d):
             "carbon_credits_zone",
             "period",
             "discount_factor",
+            "probability",
+            "probability_weighted_discount_factor",
             "number_years_represented",
         ],
         data=[
@@ -38,6 +40,8 @@ def export_results(scenario_directory, subproblem, stage, m, d):
                 z,
                 p,
                 m.discount_factor[p],
+                m.probability[p],
+                m.probability_weighted_discount_factor[p],
                 m.number_years_represented[p],
             ]
             for z in m.CARBON_CREDITS_ZONES

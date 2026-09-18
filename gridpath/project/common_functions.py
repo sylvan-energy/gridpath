@@ -66,6 +66,39 @@ def determine_project_subset(
     return project_subset
 
 
+def get_energy_budget_balancing_type(mod, prj, energy_budget_balancing_type_param):
+    """
+    The balancing type of the horizons over which the project's energy
+    budgets (and per-horizon budget-related limits) apply: the project's
+    optional ``energy_budget_balancing_type`` characteristic if specified,
+    otherwise its ``balancing_type_project``. The latter continues to govern
+    chronology (ramps and horizon-boundary handling) in either case, so a
+    project can e.g. be budgeted by month while ramping continuously across
+    month boundaries.
+
+    :param mod: the Pyomo model
+    :param prj: the project
+    :param energy_budget_balancing_type_param: the operational type's
+        ``{op_type}_energy_budget_balancing_type`` Param (no default, so
+        specification is tested via sparse membership)
+    :return: the balancing type
+    """
+    if not energy_budget_balancing_type_param.is_constructed():
+        # Pyomo constructs components in declaration order and membership
+        # in a not-yet-constructed Param is silently False, i.e. the
+        # fallback would be taken for every project with no error: declare
+        # the Param before the component whose initializer calls this
+        raise RuntimeError(
+            f"{energy_budget_balancing_type_param.name} has not been "
+            f"constructed yet: declare it before the component whose "
+            f"initializer reads it."
+        )
+    if prj in energy_budget_balancing_type_param:
+        return energy_budget_balancing_type_param[prj]
+    else:
+        return mod.balancing_type_project[prj]
+
+
 def check_if_first_timepoint(mod, tmp, balancing_type):
     return tmp == mod.first_hrz_tmp[balancing_type, mod.horizon[tmp, balancing_type]]
 

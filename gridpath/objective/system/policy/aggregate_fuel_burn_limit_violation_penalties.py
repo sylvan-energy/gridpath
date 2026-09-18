@@ -44,7 +44,9 @@ def add_model_components(
             mod.Fuel_Burn_Min_Shortage_Abs_Unit_Expression[ba, bt, h]
             * mod.fuel_burn_min_violation_penalty_per_unit[ba]
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (
                 ba,
                 bt,
@@ -61,7 +63,9 @@ def add_model_components(
             mod.Fuel_Burn_Max_Overage_Abs_Unit_Expression[ba, bt, h]
             * mod.fuel_burn_max_violation_penalty_per_unit[ba]
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (
                 ba,
                 bt,
@@ -78,7 +82,9 @@ def add_model_components(
             mod.Fuel_Burn_Max_Overage_Rel_Unit_Expression[ba, bt, h]
             * mod.fuel_burn_relative_max_violation_penalty_per_unit[ba]
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (
                 ba,
                 bt,

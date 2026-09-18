@@ -1,3 +1,3 @@
 project	balancing_type_project	horizon	average_power_fraction	min_power_fraction	max_power_fraction
-Hydro_Zone1	day	2	0.3	0.2	0.5
-Hydro_Zone2	day	2	0.3	0.2	0.5
+3__Hydro	day	2	0.3	0.2	0.5
+9__Hydro	day	2	0.3	0.2	0.5

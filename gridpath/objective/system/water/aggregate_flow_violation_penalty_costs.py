@@ -48,7 +48,7 @@ def add_model_components(
             * mod.hrs_in_tmp[dep_tmp]
             * mod.tmp_weight[dep_tmp]
             * mod.number_years_represented[mod.period[dep_tmp]]
-            * mod.discount_factor[mod.period[dep_tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[dep_tmp]]
             for (wl, dep_tmp, arr_tmp) in mod.WATER_LINK_DEPARTURE_ARRIVAL_TMPS
         )
 
@@ -69,7 +69,7 @@ def add_model_components(
             * mod.hrs_in_tmp[dep_tmp]
             * mod.tmp_weight[dep_tmp]
             * mod.number_years_represented[mod.period[dep_tmp]]
-            * mod.discount_factor[mod.period[dep_tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[dep_tmp]]
             for (wl, dep_tmp, arr_tmp) in mod.WATER_LINK_DEPARTURE_ARRIVAL_TMPS
         )
 
@@ -87,7 +87,9 @@ def add_model_components(
             * mod.hrz_min_flow_violation_penalty_cost_per_hour[wl]
             * sum(mod.hrs_in_tmp[tmp] for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, h])
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (
                 wl,
                 bt,
@@ -109,7 +111,9 @@ def add_model_components(
             * mod.hrz_max_flow_violation_penalty_cost_per_hour[r]
             * sum(mod.hrs_in_tmp[tmp] for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, h])
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (
                 r,
                 bt,

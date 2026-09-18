@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -114,6 +115,38 @@ class TestSuperPeriods(unittest.TestCase):
             expected_superperiod_periods,
             actual_superperiod_periods,
         )
+
+    def test_validate_superperiods_on_single_trajectory(self):
+        """
+        A superperiod may not span sibling branches of the period tree.
+        Tree: 2020 -> {20301, 20302}; 20301 -> {20401, 20402};
+        20302 -> {20403}.
+        """
+        validate = MODULE_BEING_TESTED.validate_superperiods_on_single_trajectory
+        prev_period = {
+            20301: 2020,
+            20302: 2020,
+            20401: 20301,
+            20402: 20301,
+            20403: 20302,
+        }
+
+        # Deterministic problem (no prev_period specified): nothing to check
+        self.assertListEqual([], validate([(1, 2020), (1, 2030)], {}))
+
+        # Superperiods along one trajectory are fine
+        self.assertListEqual(
+            [], validate([(1, 2020), (1, 20301), (1, 20401), (2, 20302)], prev_period)
+        )
+
+        # Siblings, and cousins on different branches, are not
+        errors = validate(
+            [(1, 20301), (1, 20302), (2, 20401), (2, 20403), (3, 2020), (3, 20402)],
+            prev_period,
+        )
+        self.assertEqual(2, len(errors))
+        self.assertIn("Superperiod 1 includes periods 20301 and 20302", errors[0])
+        self.assertIn("Superperiod 2 includes periods 20401 and 20403", errors[1])
 
 
 if __name__ == "__main__":

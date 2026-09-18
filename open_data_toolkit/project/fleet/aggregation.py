@@ -1,0 +1,325 @@
+# Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Project aggregation: how the filtered fleet's units are grouped into
+GridPath projects and what each project is named. This is the LAST stage
+of the pipeline — it acts on units the geographic scope
+(open_data_toolkit.geographic_scope) and characteristic filters
+(open_data_toolkit.project.fleet.fleet_filters) have already selected, combining a
+geographic grouping (the load zone at the chosen level) with an
+operational-characteristics grouping (the technology base plus any
+aggregation dimensions). get_project_name_str is the entry point; the
+steps' GROUP BY project then does the aggregation, with per-unit rows
+riding through as singleton groups in the keyed mode.
+"""
+
+from open_data_toolkit.geographic_scope import (
+    get_load_zone_str,
+    LOAD_ZONE_LEVEL_CHOICES,
+)
+from open_data_toolkit.project.fleet.ba_assignment import GENERATORS_TABLE_COLUMNS
+from open_data_toolkit.project.fleet.unit_overrides import get_unit_override_sql
+
+DISAGG_PROJECT_NAME_STR = (
+    "plant_id_eia || '__' || REPLACE(REPLACE(generator_id, ' ', '_'), '-', '_')"
+)
+
+
+# Which units get aggregated: 'none' = every unit is its own project (the
+# default); 'agg_project_keyed' = only units whose user_defined_eia_gridpath_key
+# row has agg_project set are aggregated (per-technology choice), the rest
+# stay disaggregated; 'all' = everything is aggregated
+PROJECT_AGGREGATION_CHOICES = ["none", "agg_project_keyed", "all"]
+
+# Optional aggregation dimensions: named SQL expressions (over the joined
+# generators/key/BA-map relations) whose values REFINE the
+# technology-load-zone aggregate name — inserted between the technology base
+# and the load zone, so they can only split technology-zone groups finer,
+# never merge across technologies (each aggregate must stay homogeneous in
+# capacity/operational type). A NULL value contributes nothing (no token, no
+# separator): e.g. with the 'duration' dimension, storage aggregates become
+# 'Batteries_4h_<zone>' while non-storage stays 'Gas_<zone>'. Free-text
+# values get the same space/dash sanitization as disaggregated unit names.
+# 'columns' lists the generator-table columns the expression needs, checked
+# against GENERATORS_TABLE_COLUMNS so steps querying a table that lacks them
+# fail loudly (every current dimension is carried by both the EIA860 and
+# EIA860M tables). When adding a dimension, note that annual-form-only
+# columns (see the raw_data_db_schema.sql note) are NULL at the
+# monthly_update EIA860 vintage — a dimension built on them contributes
+# nothing there.
+AGGREGATION_DIMENSIONS = {
+    # EIA's curated technology label (e.g. combined cycle vs combustion
+    # turbine vs steam turbine; onshore vs offshore wind)
+    "technology_description": {
+        "expr": "REPLACE(REPLACE(technology_description, ' ', '_'), '-', '_')",
+        "columns": ["technology_description"],
+    },
+    # Decade the generator came online, e.g. '1990s'
+    "vintage_decade": {
+        "expr": "CAST(CAST(STRFTIME('%Y', generator_operating_date) AS "
+        "INTEGER) / 10 * 10 AS TEXT) || 's'",
+        "columns": ["generator_operating_date"],
+    },
+    # Storage duration in hours (rounded), e.g. '4h'; NULL (no token) for
+    # units with no energy storage capacity
+    "duration": {
+        "expr": "CAST(CAST(ROUND(energy_storage_capacity_mwh / capacity_mw) "
+        "AS INTEGER) AS TEXT) || 'h'",
+        "columns": ["energy_storage_capacity_mwh", "capacity_mw"],
+    },
+    # The EIA operational status code (e.g. split under-construction 'U'/'V'
+    # aggregates from operating 'OP' ones)
+    "status": {
+        "expr": "operational_status_code",
+        "columns": ["operational_status_code"],
+    },
+    # 'Hybrid' for paired hybrid components — a battery, or a solar/wind
+    # unit, whose partner is in the study fleet (paired by the EIA860
+    # energy-storage supplement's direct-support links, with plant
+    # co-location as the fallback; see
+    # open_data_toolkit.project.fleet.fleet_filters.get_hybrid_pairing_expr)
+    # — splitting e.g. Solar_CISO into Solar_CISO and Solar_Hybrid_CISO.
+    # Unlike the other dimensions, its expression depends on the step's
+    # fleet-selection settings (a unit only pairs against IN-FLEET
+    # partners), so it is built at runtime and passed down as
+    # hybrid_pairing_expr — the steps' shared
+    # get_project_name_str_from_args adapter does this; a direct
+    # get_aggregation_dimensions_sql caller must pass it explicitly.
+    "hybrid": {
+        "expr": None,
+        "columns": ["plant_id_eia", "generator_id", "prime_mover_code"],
+    },
+}
+
+
+def add_project_aggregation_arguments(parser):
+    """
+    Add the shared ``--project_aggregation`` / ``--aggregation_dimensions``
+    arguments to a project-level step's argument parser. Single-sourced
+    here so the settings — and their --help menus, which list the
+    available dimensions straight from AGGREGATION_DIMENSIONS — can't
+    drift across the steps.
+    """
+    parser.add_argument(
+        "-agg",
+        "--project_aggregation",
+        default="none",
+        choices=PROJECT_AGGREGATION_CHOICES,
+        help="Which units to aggregate (to the technology-load-zone level, "
+        "split finer by any aggregation_dimensions): 'none' (the default) "
+        "keeps every unit as its own project; 'agg_project_keyed' "
+        "aggregates only units whose user_defined_eia_gridpath_key row has "
+        "agg_project set, keeping the rest as units; 'all' aggregates "
+        "everything. Must be set consistently across the project-level "
+        "steps.",
+    )
+    parser.add_argument(
+        "-aggdim",
+        "--aggregation_dimensions",
+        default="",
+        help="Comma-separated aggregation dimensions refining the aggregate "
+        "project names (inserted between the technology and the load zone), "
+        "e.g. 'technology_description,vintage_decade'. Available "
+        f"dimensions: {', '.join(AGGREGATION_DIMENSIONS)}. Must be set "
+        "consistently across the project-level steps.",
+    )
+    parser.add_argument(
+        "-agglvl",
+        "--aggregation_level",
+        default=None,
+        choices=list(LOAD_ZONE_LEVEL_CHOICES),
+        help="The geographic level at which aggregated projects are named "
+        "(and thereby aggregated), when it should be FINER than the "
+        "load-zone level — e.g. --load_zone_level custom "
+        "--aggregation_level baa aggregates per BA ('Gas_CT_BPAT') while "
+        "assigning each project its BA's custom zone. By default (unset) "
+        "aggregation happens at the load-zone level itself. The level must "
+        "refine the load-zone level over the in-footprint BAs — every "
+        "aggregated project must belong to exactly one load zone — which "
+        "the steps verify against the BA map before querying. Must be set "
+        "consistently across the project-level steps.",
+    )
+
+
+def get_aggregation_dimensions_sql(
+    aggregation_dimensions,
+    generators_table="raw_data_eia860_generators",
+    hybrid_pairing_expr=None,
+):
+    """
+    The SQL snippet appending the requested aggregation dimensions (a
+    comma-separated string or an iterable of names from
+    AGGREGATION_DIMENSIONS) to the aggregate project name. Unknown dimension
+    names and dimensions whose columns the *generators_table* doesn't carry
+    raise ValueError. The 'hybrid' dimension has no static expression — its
+    pairing rules depend on the step's fleet-selection settings — so
+    requesting it requires passing the runtime-built *hybrid_pairing_expr*
+    (see fleet_filters.get_hybrid_pairing_expr); the steps' shared
+    get_project_name_str_from_args adapter supplies it.
+    """
+    if isinstance(aggregation_dimensions, str):
+        aggregation_dimensions = [
+            d.strip() for d in aggregation_dimensions.split(",") if d.strip()
+        ]
+
+    table_columns = GENERATORS_TABLE_COLUMNS[generators_table]
+    snippet = ""
+    for dimension in aggregation_dimensions:
+        if dimension not in AGGREGATION_DIMENSIONS:
+            raise ValueError(
+                f"Unknown aggregation dimension '{dimension}'. Available "
+                f"dimensions: {', '.join(AGGREGATION_DIMENSIONS.keys())}."
+            )
+        missing = [
+            c
+            for c in AGGREGATION_DIMENSIONS[dimension]["columns"]
+            if c not in table_columns
+        ]
+        if missing:
+            raise ValueError(
+                f"Aggregation dimension '{dimension}' needs column(s) "
+                f"{', '.join(missing)}, which {generators_table} does not "
+                f"carry — drop the dimension or use an EIA860-based step."
+            )
+        expr = AGGREGATION_DIMENSIONS[dimension]["expr"]
+        if expr is None:
+            if hybrid_pairing_expr is None:
+                raise ValueError(
+                    f"The '{dimension}' aggregation dimension has no static "
+                    f"expression — it depends on the step's fleet-selection "
+                    f"settings — so it needs the runtime-built "
+                    f"hybrid_pairing_expr (see "
+                    f"fleet_filters.get_hybrid_pairing_expr; the steps' "
+                    f"get_project_name_str_from_args adapter builds it)."
+                )
+            expr = hybrid_pairing_expr
+        snippet += f" || COALESCE('_' || {expr}, '')"
+
+    return snippet
+
+
+def get_geographic_token_str(
+    load_zone_level,
+    footprint,
+    generators_table="raw_data_eia860_generators",
+    aggregation_level=None,
+):
+    """
+    The SQL expression for a unit's GEOGRAPHIC NAME TOKEN — the value the
+    aggregate project names end in: the unit's zone at the load-zone level
+    (or at *aggregation_level* when set — see get_agg_project_name_str),
+    overridden per unit by an 'aggregation' value in
+    user_defined_unit_overrides. Exposed separately from the name
+    expression so steps grouping OTHER things by the same geography (the
+    hybrid power-output-group step) can't drift from the names.
+    """
+    map_token_str = get_load_zone_str(
+        (load_zone_level if aggregation_level is None else aggregation_level),
+        footprint,
+    )
+    aggregation_override_sql = get_unit_override_sql(
+        column="aggregation", generators_table=generators_table
+    )
+    return f"COALESCE({aggregation_override_sql}, {map_token_str})"
+
+
+def get_agg_project_name_str(
+    load_zone_level,
+    footprint,
+    aggregation_dimensions="",
+    generators_table="raw_data_eia860_generators",
+    aggregation_level=None,
+    hybrid_pairing_expr=None,
+):
+    """
+    Aggregated projects are named
+    <agg_project-or-technology>[_<dimension value>...]_<load_zone>, and are
+    thereby aggregated at the chosen load-zone level (see get_load_zone_str
+    for the 'all' level), split finer by any requested aggregation
+    dimensions (see AGGREGATION_DIMENSIONS). When *aggregation_level* is
+    set, the name's geographic token comes from THAT level instead —
+    decoupling how finely units are aggregated (e.g. per BA) from the load
+    zone the resulting projects are assigned to (e.g. a custom zone); the
+    level must refine the load-zone level, which
+    geographic_scope.check_aggregation_level_refines_zone_level verifies
+    against the BA map. A unit with an 'aggregation' override in
+    user_defined_unit_overrides gets THAT value as its geographic token
+    (a per-plant carve-out, e.g. 'Hydro_Hoover'; see
+    open_data_toolkit.project.fleet.unit_overrides) — an empty overrides
+    table is a no-op.
+    """
+    geographic_token_str = get_geographic_token_str(
+        load_zone_level=load_zone_level,
+        footprint=footprint,
+        generators_table=generators_table,
+        aggregation_level=aggregation_level,
+    )
+    dimensions_sql = get_aggregation_dimensions_sql(
+        aggregation_dimensions=aggregation_dimensions,
+        generators_table=generators_table,
+        hybrid_pairing_expr=hybrid_pairing_expr,
+    )
+    return (
+        "COALESCE(agg_project, gridpath_technology)"
+        + dimensions_sql
+        + " || '_' || "
+        + geographic_token_str
+    )
+
+
+def get_project_name_str(
+    project_aggregation,
+    load_zone_level,
+    footprint,
+    aggregation_dimensions="",
+    generators_table="raw_data_eia860_generators",
+    aggregation_level=None,
+    hybrid_pairing_expr=None,
+):
+    """
+    The project-name SQL expression for the chosen *project_aggregation*
+    mode (see PROJECT_AGGREGATION_CHOICES). With 'agg_project_keyed', units
+    whose key row has agg_project set get the aggregate name and everything
+    else keeps its per-unit name — the aggregated queries' GROUP BY project
+    then leaves the per-unit rows as singleton groups, so their SUMs/values
+    come through unchanged. *aggregation_level*, when set, names (and
+    thereby aggregates) the aggregated projects at that level rather than
+    at the load-zone level (see get_agg_project_name_str).
+    """
+    if project_aggregation not in PROJECT_AGGREGATION_CHOICES:
+        raise ValueError(
+            f"Unknown project_aggregation '{project_aggregation}'; must be "
+            f"one of {', '.join(PROJECT_AGGREGATION_CHOICES)}."
+        )
+
+    if project_aggregation == "none":
+        return DISAGG_PROJECT_NAME_STR
+
+    agg_name_str = get_agg_project_name_str(
+        load_zone_level=load_zone_level,
+        footprint=footprint,
+        aggregation_dimensions=aggregation_dimensions,
+        generators_table=generators_table,
+        aggregation_level=aggregation_level,
+        hybrid_pairing_expr=hybrid_pairing_expr,
+    )
+    if project_aggregation == "all":
+        return agg_name_str
+
+    return (
+        f"CASE WHEN agg_project IS NOT NULL THEN {agg_name_str} "
+        f"ELSE {DISAGG_PROJECT_NAME_STR} END"
+    )

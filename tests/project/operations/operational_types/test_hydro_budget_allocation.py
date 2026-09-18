@@ -243,7 +243,7 @@ class TestHydroBudgetAllocationDatabase(unittest.TestCase):
         errors = self.get_validation_errors()
         self.assertEqual(1, len(errors))
         self.assertEqual("High", errors[0][0])
-        self.assertIn("own balancing type", errors[0][1])
+        self.assertIn("energy-budget balancing type", errors[0][1])
 
     def test_validation_flags_share_sums_and_ranges(self):
         """
@@ -558,7 +558,9 @@ class TestHydroBudgetAllocationModelChecks(unittest.TestCase):
     def test_project_balancing_type_sub_horizon_raises(self):
         self.write_allocation_tab([("Hydro_NonCurtailable", "year", 2020, 0.4, 0.6)])
         with self.quiet_pyomo_construction_errors():
-            with self.assertRaisesRegex(ValueError, "project's own balancing type"):
+            with self.assertRaisesRegex(
+                ValueError, "project's energy-budget balancing type"
+            ):
                 self.build_instance(GEN_HYDRO_MUST_TAKE_MODULE)
 
 

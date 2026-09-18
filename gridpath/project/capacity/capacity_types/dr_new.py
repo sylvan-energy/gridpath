@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -275,11 +276,16 @@ def dr_new_energy_stor_capacity_rule(mod, g, p):
     **Defined Over**: DR_NEW_OPR_PRDS
 
     Total energy capacity in each period is the sum of all new build over the
-    previous periods (including the current period).
+    previous periods (including the current period). Previous periods are
+    the periods on the path from the first period to this period, so on a
+    stochastic scenario tree, build in a sibling branch does not count.
 
     Vintages = all periods
     """
-    return sum(mod.DRNew_Build_MWh[g, prev_p] for prev_p in mod.PERIODS if prev_p <= p)
+    return sum(
+        mod.DRNew_Build_MWh[g, prev_p]
+        for prev_p in mod.FUTURE_TRAJECTORY_PREV_PERIODS_BY_PERIOD[p]
+    )
 
 
 def dr_new_power_capacity_rule(mod, g, p):

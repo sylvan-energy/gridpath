@@ -13,11 +13,11 @@ dill==0.4.1
 docutils==0.20.1
 duckdb==1.5.4
 execnet==2.1.2
-GridPath==2026.10.0
+GridPath==2026.11.0
 gurobipy==13.0.3
 highspy==1.15.1
 highspy-extras==1.15.1
-idna==3.19
+idna==3.20
 imagesize==2.0.1
 iniconfig==2.3.0
 Jinja2==3.1.6
@@ -33,7 +33,7 @@ packaging==26.3
 pandas==3.0.3
 pathspec==1.1.1
 pillow==12.3.0
-platformdirs==4.11.8
+platformdirs==4.11.10
 pluggy==1.6.0
 pscript==0.8.1
 Pygments==2.21.0
@@ -60,7 +60,7 @@ sphinxcontrib-jquery==4.1
 sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-qthelp==2.0.0
 sphinxcontrib-serializinghtml==2.0.0
-tornado==6.5.8
+tornado==6.5.10
 typer==0.27.2
-urllib3==2.7.0
+urllib3==2.8.0
 xyzservices==2026.9.1

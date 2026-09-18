@@ -21,7 +21,7 @@
 -- mappings and weather bins the RA Toolkit steps work from, plus the
 -- auxiliary tables the Monte Carlo weather-draw steps write. This is a
 -- SEPARATE database from the GridPath Data Toolkit's raw database
--- (data_toolkit/raw_data_db_schema.sql): create it with
+-- (open_data_toolkit/raw_data_db_schema.sql): create it with
 -- gridpath_create_database --db_schema pointing at this file and load it
 -- with the RA Toolkit's own load_raw_data step.
 

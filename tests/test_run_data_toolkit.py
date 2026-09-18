@@ -17,7 +17,7 @@ import os
 import pandas as pd
 import unittest
 
-from data_toolkit import run_data_toolkit
+from open_data_toolkit import run_data_toolkit
 
 OPEN_DATA_SETTINGS_CSV = "../tests/test_data/data_toolkit_open_data_settings.csv"
 
@@ -26,7 +26,7 @@ class TestDataToolkit(unittest.TestCase):
     """
     Run the Data Toolkit steps end to end against the open-data test
     fixture (builds the Data Toolkit raw database from
-    data_toolkit/raw_data_db_schema.sql, loads it, and runs the steps).
+    open_data_toolkit/raw_data_db_schema.sql, loads it, and runs the steps).
     The RA Toolkit steps that used to share this settings CSV run against
     their own raw database in tests/test_run_ra_toolkit.py
     (ra_toolkit_open_data_settings.csv).
@@ -45,9 +45,21 @@ class TestDataToolkit(unittest.TestCase):
             if os.path.exists(p):
                 os.remove(p)
 
-    def test_data_toolkit_open_data(self):
+    def test_open_data_toolkit_open_data(self):
         os.chdir(os.path.join(os.path.dirname(__file__), "..", "db"))
-        run_data_toolkit.main(["--settings_csv", OPEN_DATA_SETTINGS_CSV, "--quiet"])
+        # This fixture DELIBERATELY mixes settings across project steps:
+        # the EIA860M capacity run exercises keyed aggregation while the
+        # EIA860-based runs (whose outputs feed real example scenarios)
+        # stay at the defaults — so the settings-consistency check is off
+        run_data_toolkit.main(
+            [
+                "--settings_csv",
+                OPEN_DATA_SETTINGS_CSV,
+                "--quiet",
+                "--check_settings_consistency",
+                "off",
+            ]
+        )
 
     def test_ra_toolkit_step_in_settings_csv_fails_loudly(self):
         # A settings CSV naming a step from the other toolkit's registry

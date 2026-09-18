@@ -46,6 +46,8 @@ def export_results(
                 "energy_target_zone",
                 "period",
                 "discount_factor",
+                "probability",
+                "probability_weighted_discount_factor",
                 "number_years_represented",
             ],
             "data": (
@@ -54,6 +56,8 @@ def export_results(
                         z,
                         p,
                         m.discount_factor[p],
+                        m.probability[p],
+                        m.probability_weighted_discount_factor[p],
                         m.number_years_represented[p],
                     ]
                     for (z, p) in getattr(

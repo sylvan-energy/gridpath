@@ -1,5 +1,7 @@
 ﻿unit,project,unit_weight
-Solar_Zone1,Solar_Zone1,1
-Solar_Zone2,Solar_Zone2,1
-Wind_Zone1,Wind_Zone1,1
-Wind_Zone2,Wind_Zone2,1
+Solar_Zone1,4__Solar,1
+Solar_Zone2,10__Solar,1
+Wind_Zone1,5__Wind,1
+Wind_Zone1,6__Wind,1
+Wind_Zone2,11__Wind,1
+Wind_Zone2,12__Wind,1

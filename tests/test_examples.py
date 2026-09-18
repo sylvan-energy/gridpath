@@ -422,6 +422,19 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_hydro_w_energy_budget_balancing_type(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_hydro_w_energy_budget_balancing_type" example: as
+        "2horizons_w_hydro", but the Hydro project's balancing type is the
+        circular 'year' (so its ramp limits, added here, apply across the
+        day boundaries) while its energy budgets are specified by 'day' via
+        energy_budget_balancing_type.
+        :return:
+        """
+        scenario_name = "2horizons_w_hydro_w_energy_budget_balancing_type"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2horizons_w_hydro_and_nuclear_binary_availability(self):
         """
         Check validation and objective function value of
@@ -686,17 +699,13 @@ class TestExamples(unittest.TestCase):
     def test_example_multi_stage_prod_cost_parallel(self):
         """
         Check "multi_stage_prod_cost" example running subproblems in parallel
-        (getting inputs and optimization); run in a temporary copy of the
-        scenario directory, so that this test doesn't write into the
+        (getting inputs and optimization); run in a temporary scenario location (inputs are generated
+        there from the database; examples/ is left alone), so that this test doesn't write into the
         examples/ directory that test_example_multi_stage_prod_cost may be
         using concurrently
         :return:
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
-                os.path.join(tmp_dir, "multi_stage_prod_cost"),
-            )
             run_end_to_end.main(
                 [
                     "--database",
@@ -734,10 +743,10 @@ class TestExamples(unittest.TestCase):
         process before the current process has finished its bootstrapping
         phase".
 
-        Run in a temporary copy of the scenario directory so this test
-        doesn't write into the examples/ directory that other tests may be
-        using concurrently. No --testing flag: main() must return None so
-        that the console script's sys.exit(main()) exits 0 on success.
+        Run in a temporary scenario location (inputs are generated there from
+        the database) so this test leaves examples/ alone. No --testing flag:
+        main() must return None so that the console script's sys.exit(main())
+        exits 0 on success.
         """
         exe_name = "gridpath_run_e2e" + (".exe" if WINDOWS else "")
         exe_path = os.path.join(os.path.dirname(sys.executable), exe_name)
@@ -747,10 +756,6 @@ class TestExamples(unittest.TestCase):
             base_cmd = [sys.executable, "-m", "gridpath.run_end_to_end"]
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, "multi_stage_prod_cost"),
-                os.path.join(tmp_dir, "multi_stage_prod_cost"),
-            )
             result = subprocess.run(
                 base_cmd
                 + [
@@ -848,20 +853,12 @@ class TestExamples(unittest.TestCase):
 
         # Classic whole-scenario baseline
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                os.path.join(tmp_dir, scenario_name),
-            )
             self.run_e2e_in(scenario_name, tmp_dir, [])
             baseline_rows = self.get_scenario_results_rows(scenario_name)
         self.assertTrue(len(baseline_rows[0]) > 0)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             # Strip the results CSVs (keeping the termination/status files),
             # mimicking the committed example state a fresh checkout has:
             # the per-draw mode must re-solve rather than trust and import
@@ -901,10 +898,6 @@ class TestExamples(unittest.TestCase):
         # the same database rows and the same cleaned end-state
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             self.run_e2e_in(
                 scenario_name,
                 tmp_dir,
@@ -931,17 +924,13 @@ class TestExamples(unittest.TestCase):
         draw's inputs with gridpath_get_inputs' iteration options (the
         cleanup marker must stay in place, since the rest of the tree is
         still cleaned), then solve just that draw with run_scenario's
-        --ignore_cleanup_marker. Run in a temporary copy of the scenario
-        directory.
+        --ignore_cleanup_marker. Run in a temporary scenario location (the inputs are
+        generated there from the database; examples/ is left alone).
         """
         scenario_name = "ra_toolkit_monte_carlo"
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             self.run_e2e_in(
                 scenario_name,
                 tmp_dir,
@@ -1146,10 +1135,6 @@ class TestExamples(unittest.TestCase):
 
         # Baseline run without cleanup
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                os.path.join(tmp_dir, scenario_name),
-            )
             run_e2e(tmp_dir, [])
             baseline_rows = get_results_rows()
         self.assertTrue(len(baseline_rows[0]) > 0)
@@ -1157,10 +1142,6 @@ class TestExamples(unittest.TestCase):
         # Run with cleanup: identical database rows, cleaned directory
         with tempfile.TemporaryDirectory() as tmp_dir:
             scenario_directory = os.path.join(tmp_dir, scenario_name)
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, scenario_name),
-                scenario_directory,
-            )
             # --log so the run writes the scenario-root logs directory,
             # which cleanup must leave alone (the e2e log is still open)
             run_e2e(tmp_dir, ["--cleanup_after_import", "--log"])
@@ -1904,15 +1885,22 @@ class TestExamples(unittest.TestCase):
     def test_incomplete_only(self):
         """
         Check that the "incomplete only" functionality works with no errors.
-        Run in a temporary copy of the scenario directory, so that this test
-        doesn't write into the examples/ directory that test_example_test
-        may be using concurrently.
+        Run in a temporary directory with inputs generated from the database
+        (not a copy of examples/, which test_example_test may be regenerating
+        concurrently).
         :return:
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.copytree(
-                os.path.join(EXAMPLES_DIRECTORY, "test"),
-                os.path.join(tmp_dir, "test"),
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    "test",
+                    "--scenario_location",
+                    tmp_dir,
+                    "--quiet",
+                ]
             )
             actual_objective = run_scenario.main(
                 [
@@ -2197,6 +2185,20 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_w_hydro_as_energy_no_reserves"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_w_hydro_as_energy_no_reserves_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_as_energy_no_reserves_by_timepoint" example: as
+        "test_w_hydro_as_energy_no_reserves" on a temporal scenario that
+        also has a 'timepoint' balancing type; the Hydro project's horizon
+        energy shaping inputs are specified per timepoint via
+        energy_budget_balancing_type (40%/60% of its energy in the two
+        timepoints), while its balancing type remains 'day'.
+        :return:
+        """
+        scenario_name = "test_w_hydro_as_energy_no_reserves_by_timepoint"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_w_lf(self):
         """
         Check validation and objective function value of
@@ -2250,6 +2252,19 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "test_w_hydro_as_slice_candidate"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_w_hydro_as_slice_candidate_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_as_slice_candidate_by_timepoint" example: as
+        "test_w_hydro_as_slice_candidate" on a temporal scenario that also has
+        a 'timepoint' balancing type; the Hydro project's slice shaping
+        inputs are specified per timepoint via energy_budget_balancing_type
+        (40%/60% of its energy), while its balancing type remains 'day'.
+        :return:
+        """
+        scenario_name = "test_w_hydro_as_slice_candidate_by_timepoint"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_test_w_energy_products(self):
@@ -2456,6 +2471,21 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_new_build_storage_losses_limit"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_new_build_storage_losses_limit_by_timepoint(self):
+        """
+        Check validation and objective function value of
+        "test_new_build_storage_losses_limit_by_timepoint" example: as
+        "test_new_build_storage_losses_limit" on a temporal scenario that
+        also has a 'timepoint' balancing type; the Battery's max-losses
+        limit applies per timepoint via energy_budget_balancing_type while
+        its state of charge is still tracked over the circular day. The
+        per-timepoint limit caps the charging hour's energy, so more
+        storage energy capacity is built than under the per-day limit.
+        :return:
+        """
+        scenario_name = "test_new_build_storage_losses_limit_by_timepoint"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_carbon_credits_purchase_limits(self):
         """
         Check validation and objective function value of
@@ -2514,10 +2544,51 @@ class TestExamples(unittest.TestCase):
     def test_example_2periods_new_build_2zones_new_build_transmission_stochastic(self):
         """
         Check validation and objective function values of
-        "single_stage_prod_cost_w_startup_limit" example
+        "2periods_new_build_2zones_new_build_transmission_stochastic" example
         :return:
         """
         scenario_name = "2periods_new_build_2zones_new_build_transmission_stochastic"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_new_build_transmission_stochastic_identical_branches(
+        self,
+    ):
+        """
+        Check validation and objective function values of
+        "2periods_new_build_2zones_new_build_transmission_stochastic_identical_branches"
+        example: two 2030 branches with identical data and probability 0.5
+        each; its objective must equal that of the deterministic twin
+        "2periods_new_build_2zones_new_build_transmission_deterministic_twin"
+        :return:
+        """
+        scenario_name = "2periods_new_build_2zones_new_build_transmission_stochastic_identical_branches"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_new_build_transmission_deterministic_twin(
+        self,
+    ):
+        """
+        Check validation and objective function values of
+        "2periods_new_build_2zones_new_build_transmission_deterministic_twin"
+        example (deterministic twin of the identical-branches stochastic
+        example)
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_new_build_transmission_deterministic_twin"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_3stage_new_build_2zones_new_build_transmission_stochastic_tree(
+        self,
+    ):
+        """
+        Check validation and objective function values of
+        "3stage_new_build_2zones_new_build_transmission_stochastic_tree"
+        example (three-stage scenario tree with four leaves)
+        :return:
+        """
+        scenario_name = "3stage_new_build_2zones_new_build_transmission_stochastic_tree"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_test_new_build_gen_var_stor_hyb_as_pwr_grp(self):

@@ -118,3 +118,10 @@ __MACOSX
 **/*.db
 **/*.db-shm
 **/*.db-wal
+
+# Local Data Toolkit working directories: bulk downloads, the converted
+# raw CSVs, and any user-defined mapping/override CSVs kept alongside them
+# (these can be large, and the user_defined_* files may be proprietary)
+/pudl_download/
+/eia930a_download/
+/raw_data/

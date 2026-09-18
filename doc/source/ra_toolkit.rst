@@ -9,7 +9,7 @@ Using the GridPath RA Toolkit
 
 RA Toolkit steps run from their own ``gridpath_run_ra_toolkit`` command
 and settings CSV — the RA Toolkit counterpart to the GridPath Data
-Toolkit's ``gridpath_run_data_toolkit`` (see :doc:`data_toolkit`); steps
+Toolkit's ``gridpath_run_data_toolkit`` (see :doc:`open_data_toolkit`); steps
 are resolved from the ``gridpath.ra_toolkit_steps`` entry-point group. The
 RA Toolkit works off its own raw data database, separate from the Data
 Toolkit's: create it with the ``create_database`` step pointing
@@ -25,9 +25,10 @@ the user-defined weather bins and unit mappings) with the RA Toolkit's
 Note that the RA Toolkit steps take their project names from user-provided
 mapping tables (e.g. ``raw_data_var_project_units``,
 ``user_defined_load_zone_units``) rather than from the Data Toolkit's
-EIA860-based project selection. When combining RA Toolkit inputs with
+fleet-selection settings. When combining RA Toolkit inputs with
 Data-Toolkit-generated project inputs in one scenario, those mappings must
-use the same project and load zone names the Data Toolkit run generated.
+use the same project and load zone names the Data Toolkit run generated —
+including the effects of its aggregation and load-zone-level settings.
 
 ***************
 Temporal Inputs
