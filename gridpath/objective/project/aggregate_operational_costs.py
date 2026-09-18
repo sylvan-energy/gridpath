@@ -44,14 +44,14 @@ def add_model_components(
     \\times number\_of\_hours\_in\_timepoint_{tmp}
     \\times horizon\_weight_{h^{tmp}}
     \\times number\_years\_represented_{p^{tmp}}
-    \\times discount\_factor_{p^{tmp}}}`
+    \\times probability\_weighted\_discount\_factor_{p^{tmp}}}`
 
     :math:`Total\_Fuel\_Cost =
     \sum_{(r, tmp)\in {RT}}{Fuel\_Cost_{r, tmp}
     \\times number\_of\_hours\_in\_timepoint_{tmp}
     \\times horizon\_weight_{h^{tmp}}
     \\times number\_years\_represented_{p^{tmp}}
-    \\times discount\_factor_{p^{tmp}}}`
+    \\times probability\_weighted\_discount\_factor_{p^{tmp}}}`
 
     """
 
@@ -67,7 +67,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.VAR_OM_COST_ALL_PRJS_OPR_TMPS
         )
 
@@ -85,7 +85,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.FUEL_PRJ_OPR_TMPS
         )
 
@@ -103,7 +103,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.STARTUP_COST_PRJ_OPR_TMPS
         )
 
@@ -120,7 +120,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.SHUTDOWN_COST_PRJ_OPR_TMPS
         )
 
@@ -136,7 +136,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.VIOL_ALL_PRJ_OPR_TMPS
         )
 
@@ -155,7 +155,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.CURTAILMENT_COST_PRJ_OPR_TMPS
         )
 
@@ -172,7 +172,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.SOC_PENALTY_COST_PRJ_OPR_TMPS
         )
 
@@ -189,7 +189,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (g, tmp) in mod.SOC_LAST_TMP_PENALTY_COST_PRJ_OPR_TMPS
         )
 
@@ -206,7 +206,7 @@ def add_model_components(
         return sum(
             mod.Peak_Deviation_Demand_Charge_Cost[g, prd, mnth]
             * mod.number_years_represented[prd]
-            * mod.discount_factor[prd]
+            * mod.probability_weighted_discount_factor[prd]
             for (g, prd) in mod.PRJ_OPR_PRDS
             for mnth in mod.MONTHS
         )

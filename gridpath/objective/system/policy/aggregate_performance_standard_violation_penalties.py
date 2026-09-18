@@ -45,7 +45,7 @@ def add_model_components(
             mod.Performance_Standard_Energy_Unit_Overage_Expression[z, p]
             * mod.performance_standard_energy_violation_penalty_per_emission[z]
             * mod.number_years_represented[p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             for (
                 z,
                 p,
@@ -61,7 +61,7 @@ def add_model_components(
             mod.Performance_Standard_Power_Unit_Overage_Expression[z, p]
             * mod.performance_standard_power_violation_penalty_per_emission[z]
             * mod.number_years_represented[p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             for (
                 z,
                 p,

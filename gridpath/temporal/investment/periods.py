@@ -47,6 +47,7 @@ from pyomo.environ import (
     PositiveIntegers,
     NonNegativeIntegers,
     NonNegativeReals,
+    PercentFraction,
 )
 
 from gridpath.auxiliary.auxiliary import cursor_to_df
@@ -114,7 +115,21 @@ def add_model_components(
     |                                                                         |
     | Determines the relative objective function weight of investment and     |
     | operational decisions made in each period (i.e. future costs can be     |
-    | weighted less).                                                         |
+    | weighted less). Objective-function terms use                            |
+    | :code:`probability_weighted_discount_factor`, which multiplies this     |
+    | by the period's :code:`probability`.                                    |
+    +-------------------------------------------------------------------------+
+    | | :code:`probability`                                                   |
+    | | *Defined over*: :code:`PERIODS`                                       |
+    | | *Within*: :code:`PercentFraction`                                     |
+    | | *Default*: :code:`1`                                                  |
+    |                                                                         |
+    | The probability that the period is realized. This is 1 for every        |
+    | period of a deterministic problem. In a stochastic problem (see         |
+    | :code:`prev_period`), it is the unconditional probability of            |
+    | reaching the period: the root has probability 1 and the periods         |
+    | sharing a previous period have probabilities that sum to that           |
+    | previous period's probability.                                          |
     +-------------------------------------------------------------------------+
     | | :code:`hours_in_period_timepoints`                                    |
     | | *Defined over*: :code:`PERIODS`                                       |
@@ -200,6 +215,15 @@ def add_model_components(
     | built in a period is available in the periods on that period's          |
     | trajectory and in no sibling branch.                                    |
     +-------------------------------------------------------------------------+
+    | | :code:`probability_weighted_discount_factor`                          |
+    | | *Defined over*: :code:`PERIODS`                                       |
+    | | *Within*: :code:`NonNegativeReals`                                    |
+    |                                                                         |
+    | The objective-function weight of costs and revenues in the period:      |
+    | :code:`discount_factor` times :code:`probability`. All objective        |
+    | function components use this parameter, so that costs on a branch       |
+    | of a scenario tree enter the objective at their expected value.         |
+    +-------------------------------------------------------------------------+
     | | :code:`hours_in_subproblem_period`                                    |
     | | *Defined over*: :code:`PERIODS`                                       |
     | | *Within*: :code:`NonNegativeReals`                                    |
@@ -246,6 +270,8 @@ def add_model_components(
         default=lambda mod, p: list(mod.PERIODS)[list(mod.PERIODS).index(p) - 1],
     )
 
+    m.probability = Param(m.PERIODS, within=PercentFraction, default=1)
+
     m.period = Param(m.TMPS, within=m.PERIODS)
 
     # Derived Sets and Input Params
@@ -267,6 +293,12 @@ def add_model_components(
         m.PERIODS,
         within=NonNegativeReals,
         initialize=lambda mod, p: mod.period_end_year[p] - mod.period_start_year[p],
+    )
+
+    m.probability_weighted_discount_factor = Param(
+        m.PERIODS,
+        within=NonNegativeReals,
+        initialize=lambda mod, p: mod.discount_factor[p] * mod.probability[p],
     )
 
     m.hours_in_subproblem_period = Param(
@@ -381,6 +413,7 @@ def load_model_data(
             "period_start_year",
             "period_end_year",
             "prev_period",
+            "probability",
         ),
         index=m.PERIODS,
         param=(
@@ -389,6 +422,7 @@ def load_model_data(
             m.period_start_year,
             m.period_end_year,
             m.prev_period,
+            m.probability,
         ),
     )
 
@@ -438,10 +472,11 @@ def get_inputs_from_database(
     # spinup/lookahead) across all subproblems in the temporal_scenario_id:
 
     periods = c.execute(f"""SELECT period, discount_factor, 
-           period_start_year, period_end_year, hours_in_period_timepoints, prev_period
+           period_start_year, period_end_year, hours_in_period_timepoints, 
+           prev_period, probability
            FROM (
            SELECT period, discount_factor,
-           period_start_year, period_end_year, prev_period
+           period_start_year, period_end_year, prev_period, probability
            FROM inputs_temporal_periods
            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
            AND period in (
@@ -612,6 +647,84 @@ def validate_inputs(
         severity="High",
         errors=validate_period_tree(df),
     )
+
+    # Check that probabilities are consistent with the period tree
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_temporal_periods",
+        severity="High",
+        errors=validate_period_probabilities(df),
+    )
+
+
+def validate_period_probabilities(df, tolerance=1e-6):
+    """
+    Check the probability column against the period tree.
+
+    :param df: dataframe with one row per period and the columns period,
+        prev_period and probability (NULL/NaN when not specified)
+    :param tolerance: tolerance on sums of probabilities
+    :return: list of error strings (empty if the inputs are valid)
+
+    The probability is the unconditional probability of reaching the
+    period, so the root must have probability 1 and the probabilities of
+    the periods sharing a previous period must sum to that previous period's
+    probability. Without a period tree, every period is certain, so any
+    probability other than 1 is an error.
+    """
+    errors = []
+
+    probability = {
+        int(row["period"]): float(row["probability"])
+        for _, row in df[df["probability"].notna()].iterrows()
+    }
+
+    out_of_range = {p: v for p, v in probability.items() if v < 0 or v > 1}
+    if out_of_range:
+        errors.append(f"Probabilities must be between 0 and 1; found {out_of_range}")
+
+    has_tree = df["prev_period"].notna().any()
+    if not has_tree:
+        not_one = {p: v for p, v in probability.items() if abs(v - 1) > tolerance}
+        if not_one:
+            errors.append(
+                "A probability other than 1 requires a period tree (prev_period "
+                f"must be specified); found {not_one}"
+            )
+        return errors
+
+    prev_period = {
+        int(row["period"]): int(row["prev_period"])
+        for _, row in df[df["prev_period"].notna()].iterrows()
+    }
+    for root in [int(p) for p in df["period"] if int(p) not in prev_period]:
+        if abs(probability.get(root, 1.0) - 1) > tolerance:
+            errors.append(
+                f"The root period {root} must have a probability of 1; found "
+                f"{probability[root]}"
+            )
+
+    children_by_parent = {}
+    for p, prev in prev_period.items():
+        children_by_parent.setdefault(prev, []).append(p)
+    for parent, children in sorted(children_by_parent.items()):
+        total = sum(probability.get(p, 1.0) for p in children)
+        parent_probability = probability.get(parent, 1.0)
+        if abs(total - parent_probability) > tolerance:
+            errors.append(
+                f"The probabilities of the periods following period {parent} "
+                f"must sum to its probability {parent_probability}; periods "
+                f"{sorted(children)} sum to {total}"
+            )
+
+    return errors
 
 
 def validate_period_tree(df):

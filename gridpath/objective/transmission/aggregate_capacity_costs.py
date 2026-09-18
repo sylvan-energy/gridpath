@@ -44,12 +44,13 @@ def add_model_components(
         **Expression Name**: Total_Tx_Capacity_Costs
 
         The total transmission capacity cost is equal to the transmission
-        capacity cost times the period's discount factor times the number of
+        capacity cost times the period's probability-weighted discount factor
+        times the number of
         years represented in the period, summed up for each of the periods.
         """
         return sum(
             mod.Tx_Capacity_Cost_in_Period[g, p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             * mod.number_years_represented[p]
             for (g, p) in mod.TX_FIN_PRDS
         )
@@ -59,7 +60,7 @@ def add_model_components(
     def total_tx_fixed_cost_rule(mod):
         return sum(
             mod.Tx_Fixed_Cost_in_Period[g, p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             * mod.number_years_represented[p]
             for (g, p) in mod.TX_OPR_PRDS
         )

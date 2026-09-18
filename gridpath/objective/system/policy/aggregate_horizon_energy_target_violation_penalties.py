@@ -44,7 +44,9 @@ def add_model_components(
             mod.Horizon_Energy_Target_Shortage_MWh_Expression[z, bt, h]
             * mod.energy_target_violation_penalty_per_mwh[z]
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (z, bt, h) in mod.ENERGY_TARGET_ZONE_BLN_TYPE_HRZS_WITH_ENERGY_TARGET
         )
 

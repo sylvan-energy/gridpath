@@ -40,6 +40,8 @@ def export_results(
             "carbon_tax_zone",
             "period",
             "discount_factor",
+            "probability",
+            "probability_weighted_discount_factor",
             "number_years_represented",
         ],
         data=[
@@ -47,6 +49,8 @@ def export_results(
                 z,
                 p,
                 m.discount_factor[p],
+                m.probability[p],
+                m.probability_weighted_discount_factor[p],
                 m.number_years_represented[p],
             ]
             for (z, p) in m.CARBON_TAX_ZONE_PERIODS_WITH_CARBON_TAX

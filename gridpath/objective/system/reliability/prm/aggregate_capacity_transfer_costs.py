@@ -38,7 +38,7 @@ def add_model_components(
         return sum(
             mod.Capacity_Transfer_Costs_Per_Yr_in_Period[prm_z_from, prm_z_to, prd]
             * mod.number_years_represented[prd]
-            * mod.discount_factor[prd]
+            * mod.probability_weighted_discount_factor[prd]
             for (prm_z_from, prm_z_to) in mod.PRM_ZONES_CAPACITY_TRANSFER_ZONES
             for prd in mod.PERIODS
         )
