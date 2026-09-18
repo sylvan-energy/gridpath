@@ -1,0 +1,9 @@
+horizon	balancing_type_horizon	boundary
+202001	day	circular
+203001	day	circular
+20201	halfyear	circular
+20202	halfyear	circular
+20301	halfyear	circular
+20302	halfyear	circular
+2020	year	circular
+2030	year	circular

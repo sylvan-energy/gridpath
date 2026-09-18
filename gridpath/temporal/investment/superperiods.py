@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +19,7 @@ can be defined.
 """
 
 import csv
+from itertools import combinations
 import os.path
 
 from pyomo.environ import Set, Param, PositiveIntegers, NonNegativeReals
@@ -209,3 +211,110 @@ def write_model_inputs(
 
             for row in superperiod_periods:
                 writer.writerow(row)
+
+
+# Validation
+###############################################################################
+
+
+def validate_inputs(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    Get inputs from database and validate the inputs
+    :param subscenarios: SubScenarios object with all subscenario info
+    :param subproblem:
+    :param stage:
+    :param conn: database connection
+    :return:
+    """
+
+    superperiod_periods = get_inputs_from_database(
+        scenario_id,
+        subscenarios,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        conn,
+    ).fetchall()
+
+    c = conn.cursor()
+    prev_period_by_period = dict(c.execute(f"""
+            SELECT period, prev_period
+            FROM inputs_temporal_periods
+            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            AND prev_period IS NOT NULL;
+            """).fetchall())
+
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_temporal_superperiods",
+        severity="High",
+        errors=validate_superperiods_on_single_trajectory(
+            superperiod_periods, prev_period_by_period
+        ),
+    )
+
+
+def validate_superperiods_on_single_trajectory(
+    superperiod_periods, prev_period_by_period
+):
+    """
+    Check that no superperiod spans sibling branches of the period tree.
+
+    :param superperiod_periods: list of (superperiod, period) tuples
+    :param prev_period_by_period: dict of prev_period by period for the
+        periods with a prev_period specified (empty for a deterministic
+        problem, in which case all periods are on one trajectory)
+    :return: list of error strings (empty if the inputs are valid)
+
+    Quantities aggregated over a superperiod (e.g. subsidy program budgets)
+    would double-count alternative futures if the superperiod included
+    periods from different branches, so every pair of periods in a
+    superperiod must be on the same trajectory, i.e. one must be an
+    ancestor of the other.
+    """
+    if not prev_period_by_period:
+        return []
+
+    def ancestors_and_self(period):
+        found = [period]
+        while period in prev_period_by_period:
+            period = prev_period_by_period[period]
+            if period in found:
+                break  # a cycle; reported by the periods validation
+            found.append(period)
+        return set(found)
+
+    periods_by_superperiod = {}
+    for superperiod, period in superperiod_periods:
+        periods_by_superperiod.setdefault(superperiod, []).append(period)
+
+    errors = []
+    for superperiod, periods in sorted(periods_by_superperiod.items()):
+        trajectory = {p: ancestors_and_self(p) for p in periods}
+        for p1, p2 in combinations(sorted(periods), 2):
+            if p1 not in trajectory[p2] and p2 not in trajectory[p1]:
+                errors.append(
+                    f"Superperiod {superperiod} includes periods {p1} and {p2}, "
+                    f"which are on different branches of the period tree; a "
+                    f"superperiod must lie on a single trajectory"
+                )
+
+    return errors

@@ -1,0 +1,8 @@
+transmission_line	vintage	tx_operational_lifetime_yrs	tx_fixed_cost_per_mw_yr	tx_financial_lifetime_yrs	tx_annualized_real_cost_per_mw_yr	min_cumulative_new_build_mw	max_cumulative_new_build_mw
+Tx_new	2020	35.0	0.0	35.0	10.0	.	.
+Tx_new	20301	35.0	0.0	35.0	10.0	.	.
+Tx_new	20302	35.0	0.0	35.0	10.0	.	.
+Tx_new	20401	35.0	0.0	35.0	10.0	.	.
+Tx_new	20402	35.0	0.0	35.0	10.0	.	.
+Tx_new	20403	35.0	0.0	35.0	10.0	.	.
+Tx_new	20404	35.0	0.0	35.0	10.0	.	.

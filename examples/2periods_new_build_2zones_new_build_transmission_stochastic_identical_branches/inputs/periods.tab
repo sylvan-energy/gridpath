@@ -1,0 +1,4 @@
+period	discount_factor	period_start_year	period_end_year	hours_in_period_timepoints	prev_period
+2020	1.0	2020.0	2030.0	8760.0	.
+20301	0.5	2030.0	2040.0	8760.0	2020
+20302	0.5	2030.0	2040.0	8760.0	2020

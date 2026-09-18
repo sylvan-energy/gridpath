@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +17,9 @@
 from importlib import import_module
 import os.path
 import pandas as pd
+import shutil
 import sys
+import tempfile
 import unittest
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
@@ -251,6 +254,160 @@ class TestPeriods(unittest.TestCase):
             actual_hours_in_subproblem_period,
             msg="Data for param 'hours_in_subproblem_period' "
             "param not loaded correctly",
+        )
+
+    def test_period_tree_sets(self):
+        """
+        Build the periods module on a three-level period tree and check the
+        trajectory sets. Tree: 2020 -> {2030, 20302}; 2030 -> {20401, 20402};
+        20302 -> {20403}. The timepoints.tab of the test data (periods 2020
+        and 2030 only) is reused as is.
+        """
+        tree_periods_tab = (
+            "period\tdiscount_factor\thours_in_period_timepoints\t"
+            "period_start_year\tperiod_end_year\tprev_period\n"
+            "2020\t1\t8760\t2020\t2030\t.\n"
+            "2030\t1\t8760\t2030\t2040\t2020\n"
+            "20302\t1\t8760\t2030\t2040\t2020\n"
+            "20401\t1\t8760\t2040\t2050\t2030\n"
+            "20402\t1\t8760\t2040\t2050\t2030\n"
+            "20403\t1\t8760\t2040\t2050\t20302\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.copytree(
+                os.path.join(TEST_DATA_DIRECTORY, "inputs"),
+                os.path.join(tmp_dir, "inputs"),
+            )
+            with open(os.path.join(tmp_dir, "inputs", "periods.tab"), "w") as f:
+                f.write(tree_periods_tab)
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=tmp_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
+
+        expected_prev_period = {
+            2030: 2020,
+            20302: 2020,
+            20401: 2030,
+            20402: 2030,
+            20403: 20302,
+        }
+        actual_prev_period = {
+            p: instance.prev_period[p] for p in instance.NOT_FIRST_PRDS
+        }
+        self.assertDictEqual(expected_prev_period, actual_prev_period)
+
+        # Each period with its ancestors, nearest first
+        expected_prev_periods_on_trajectory = {
+            2020: [2020],
+            2030: [2030, 2020],
+            20302: [20302, 2020],
+            20401: [20401, 2030, 2020],
+            20402: [20402, 2030, 2020],
+            20403: [20403, 20302, 2020],
+        }
+        actual_prev_periods_on_trajectory = {
+            p: list(instance.FUTURE_TRAJECTORY_PREV_PERIODS_BY_PERIOD[p])
+            for p in instance.PERIODS
+        }
+        self.assertDictEqual(
+            expected_prev_periods_on_trajectory, actual_prev_periods_on_trajectory
+        )
+
+        # Each period and its descendants, sorted: the periods in which
+        # capacity of that vintage can be operational
+        expected_future_trajectory = {
+            2020: [2020, 2030, 20302, 20401, 20402, 20403],
+            2030: [2030, 20401, 20402],
+            20302: [20302, 20403],
+            20401: [20401],
+            20402: [20402],
+            20403: [20403],
+        }
+        actual_future_trajectory = {
+            p: list(instance.PERIOD_FUTURE_TRAJECTORY[p]) for p in instance.PERIODS
+        }
+        self.assertDictEqual(expected_future_trajectory, actual_future_trajectory)
+
+    def test_validate_period_tree(self):
+        """
+        Check the prev_period validation on valid and invalid period trees
+        """
+        validate = MODULE_BEING_TESTED.validate_period_tree
+
+        def make_df(rows):
+            return pd.DataFrame(
+                rows,
+                columns=[
+                    "period",
+                    "period_start_year",
+                    "period_end_year",
+                    "prev_period",
+                ],
+            )
+
+        # Deterministic problem: nothing specified, nothing to check
+        self.assertListEqual(
+            [], validate(make_df([(2020, 2020, 2030, None), (2030, 2030, 2040, None)]))
+        )
+        # Valid two-branch tree
+        self.assertListEqual(
+            [],
+            validate(
+                make_df(
+                    [
+                        (2020, 2020, 2030, None),
+                        (20301, 2030, 2040, 2020),
+                        (20302, 2030, 2040, 2020),
+                    ]
+                )
+            ),
+        )
+        # Partially specified: the second branch would silently default to
+        # the first branch as its previous period
+        errors = validate(
+            make_df(
+                [
+                    (2020, 2020, 2030, None),
+                    (20301, 2030, 2040, 2020),
+                    (20302, 2030, 2040, None),
+                ]
+            )
+        )
+        self.assertEqual(1, len(errors))
+        self.assertIn("periods without a prev_period: [2020, 20302]", errors[0])
+        # Root is not the first period
+        errors = validate(make_df([(2020, 2020, 2030, 2030), (2030, 2030, 2040, None)]))
+        self.assertTrue(any("must be the first period 2020" in e for e in errors))
+        # Unknown previous period
+        errors = validate(make_df([(2020, 2020, 2030, None), (2030, 2030, 2040, 2025)]))
+        self.assertEqual(1, len(errors))
+        self.assertIn("unknown prev_period by period: {2030: 2025}", errors[0])
+        # Cycle
+        errors = validate(
+            make_df(
+                [
+                    (2020, 2020, 2030, None),
+                    (20301, 2030, 2040, 20302),
+                    (20302, 2030, 2040, 20301),
+                ]
+            )
+        )
+        self.assertTrue(any("never reaches a root period" in e for e in errors))
+        # Child starts before its parent ends
+        errors = validate(make_df([(2020, 2020, 2030, None), (2025, 2025, 2035, 2020)]))
+        self.assertEqual(1, len(errors))
+        self.assertIn(
+            "Period 2025 starts in 2025, before its prev_period 2020 ends in 2030",
+            errors[0],
         )
 
 
