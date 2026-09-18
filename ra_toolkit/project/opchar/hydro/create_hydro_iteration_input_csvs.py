@@ -115,6 +115,12 @@ existing CSV for the project is deleted before processing begins so it is
 rebuilt from scratch; without ``--overwrite``, new rows are appended to any
 existing file.
 
+An iterations metadata CSV is also written per project to an ``iterations/``
+subdirectory of ``--output_directory`` (same filename), recording that hydro
+operational characteristics vary by hydro iteration but not by weather
+iteration (``varies_by_weather_iteration`` = 0, ``varies_by_hydro_iteration``
+= 1). Without ``--overwrite``, an existing iterations CSV is left in place.
+
 If the corresponding ``--*_input_csv`` paths are provided, the raw-data tables
 (``raw_data_project_hydro_opchars_by_year_month``, ``raw_data_hydro_years``,
 ``user_defined_balancing_type_horizons``) are loaded from those CSVs before the
@@ -131,6 +137,7 @@ import sys
 
 from db.common_functions import connect_to_database
 from db.common_functions import read_and_import_csv
+from ra_toolkit.project.stochastic.iterations import create_iterations_csv
 
 # TODO: leap years
 # TODO: hydro bins -- pick bin at random, pick year from bin at random; match
@@ -344,7 +351,30 @@ def calculate_from_project_year_month_data(
                 index=False,
             )
 
-            # TODO: add iterations CSVs
+    # Close the per-worker connection (each pool worker opens its own; a
+    # leaked handle keeps the database file open until the worker exits)
+    conn.close()
+
+    # Create the iterations metadata CSV (hydro opchars vary by hydro
+    # iteration only); skip if it already exists on an append-mode rerun
+    iterations_directory = os.path.join(output_directory, "iterations")
+    os.makedirs(iterations_directory, exist_ok=True)
+    iterations_filename = get_filename(
+        iterations_directory,
+        prj,
+        hydro_operational_chars_scenario_id,
+        hydro_operational_chars_scenario_name,
+    )
+    if overwrite or not os.path.exists(iterations_filename):
+        create_iterations_csv(
+            iterations_directory=iterations_directory,
+            project=prj,
+            profile_id=hydro_operational_chars_scenario_id,
+            profile_name=hydro_operational_chars_scenario_name,
+            varies_by_weather=0,
+            varies_by_hydro=1,
+            overwrite=overwrite,
+        )
 
 
 def calculate_from_project_year_month_data_pool(pool_datum):

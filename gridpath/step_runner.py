@@ -92,11 +92,14 @@ def get_step_module(script_name, entry_point_group, registered_steps=None):
     return entry_point.load()
 
 
-def parse_arguments(args, entry_point_group):
+def parse_arguments(args, entry_point_group, extra_parser_setup=None):
     """
     :param args: the script arguments specified by the user
     :param entry_point_group: the entry-point group whose registered step
         names are the valid --single_step_only choices
+    :param extra_parser_setup: optional callable adding toolkit-specific
+        arguments to the parser (e.g. the Data Toolkit's
+        --check_settings_consistency)
     :return: the parsed known argument values (<class 'argparse.Namespace'>
     Python object)
 
@@ -115,6 +118,9 @@ def parse_arguments(args, entry_point_group):
         "will be skipped. If not specified, all steps in the settings "
         "file will be run.",
     )
+
+    if extra_parser_setup is not None:
+        extra_parser_setup(parser)
 
     parsed_arguments = parser.parse_known_args(args=args)[0]
 
@@ -165,17 +171,23 @@ def determine_skip(single_step_only, settings_dict, script_name):
     return skip
 
 
-def run_steps(args, entry_point_group):
+def run_steps(args, entry_point_group, extra_parser_setup=None, pre_run_hook=None):
     """
     Run the steps listed in the settings CSV (or the single requested
     step), resolving each step's module from the *entry_point_group*
     entry-point group. This is the generic main() behind each toolkit's
-    runner command.
+    runner command. *pre_run_hook(settings_dict, parsed_args)*, if given,
+    is called after the settings CSV is parsed and before any step runs
+    (e.g. the Data Toolkit's project-step settings-consistency check).
     """
     if args is None:
         args = sys.argv[1:]
 
-    parsed_args = parse_arguments(args=args, entry_point_group=entry_point_group)
+    parsed_args = parse_arguments(
+        args=args,
+        entry_point_group=entry_point_group,
+        extra_parser_setup=extra_parser_setup,
+    )
 
     # Get the settings
     settings_df = pd.read_csv(parsed_args.settings_csv)
@@ -200,6 +212,9 @@ def run_steps(args, entry_point_group):
                     row["reverse_default_behavior"],
                 )
             )
+
+    if pre_run_hook is not None:
+        pre_run_hook(settings_dict=settings_dict, parsed_args=parsed_args)
 
     registered_steps = get_registered_steps(entry_point_group)
 

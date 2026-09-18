@@ -1,9 +1,14 @@
 import,filename,table
 1,./transmission/pudl_eia930_hourly_interchange.csv,raw_data_eia930_hourly_interchange
-1,./geographies/user_defined_baa_key.csv,user_defined_baa_key
+1,./geographies/pudl_eia_baa_codes.csv,raw_data_eia_baa_codes
 1,./project/pudl_eia860_generators.csv,raw_data_eia860_generators
+1,./project/pudl_eia860_solar.csv,raw_data_eia860_solar
+1,./project/pudl_eia860_energy_storage.csv,raw_data_eia860_energy_storage
 1,./project/user_defined_eia_gridpath_key.csv,user_defined_eia_gridpath_key
 1,./project/user_defined_heat_rate_curve.csv,user_defined_heat_rate_curve
 1,./fuels/pudl_eiaaeo_fuel_prices.csv,raw_data_eiaaeo_fuel_prices
 1,./fuels/user_defined_generic_fuel_intensities.csv,user_defined_generic_fuel_intensities
 1,./fuels/user_defined_eiaaeo_region_key.csv,user_defined_eiaaeo_region_key
+1,./project/pudl_eia860m_generators.csv,raw_data_eia860m_generators
+1,./project/user_defined_project_fuel_region_key.csv,user_defined_project_fuel_region_key
+1,./project/pudl_eia860_plant_vintages.csv,raw_data_eia860_plant_vintages

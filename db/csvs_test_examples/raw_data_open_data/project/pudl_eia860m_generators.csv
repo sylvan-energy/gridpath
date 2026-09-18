@@ -1,0 +1,17 @@
+version_num,report_date,valid_until_date,plant_id_eia,generator_id,operational_status_code,operational_status,balancing_authority_code_eia,capacity_mw,summer_capacity_mw,winter_capacity_mw,energy_storage_capacity_mwh,prime_mover_code,energy_source_code_1,fuel_type_code_pudl,technology_description,sector_id_eia,generator_operating_date,current_planned_generator_operating_date,generator_retirement_date,planned_generator_retirement_date
+1,2024-01-01,2026-05-01,1,Batteries,OP,,Zone1,1000,1000,1000,4000,BA,MWH,other,Batteries,1,2020-01-01,,,2099-01-01
+1,2024-01-01,2026-02-01,2,Gas,OP,,Zone1,7500,7500,7500,,CT,NG,gas,Natural Gas Fired Combustion Turbine,1,2010-01-01,,,
+1,2026-02-01,2026-05-01,2,Gas,OP,,Zone1,7600,7600,7600,,CT,NG,gas,Natural Gas Fired Combustion Turbine,1,2010-01-01,,,
+1,2024-01-01,2026-05-01,3,Hydro,OP,,Zone1,2000,2000,2000,,HY,WAT,hydro,Conventional Hydroelectric,1,2000-01-01,,,
+1,2024-01-01,2026-05-01,4,Solar,OP,,Zone1,5000,5000,5000,,PV,SUN,solar,Solar Photovoltaic,1,2018-01-01,,,
+1,2024-01-01,2026-05-01,5,Wind,OP,,Zone1,2000,2000,2000,,WT,WND,wind,Onshore Wind Turbine,1,2015-01-01,,,
+1,2024-01-01,2026-05-01,6,Wind,OP,,Zone1,3000,3000,3000,,WT,WND,wind,Onshore Wind Turbine,1,2015-01-01,,,
+1,2024-01-01,2026-05-01,7,Batteries,OP,,Zone2,750,750,750,3000,BA,MWH,other,Batteries,1,2021-01-01,,,
+1,2024-01-01,2026-04-01,8,Gas,OP,,Zone2,5625,5625,5625,,CT,NG,gas,Natural Gas Fired Combustion Turbine,1,2011-01-01,,,
+1,2026-04-01,2026-05-01,8,Gas,OP,,Zone2,5625,5625,5625,,CT,NG,gas,Natural Gas Fired Combustion Turbine,1,2011-01-01,,2026-09-15,
+1,2024-01-01,2026-05-01,9,Hydro,OP,,Zone2,1500,1500,1500,,HY,WAT,hydro,Conventional Hydroelectric,1,2001-01-01,,,
+1,2024-01-01,2026-05-01,10,Solar,OP,,Zone2,3750,3750,3750,,PV,SUN,solar,Solar Photovoltaic,1,2019-01-01,,,
+1,2024-01-01,2026-05-01,11,Wind,OP,,Zone2,1500,1500,1500,,WT,WND,wind,Onshore Wind Turbine,1,2016-01-01,,,
+1,2024-01-01,2026-05-01,12,Wind,OP,,Zone2,2250,2250,2250,,WT,WND,wind,Onshore Wind Turbine,1,2016-01-01,,,
+1,2026-03-01,2026-05-01,13,Batteries2,OP,,Zone2,500,500,500,2000,BA,MWH,other,Batteries,1,2026-02-15,,,
+1,2026-01-01,2026-05-01,14,Gas2,U,,Zone1,100,100,100,,CT,NG,gas,Natural Gas Fired Combustion Turbine,1,,2025-12-01,,
