@@ -41,6 +41,8 @@ def export_results(
             "balancing_type",
             "horizon",
             "discount_factor",
+            "probability",
+            "probability_weighted_discount_factor",
             "number_years_represented",
         ],
         data=[
@@ -50,6 +52,8 @@ def export_results(
                 h,
                 m.number_years_represented[m.period[m.last_hrz_tmp[bt, h]]],
                 m.discount_factor[m.period[m.last_hrz_tmp[bt, h]]],
+                m.probability[m.period[m.last_hrz_tmp[bt, h]]],
+                m.probability_weighted_discount_factor[m.period[m.last_hrz_tmp[bt, h]]],
             ]
             for (z, bt, h) in m.FUEL_BA_BLN_TYPE_HRZS_WITH_FUEL_BURN_LIMIT
         ],

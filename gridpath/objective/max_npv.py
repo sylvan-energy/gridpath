@@ -41,7 +41,7 @@ GridPath can include costs on carbon emissions, so certain formulations can
 interpreted as minimizing emissions.
 
 All revenue and costs are in net present value terms, with a user-specified
-discount factor applied depending on the period.
+probability-weighted discount factor applied depending on the period.
 """
 
 import csv

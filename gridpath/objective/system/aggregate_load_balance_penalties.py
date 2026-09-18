@@ -71,13 +71,13 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for tmp in mod.TMPS
         ) / sum(
             mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for tmp in mod.TMPS
         )
 
@@ -95,7 +95,7 @@ def add_model_components(
                 * mod.hrs_in_tmp[tmp]
                 * mod.tmp_weight[tmp]
                 * mod.number_years_represented[mod.period[tmp]]
-                * mod.discount_factor[mod.period[tmp]]
+                * mod.probability_weighted_discount_factor[mod.period[tmp]]
                 for z in mod.LOAD_ZONES
                 for tmp in mod.TMPS
             )

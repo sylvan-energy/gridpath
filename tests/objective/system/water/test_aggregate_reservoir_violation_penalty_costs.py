@@ -129,7 +129,9 @@ class TestReservoirViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.number_years_represented[
                 instance.period[instance.last_hrz_tmp[bt, hrz]]
             ]
-            * instance.discount_factor[instance.period[instance.last_hrz_tmp[bt, hrz]]]
+            * instance.probability_weighted_discount_factor[
+                instance.period[instance.last_hrz_tmp[bt, hrz]]
+            ]
             for (
                 r,
                 bt,
@@ -148,7 +150,7 @@ class TestReservoirViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.hrs_in_tmp[tmp]
             * instance.tmp_weight[tmp]
             * instance.number_years_represented[instance.period[tmp]]
-            * instance.discount_factor[instance.period[tmp]]
+            * instance.probability_weighted_discount_factor[instance.period[tmp]]
             for r in instance.WATER_NODES_W_RESERVOIRS
             for tmp in instance.TMPS
         )
@@ -164,7 +166,7 @@ class TestReservoirViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.hrs_in_tmp[tmp]
             * instance.tmp_weight[tmp]
             * instance.number_years_represented[instance.period[tmp]]
-            * instance.discount_factor[instance.period[tmp]]
+            * instance.probability_weighted_discount_factor[instance.period[tmp]]
             for r in instance.WATER_NODES_W_RESERVOIRS
             for tmp in instance.TMPS
         )

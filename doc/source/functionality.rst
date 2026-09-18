@@ -220,6 +220,89 @@ specifying a map between timepoints in each stage (see
 indexed by timepoint and stage, allowing for different forecasts (and,
 optionally, timepoint resolutions) in each stage.
 
+.. _scenario-trees-sub-section-ref:
+
+Scenario Trees (Stochastic Planning)
+------------------------------------
+
+Investment periods can be arranged into a *scenario tree* to formulate a
+multi-stage stochastic capacity-expansion problem with recourse. Instead of a
+single deterministic sequence of periods, the user defines alternative
+futures (*branches*) for a period. Investment decisions made in a period are
+shared by every branch descending from it, while each branch carries its own
+operational and investment decisions from that point on. Non-anticipativity is
+built into the period structure, so a tree with two branches is roughly the
+size of a deterministic problem with one extra period.
+
+**Defining the tree.** Each period may name its previous period in the
+:code:`prev_period` column of the :code:`inputs_temporal_periods` table (the
+:code:`period_params.csv` file of a temporal scenario). A year with several
+possible futures is entered as several periods with the same start and end
+years and the same previous period. For example, a 2020 root with two 2030
+branches::
+
+    period,discount_factor,period_start_year,period_end_year,prev_period,probability
+    2020,1,2020,2030,,
+    20301,1,2030,2040,2020,0.5
+    20302,1,2030,2040,2020,0.5
+
+Deterministic problems leave :code:`prev_period` empty; the previous period
+then defaults to the preceding period in order. If :code:`prev_period` is
+specified for any period, it must be specified for every period but the
+root, which must be the first period; the tree must have no cycles and a
+period must start no earlier than its previous period ends. Timepoint and
+horizon IDs must be unique within the temporal scenario, so each branch needs
+its own IDs (e.g. 203010101 and 203020101 for the first hour of the two 2030
+branches above).
+
+**Branch-specific data.** Because branches are distinct periods, any input
+indexed by period or timepoint can differ across them: load, fuel prices,
+capital and fixed costs, resource potentials, policy targets, variable
+generation profiles, and so on.
+
+**Shared decisions where the tree is shared.** Capacity built in a period is
+available in exactly the periods on that period's *trajectory*, i.e. the
+period itself and its descendants, for as long as its lifetime lasts. New
+build made at the root serves all branches; new build made within a branch
+serves only that branch. This holds for all new-build project capacity types,
+new transmission, and economic retirement decisions, which are chained along
+the tree.
+
+**Probabilities.** The :code:`probability` column gives the probability of
+reaching a period: the root has probability 1 (the default), and the
+probabilities of the periods sharing a previous period sum to that previous
+period's probability. In the model, every objective-function term is weighted
+by :code:`probability_weighted_discount_factor`, the period's
+:code:`discount_factor` times its :code:`probability`, so costs incurred on a
+branch enter the objective at their expected value. The two inputs are kept
+separate: :code:`discount_factor` remains a pure discount factor, and
+timepoint- and period-level results carry :code:`discount_factor`,
+:code:`probability` and :code:`probability_weighted_discount_factor` side by
+side for post-processing (e.g. converting duals to marginal costs).
+
+**Results by branch.** The per-period cost results are conditional on the
+branch being realized. The :code:`results_costs_by_period_w_weights` view
+attaches each period's previous period, discount factor, probability,
+probability-weighted discount factor and :code:`period_objective_weight`
+(the probability-weighted discount factor times the number of years
+represented) to the :code:`results_costs_by_period` view, so a cost times its
+weight is its contribution to the objective function and summing that product
+over periods gives the expected discounted cost.
+
+**Caveats.** A superperiod (see :code:`inputs_temporal_superperiods`) may not
+include periods from different branches, as quantities aggregated over it
+would double-count alternative futures; validation reports this. Aggregated
+results are indexed by period, so branch periods appear as separate entries
+alongside the deterministic ones.
+
+The :code:`2periods_new_build_2zones_new_build_transmission_stochastic`
+example is a two-branch tree with different loads in each branch;
+:code:`3stage_new_build_2zones_new_build_transmission_stochastic_tree` is a
+three-stage tree with four leaves. The
+:code:`..._stochastic_identical_branches` example and its
+:code:`..._deterministic_twin` carry identical data in both branches and
+reproduce each other's objective and decisions.
+
 Examples
 --------
 

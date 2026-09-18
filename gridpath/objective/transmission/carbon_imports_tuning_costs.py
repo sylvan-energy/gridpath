@@ -62,7 +62,7 @@ def add_model_components(
             * mod.hrs_in_tmp[tmp]
             * mod.tmp_weight[tmp]
             * mod.number_years_represented[mod.period[tmp]]
-            * mod.discount_factor[mod.period[tmp]]
+            * mod.probability_weighted_discount_factor[mod.period[tmp]]
             for (tx, tmp) in mod.CRB_TX_OPR_TMPS
         )
 

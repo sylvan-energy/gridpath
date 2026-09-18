@@ -39,7 +39,7 @@ def add_model_components(
             mod.Local_Capacity_Shortage_MW_Expression[z, p]
             * mod.local_capacity_violation_penalty_per_mw[z]
             * mod.number_years_represented[p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             for (z, p) in mod.LOCAL_CAPACITY_ZONE_PERIODS_WITH_REQUIREMENT
         )
 

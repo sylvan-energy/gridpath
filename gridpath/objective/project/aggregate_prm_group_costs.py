@@ -42,7 +42,7 @@ def add_model_components(
     def total_deliverability_cost_rule(mod):
         return sum(
             mod.Deliverability_Group_Deliverable_Capacity_Cost[g, p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             * mod.number_years_represented[p]
             for g in mod.DELIVERABILITY_GROUPS
             for p in mod.PERIODS

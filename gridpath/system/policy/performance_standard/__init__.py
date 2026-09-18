@@ -40,6 +40,8 @@ def export_results(
             "performance_standard_zone",
             "period",
             "discount_factor",
+            "probability",
+            "probability_weighted_discount_factor",
             "number_years_represented",
         ],
         data=[
@@ -47,6 +49,8 @@ def export_results(
                 z,
                 p,
                 m.discount_factor[p],
+                m.probability[p],
+                m.probability_weighted_discount_factor[p],
                 m.number_years_represented[p],
             ]
             for (z, p) in m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD
