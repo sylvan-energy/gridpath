@@ -45,7 +45,7 @@ def add_model_components(
             mod.Carbon_Cap_Overage_Expression[z, p]
             * mod.carbon_cap_violation_penalty_per_emission[z]
             * mod.number_years_represented[p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             for (z, p) in mod.CARBON_CAP_ZONE_PERIODS_WITH_CARBON_CAP
         )
 

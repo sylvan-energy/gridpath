@@ -29,6 +29,7 @@ example directories are not touched.
 
 import os
 import shutil
+import sqlite3
 import tempfile
 import unittest
 
@@ -215,6 +216,46 @@ class TestStochasticTreeExamples(unittest.TestCase):
                 (by_period[20301] == by_period[20302]).all(),
                 msg=f"{results_file}: branches identical",
             )
+
+    def test_costs_by_period_view_carries_tree_weights(self):
+        """
+        The results_costs_by_period_w_weights view attaches each period's
+        probability and objective weight to the imported per-period costs:
+        root 1, 2030 branches 0.5, 2040 leaves 0.25, with a discount factor
+        of 1 and 10 years per period.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                """SELECT period, prev_period, probability,
+                          probability_weighted_discount_factor,
+                          period_objective_weight, capacity_cost
+                   FROM results_costs_by_period_w_weights
+                   WHERE scenario_id = (SELECT scenario_id FROM scenarios
+                                        WHERE scenario_name = ?)
+                   ORDER BY period;""",
+                (THREE_STAGE_TREE,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        expected_probability = {
+            2020: 1.0,
+            20301: 0.5,
+            20302: 0.5,
+            20401: 0.25,
+            20402: 0.25,
+            20403: 0.25,
+            20404: 0.25,
+        }
+        self.assertListEqual(sorted(expected_probability), [r[0] for r in rows])
+        for period, prev_period, probability, weighted, weight, capacity_cost in rows:
+            with self.subTest(period=period):
+                self.assertEqual(PREV_PERIOD.get(period), prev_period)
+                self.assertAlmostEqual(expected_probability[period], probability)
+                self.assertAlmostEqual(expected_probability[period], weighted)
+                self.assertAlmostEqual(10 * expected_probability[period], weight)
+                self.assertIsNotNone(capacity_cost)
 
 
 if __name__ == "__main__":

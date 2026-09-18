@@ -44,13 +44,13 @@ def add_model_components(
     def total_subsidy_rule(mod):
         return -sum(
             mod.Project_Annual_Payment_Reduction_from_Base[prj, prd]
-            * mod.discount_factor[prd]
+            * mod.probability_weighted_discount_factor[prd]
             * mod.number_years_represented[prd]
             for (prj, prd) in mod.PRJ_FIN_PRDS
         ) + (
             -sum(
                 mod.Tx_Annual_Payment_Reduction_from_Base[tx, prd]
-                * mod.discount_factor[prd]
+                * mod.probability_weighted_discount_factor[prd]
                 * mod.number_years_represented[prd]
                 for (tx, prd) in mod.TX_FIN_PRDS
             )

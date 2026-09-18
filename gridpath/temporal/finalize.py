@@ -32,14 +32,16 @@ def add_model_components(
     m.period_objective_coefficient = Param(
         m.PERIODS,
         within=NonNegativeReals,
-        initialize=lambda mod, prd: mod.discount_factor[prd]
+        initialize=lambda mod, prd: mod.probability_weighted_discount_factor[prd]
         * mod.number_years_represented[prd],
     )
 
     m.tmp_objective_coefficient = Param(
         m.TMPS,
         within=NonNegativeReals,
-        initialize=lambda mod, tmp: mod.discount_factor[mod.period[tmp]]
+        initialize=lambda mod, tmp: mod.probability_weighted_discount_factor[
+            mod.period[tmp]
+        ]
         * mod.number_years_represented[mod.period[tmp]]
         * mod.tmp_weight[tmp]
         * mod.hrs_in_tmp[tmp],

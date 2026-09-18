@@ -316,6 +316,9 @@ CREATE TABLE inputs_temporal_periods
     period_start_year    FLOAT,
     period_end_year      FLOAT, -- exclusive, i.e. if 2030, last day is 2029-12-31
     prev_period          INTEGER,
+    -- probability of reaching this period in the scenario tree (the root is
+    -- 1; the periods sharing a prev_period sum to its probability); NULL = 1
+    probability          FLOAT,
     PRIMARY KEY (temporal_scenario_id, period),
     FOREIGN KEY (temporal_scenario_id) REFERENCES subscenarios_temporal
         (temporal_scenario_id)
@@ -7505,6 +7508,8 @@ CREATE TABLE results_system_load_zone_timepoint
     timepoint                         INTEGER,
     period                            INTEGER,
     discount_factor                   FLOAT,
+    probability                       FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented          FLOAT,
     timepoint_weight                  FLOAT,
     number_of_hours_in_timepoint      FLOAT,
@@ -7660,6 +7665,8 @@ CREATE TABLE results_system_market_participation
     timepoint                    INTEGER,
     period                       INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7711,6 +7718,8 @@ CREATE TABLE results_system_lf_reserves_up
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7738,6 +7747,8 @@ CREATE TABLE results_system_lf_reserves_down
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7765,6 +7776,8 @@ CREATE TABLE results_system_regulation_up
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7792,6 +7805,8 @@ CREATE TABLE results_system_regulation_down
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7819,6 +7834,8 @@ CREATE TABLE results_system_frequency_response
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7848,6 +7865,8 @@ CREATE TABLE results_system_frequency_response_partial
     stage_id                      INTEGER,
     timepoint                     INTEGER,
     discount_factor               FLOAT,
+    probability                   FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented      FLOAT,
     timepoint_weight              FLOAT,
     number_of_hours_in_timepoint  FLOAT,
@@ -7875,6 +7894,8 @@ CREATE TABLE results_system_spinning_reserves
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7902,6 +7923,8 @@ CREATE TABLE results_system_inertia_reserves
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     discount_factor              FLOAT,
+    probability                  FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented     FLOAT,
     timepoint_weight             FLOAT,
     number_of_hours_in_timepoint FLOAT,
@@ -7929,6 +7952,8 @@ CREATE TABLE results_system_carbon_cap
     subproblem_id                         INTEGER,
     stage_id                              INTEGER,
     discount_factor                       FLOAT,
+    probability                           FLOAT,
+    probability_weighted_discount_factor  FLOAT,
     number_years_represented              FLOAT,
     carbon_cap_target                     FLOAT,
     project_emissions                     FLOAT,
@@ -7960,6 +7985,8 @@ CREATE TABLE results_system_carbon_tax
     subproblem_id                   INTEGER,
     stage_id                        INTEGER,
     discount_factor                 FLOAT,
+    probability                     FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented        FLOAT,
     project_emissions               FLOAT,
     project_credits                 FLOAT,
@@ -7986,6 +8013,8 @@ CREATE TABLE results_system_performance_standard
     subproblem_id                               INTEGER,
     stage_id                                    INTEGER,
     discount_factor                             FLOAT,
+    probability                                 FLOAT,
+    probability_weighted_discount_factor        FLOAT,
     number_years_represented                    FLOAT,
     performance_standard_tco2_per_mwh           FLOAT,
     performance_standard_tco2_per_mw            FLOAT,
@@ -8015,6 +8044,8 @@ CREATE TABLE results_system_carbon_credits
     subproblem_id                  INTEGER,
     stage_id                       INTEGER,
     discount_factor                FLOAT,
+    probability                    FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented       FLOAT,
     project_generated_credits      FLOAT,
     project_purchased_credits      FLOAT,
@@ -8040,6 +8071,8 @@ CREATE TABLE results_system_period_energy_target
     stage_id                                   INTEGER,
     period                                     INTEGER,
     discount_factor                            FLOAT,
+    probability                                FLOAT,
+    probability_weighted_discount_factor       FLOAT,
     number_years_represented                   FLOAT,
     energy_target_mwh                          FLOAT,
     delivered_energy_target_energy_mwh         FLOAT,
@@ -8095,6 +8128,8 @@ CREATE TABLE results_system_instantaneous_penetration
     subproblem_id                                       INTEGER,
     stage_id                                            INTEGER,
     discount_factor                                     FLOAT,
+    probability                                         FLOAT,
+    probability_weighted_discount_factor                FLOAT,
     number_years_represented                            FLOAT,
     timepoint_weight                                    FLOAT,
     number_of_hours_in_timepoint                        FLOAT,
@@ -8161,6 +8196,8 @@ CREATE TABLE results_system_fuel_burn_limits
     horizon                                        INTEGER,
     number_years_represented                       FLOAT, -- based on period of last horizon timepoint
     discount_factor                                FLOAT, -- based on period of last horizon timepoint
+    probability                                    FLOAT,
+    probability_weighted_discount_factor           FLOAT,
     fuel_burn_limit_ba                             VARCHAR(32),
     fuel_burn_min_unit                             FLOAT,
     fuel_burn_max_unit                             FLOAT,
@@ -8266,6 +8303,8 @@ CREATE TABLE results_system_prm
     subproblem_id                             INTEGER,
     stage_id                                  INTEGER,
     discount_factor                           FLOAT,
+    probability                               FLOAT,
+    probability_weighted_discount_factor      FLOAT,
     number_years_represented                  FLOAT,
     prm_requirement_mw                        FLOAT,
     elcc_simple_mw                            FLOAT,
@@ -8332,6 +8371,8 @@ CREATE TABLE results_system_local_capacity
     subproblem_id                       INTEGER,
     stage_id                            INTEGER,
     discount_factor                     FLOAT,
+    probability                         FLOAT,
+    probability_weighted_discount_factor FLOAT,
     number_years_represented            FLOAT,
     local_capacity_requirement_mw       FLOAT,
     project_contribution_mw             FLOAT,
@@ -9491,6 +9532,45 @@ FROM (SELECT scenario_id,
          AND a.period = b.period
          AND a.spinup_or_lookahead = b.spinup_or_lookahead
          )
+;
+
+-- Period weights: the probability of reaching each period and the resulting
+-- objective-function weight of a cost incurred in the period. Deterministic
+-- temporal scenarios (no prev_period, NULL probability) get a probability
+-- of 1 for every period.
+DROP VIEW IF EXISTS inputs_temporal_periods_w_weights;
+CREATE VIEW inputs_temporal_periods_w_weights AS
+SELECT temporal_scenario_id,
+       period,
+       prev_period,
+       discount_factor,
+       COALESCE(probability, 1.0)                        AS probability,
+       discount_factor * COALESCE(probability, 1.0)      AS probability_weighted_discount_factor,
+       period_end_year - period_start_year               AS number_years_represented,
+       discount_factor * COALESCE(probability, 1.0) *
+       (period_end_year - period_start_year)             AS period_objective_weight
+FROM inputs_temporal_periods
+;
+
+-- Costs by period with the period's scenario-tree weights. Costs are
+-- conditional on the period's branch being realized; a cost times
+-- period_objective_weight is its contribution to the objective function,
+-- so summing that product over periods gives the expected discounted cost.
+DROP VIEW IF EXISTS results_costs_by_period_w_weights;
+CREATE VIEW results_costs_by_period_w_weights AS
+SELECT r.*,
+       w.prev_period,
+       w.discount_factor,
+       w.probability,
+       w.probability_weighted_discount_factor,
+       w.number_years_represented,
+       w.period_objective_weight
+FROM results_costs_by_period AS r
+         JOIN scenarios AS s
+              ON r.scenario_id = s.scenario_id
+         JOIN inputs_temporal_periods_w_weights AS w
+              ON w.temporal_scenario_id = s.temporal_scenario_id
+                  AND w.period = r.period
 ;
 
 -------------------------------------------------------------------------------

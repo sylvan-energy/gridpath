@@ -41,7 +41,7 @@ def add_model_components(
 
     :math:`Total\_Capacity\_Costs =
     \sum_{(r, p)\in {RP}}{Capacity\_Cost\_in\_Period_{r, p} \\times
-    discount\_factor_p \\times number\_years\_represented_p}`
+    probability\_weighted\_discount\_factor_p \\times number\_years\_represented_p}`
 
     """
 
@@ -49,7 +49,7 @@ def add_model_components(
     def total_capacity_cost_rule(mod):
         return sum(
             mod.Capacity_Cost_in_Period[g, p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             * mod.number_years_represented[p]
             for (g, p) in mod.PRJ_FIN_PRDS
         )
@@ -59,7 +59,7 @@ def add_model_components(
     def total_energy_cost_rule(mod):
         return sum(
             mod.Energy_Cost_in_Period[g, p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             * mod.number_years_represented[p]
             for (g, p) in mod.PRJ_FIN_PRDS
         )
@@ -69,7 +69,7 @@ def add_model_components(
     def total_fixed_cost_rule(mod):
         return sum(
             mod.Fixed_Cost_in_Period[g, p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             * mod.number_years_represented[p]
             for (g, p) in mod.PRJ_OPR_PRDS
         )

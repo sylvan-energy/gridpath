@@ -41,7 +41,9 @@ def add_model_components(
             mod.Policy_Requirement_Shortage_Expression[policy, zone, bt, h]
             * mod.policy_zone_violation_penalty_per_unit[policy, zone]
             * mod.number_years_represented[mod.period[mod.last_hrz_tmp[bt, h]]]
-            * mod.discount_factor[mod.period[mod.last_hrz_tmp[bt, h]]]
+            * mod.probability_weighted_discount_factor[
+                mod.period[mod.last_hrz_tmp[bt, h]]
+            ]
             for (policy, zone, bt, h) in mod.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ
         )
         month_hour_penalties = sum(
@@ -50,7 +52,7 @@ def add_model_components(
             ]
             * mod.policy_zone_violation_penalty_per_unit[policy, zone]
             * mod.number_years_represented[period]
-            * mod.discount_factor[period]
+            * mod.probability_weighted_discount_factor[period]
             for (
                 policy,
                 zone,

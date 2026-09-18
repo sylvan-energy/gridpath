@@ -92,7 +92,11 @@ The :code:`inputs_temporal_periods` table contains the information about the
 investment periods in the respective :code:`temporal_scenario_id` along with
 the data for the discount factor to be applied to the period and the number of
 years it represents (e.g. we can use 2030 to represent the 10-year period
-between 2025 and 2034).
+between 2025 and 2034). For stochastic problems, the optional
+:code:`prev_period` and :code:`probability` columns arrange the periods into a
+scenario tree: periods sharing a :code:`prev_period` are alternative futures,
+and their probabilities (of reaching each period) must sum to the probability
+of the previous period.
 
 The :code:`inputs_temporal_horizons` table contains information about the
 *horizons* within a :code:`temporal_scenario_id` along their balancing type,

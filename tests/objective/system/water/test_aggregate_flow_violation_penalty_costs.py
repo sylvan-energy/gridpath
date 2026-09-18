@@ -127,7 +127,7 @@ class TestFlowViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.hrs_in_tmp[dep_tmp]
             * instance.tmp_weight[dep_tmp]
             * instance.number_years_represented[instance.period[dep_tmp]]
-            * instance.discount_factor[instance.period[dep_tmp]]
+            * instance.probability_weighted_discount_factor[instance.period[dep_tmp]]
             for (wl, dep_tmp, arr_tmp) in instance.WATER_LINK_DEPARTURE_ARRIVAL_TMPS
         )
         self.assertAlmostEqual(
@@ -143,7 +143,7 @@ class TestFlowViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.hrs_in_tmp[dep_tmp]
             * instance.tmp_weight[dep_tmp]
             * instance.number_years_represented[instance.period[dep_tmp]]
-            * instance.discount_factor[instance.period[dep_tmp]]
+            * instance.probability_weighted_discount_factor[instance.period[dep_tmp]]
             for (wl, dep_tmp, arr_tmp) in instance.WATER_LINK_DEPARTURE_ARRIVAL_TMPS
         )
         self.assertAlmostEqual(
@@ -164,7 +164,9 @@ class TestFlowViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.number_years_represented[
                 instance.period[instance.last_hrz_tmp[bt, hrz]]
             ]
-            * instance.discount_factor[instance.period[instance.last_hrz_tmp[bt, hrz]]]
+            * instance.probability_weighted_discount_factor[
+                instance.period[instance.last_hrz_tmp[bt, hrz]]
+            ]
             for (wl, bt, hrz) in instance.WATER_LINKS_W_BT_HRZ_MIN_FLOW_CONSTRAINT
         )
         self.assertAlmostEqual(
@@ -184,7 +186,9 @@ class TestFlowViolationPenaltyCostsAgg(unittest.TestCase):
             * instance.number_years_represented[
                 instance.period[instance.last_hrz_tmp[bt, hrz]]
             ]
-            * instance.discount_factor[instance.period[instance.last_hrz_tmp[bt, hrz]]]
+            * instance.probability_weighted_discount_factor[
+                instance.period[instance.last_hrz_tmp[bt, hrz]]
+            ]
             for (wl, bt, hrz) in instance.WATER_LINKS_W_BT_HRZ_MAX_FLOW_CONSTRAINT
         )
         self.assertAlmostEqual(

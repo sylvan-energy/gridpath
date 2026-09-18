@@ -44,7 +44,7 @@ def add_model_components(
             mod.Period_Energy_Target_Shortage_MWh_Expression[z, p]
             * mod.energy_target_violation_penalty_per_mwh[z]
             * mod.number_years_represented[p]
-            * mod.discount_factor[p]
+            * mod.probability_weighted_discount_factor[p]
             for (z, p) in mod.ENERGY_TARGET_ZONE_PERIODS_WITH_ENERGY_TARGET
         )
 
