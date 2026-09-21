@@ -12,6 +12,7 @@ create_sync_load_input_csvs,load_components_scenario_id,3,,
 create_sync_load_input_csvs,load_components_scenario_name,ra_toolkit,,
 create_sync_load_input_csvs,load_levels_scenario_id,6,,
 create_sync_load_input_csvs,load_levels_scenario_name,ra_toolkit,,
+create_sync_load_input_csvs,study_year,0,,
 create_sync_load_input_csvs,load_scenario_overwrite,,1,1
 create_sync_load_input_csvs,load_components_overwrite,,1,1
 create_sync_load_input_csvs,load_levels_overwrite,,1,1
@@ -19,6 +20,7 @@ create_sync_var_gen_input_csvs,database,./ra_toolkit_test_temp.db,,
 create_sync_var_gen_input_csvs,output_directory,./csvs_test_examples/project/opchar/variable_generator_profiles,,
 create_sync_var_gen_input_csvs,variable_generator_profile_scenario_id,3,,
 create_sync_var_gen_input_csvs,variable_generator_profile_scenario_name,ra_toolkit,,
+create_sync_var_gen_input_csvs,study_year,0,,
 create_sync_var_gen_input_csvs,overwrite,,1,1
 create_sync_var_gen_input_csvs,n_parallel_projects,4,,
 create_monte_carlo_weather_draws,database,./ra_toolkit_test_temp.db,,
@@ -66,6 +68,7 @@ create_sync_gen_weather_derate_input_csvs,database,./ra_toolkit_test_temp.db,,
 create_sync_gen_weather_derate_input_csvs,output_directory,./csvs_test_examples/project/availability/exogenous_weather,,
 create_sync_gen_weather_derate_input_csvs,exogenous_availability_weather_scenario_id,1,,
 create_sync_gen_weather_derate_input_csvs,exogenous_availability_weather_scenario_name,ra_toolkit,,
+create_sync_gen_weather_derate_input_csvs,study_year,0,,
 create_sync_gen_weather_derate_input_csvs,overwrite,,1,1
 create_sync_gen_weather_derate_input_csvs,n_parallel_projects,4,,
 create_monte_carlo_gen_weather_derate_input_csvs,database,./ra_toolkit_test_temp.db,,

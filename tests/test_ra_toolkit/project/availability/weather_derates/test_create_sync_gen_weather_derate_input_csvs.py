@@ -16,6 +16,8 @@ import os
 import tempfile
 import unittest
 
+import pandas as pd
+
 from db.create_database import main as create_database_main
 from ra_toolkit.project.availability.weather_derates.create_sync_gen_weather_derate_input_csvs import (
     main as create_sync_gen_weather_derate_input_csvs_main,
@@ -70,6 +72,71 @@ class TestCreateSyncGenWeatherDerateInputCsvs(unittest.TestCase):
             "--overwrite",
         ]
         create_sync_gen_weather_derate_input_csvs_main(args)
+
+    def test_study_year_offsets_timepoints(self):
+        """With --study_year, timepoint IDs are offset by YYYY0000 instead
+        of running 1 through 8760."""
+        out_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(out_dir.cleanup)
+        # Own scratch DB: the raw CSVs are loaded again here and the raw
+        # tables have UNIQUE constraints
+        db_path = os.path.join(out_dir.name, "study_year_test.db")
+        create_database_main(
+            [
+                "--database",
+                db_path,
+                "--db_schema",
+                "../ra_toolkit/raw_data_db_schema.sql",
+                "--quiet",
+            ]
+        )
+        args = [
+            "--database",
+            db_path,
+            "--availability_profile_input_csv",
+            "./csvs_test_examples/raw_data_ra_toolkit/project/availability/user_defined_weather_derates.csv",
+            "--units_input_csv",
+            "./csvs_test_examples/raw_data_ra_toolkit/project/availability/user_defined_unit_availability_params.csv",
+            "--output_directory",
+            out_dir.name,
+            "--exogenous_availability_weather_scenario_id",
+            "6",
+            "--exogenous_availability_weather_scenario_name",
+            "study_year_test",
+            "--study_year",
+            "2026",
+            "--print_ones",
+            "--n_parallel_projects",
+            "2",
+            "--quiet",
+            "--overwrite",
+        ]
+        create_sync_gen_weather_derate_input_csvs_main(args)
+
+        profile_files = [
+            f for f in os.listdir(out_dir.name) if f.endswith("-6-study_year_test.csv")
+        ]
+        self.assertTrue(profile_files)
+        # Only some fixture projects have derate profile rows; the others
+        # get header-only CSVs
+        n_populated = 0
+        for f in profile_files:
+            df = pd.read_csv(os.path.join(out_dir.name, f))
+            if df.empty:
+                continue
+            n_populated += 1
+            hour_of_year = df["timepoint"] - 2026 * 10000
+            self.assertTrue((hour_of_year >= 1).all(), f)
+            self.assertTrue((hour_of_year <= 8784).all(), f)
+            # --print_ones keeps every hour, so each iteration starts at hour 1
+            self.assertTrue(
+                (
+                    df.groupby("weather_iteration")["timepoint"].min()
+                    == 2026 * 10000 + 1
+                ).all(),
+                f,
+            )
+        self.assertGreater(n_populated, 0)
 
     @classmethod
     def tearDownClass(cls):
