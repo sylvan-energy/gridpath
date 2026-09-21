@@ -16,6 +16,8 @@ import os
 import tempfile
 import unittest
 
+import pandas as pd
+
 from db.create_database import main as create_database_main
 from ra_toolkit.load.create_sync_load_input_csvs import (
     main as create_sync_load_input_csvs_main,
@@ -78,6 +80,62 @@ class TestCreateSyncLoadInputCsvs(unittest.TestCase):
             "--quiet",
         ]
         create_sync_load_input_csvs_main(args)
+
+    def test_study_year_offsets_timepoints(self):
+        """With --study_year, timepoint IDs are YYYY0001 through YYYY8760
+        (per weather iteration) instead of 1 through 8760."""
+        out_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(out_dir.cleanup)
+        # Own scratch DB: the raw CSVs are loaded again here and the raw
+        # tables have UNIQUE constraints
+        db_path = os.path.join(out_dir.name, "study_year_test.db")
+        create_database_main(
+            [
+                "--database",
+                db_path,
+                "--db_schema",
+                "../ra_toolkit/raw_data_db_schema.sql",
+                "--quiet",
+            ]
+        )
+        args = [
+            "--database",
+            db_path,
+            "--load_profile_input_csv",
+            "./csvs_test_examples/raw_data_ra_toolkit/system_load"
+            "/ra_toolkit_load.csv",
+            "--units_input_csv",
+            "./csvs_test_examples/raw_data_ra_toolkit/system_load"
+            "/user_defined_load_zone_units.csv",
+            "--output_directory",
+            out_dir.name,
+            "--load_levels_scenario_id",
+            "14",
+            "--load_levels_scenario_name",
+            "study_year_test",
+            "--study_year",
+            "2026",
+            "--skip_load_scenario",
+            "--skip_load_components",
+            "--load_levels_overwrite",
+            "--quiet",
+        ]
+        create_sync_load_input_csvs_main(args)
+
+        df = pd.read_csv(
+            os.path.join(out_dir.name, "load_levels", "14_study_year_test.csv")
+        )
+        self.assertFalse(df.empty)
+        hour_of_year = df["timepoint"] - 2026 * 10000
+        self.assertTrue((hour_of_year >= 1).all())
+        self.assertTrue((hour_of_year <= 8784).all())
+        # Every (zone, weather iteration) starts at hour 1 of the study year
+        self.assertTrue(
+            (
+                df.groupby(["load_zone", "weather_iteration"])["timepoint"].min()
+                == 2026 * 10000 + 1
+            ).all()
+        )
 
     @classmethod
     def tearDownClass(cls):

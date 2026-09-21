@@ -31,6 +31,7 @@ def get_sync_project_pool_and_make_profile_csvs(
     profile_scenario_id,
     profile_scenario_name,
     stage_id,
+    study_year,
     output_directory,
     overwrite,
     varies_by_weather,
@@ -62,6 +63,7 @@ def get_sync_project_pool_and_make_profile_csvs(
                 profile_scenario_id,
                 profile_scenario_name,
                 stage_id,
+                study_year,
                 output_directory,
                 overwrite,
                 varies_by_weather,
@@ -90,6 +92,7 @@ def create_project_profile_csv(
     profile_scenario_id,
     profile_scenario_name,
     stage_id,
+    study_year,
     output_directory,
     overwrite,
     param_name,
@@ -101,6 +104,12 @@ def create_project_profile_csv(
     print_default_values,
     default_value,
 ):
+    """
+    Timepoint IDs are the hour of the (historical) year, 1 through 8760/8784,
+    offset by study_year * 10000 (so they start at 1 when study_year is 0, or
+    at YYYY0001 for study year YYYY) -- the same convention the Monte Carlo
+    steps use.
+    """
     conn = connect_to_database(db_path=db_path)
 
     # Get the weighted value for each of the project's constituent units,
@@ -111,7 +120,8 @@ def create_project_profile_csv(
         SELECT year AS weather_iteration, 
         {hydro_iter_sql}
         {stage_id} AS stage_id, 
-        hour_of_year as timepoint, sum(weighted_{param_name}) as {param_name}
+        {study_year}*10000+hour_of_year AS timepoint, 
+        sum(weighted_{param_name}) as {param_name}
             FROM (
             SELECT year, month, day_of_month, hour_of_day, unit, 
             project, unit_weight, value, unit_weight * value as 
@@ -191,6 +201,7 @@ def create_project_profile_csv_pool(pool_datum):
         profile_scenario_id,
         profile_scenario_name,
         stage_id,
+        study_year,
         output_directory,
         overwrite,
         varies_by_weather,
@@ -206,6 +217,7 @@ def create_project_profile_csv_pool(pool_datum):
         profile_scenario_id=profile_scenario_id,
         profile_scenario_name=profile_scenario_name,
         stage_id=stage_id,
+        study_year=study_year,
         output_directory=output_directory,
         overwrite=overwrite,
         param_name=param_name,

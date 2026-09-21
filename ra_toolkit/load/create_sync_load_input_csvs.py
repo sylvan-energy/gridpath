@@ -44,7 +44,14 @@ Settings
     * output_directory
     * load_scenario_id
     * load_scenario_name
+    * stage_id
+    * study_year
     * overwrite
+
+Timepoint IDs are the hour of the historical year (1 through 8760, or 8784 in
+a leap year) offset by ``study_year * 10000``, so they start at 1 by default
+or at ``YYYY0001`` when a study year is provided -- the same convention the
+Monte Carlo steps use. Each historical year becomes a weather iteration.
 
 """
 
@@ -151,6 +158,14 @@ def parse_arguments(args):
     )
 
     parser.add_argument(
+        "-s_y",
+        "--study_year",
+        default=0,
+        help=f"Defaults to 0. Timepoint IDs will start at 1. Set to YYYY to "
+        f"have timepoint IDs start at YYYY0001.",
+    )
+
+    parser.add_argument(
         "-comp",
         "--load_component",
         default=LOAD_COMPONENT_NAME_DEFAULT,
@@ -214,19 +229,21 @@ def create_load_levels_csv(
     load_levels_scenario_id,
     load_levels_scenario_name,
     stage_id,
+    study_year,
     load_component_name,
     overwrite,
 ):
     """
-    This module currently assumes timepoint IDs will be 1 through 8760 for
-    each year. The query will aggregate loads based on the aggregations and
-    weights defined in the user_defined_load_zone_units
+    Timepoint IDs are the hour of the (historical) year, 1 through 8760/8784,
+    offset by study_year * 10000 (so they start at 1 when study_year is 0, or
+    at YYYY0001 for study year YYYY). The query will aggregate loads based on
+    the aggregations and weights defined in the user_defined_load_zone_units
     table.
     """
 
     query = f"""
         SELECT load_zone, year AS weather_iteration, {stage_id} as stage_id, 
-        hour_of_year as timepoint, 
+        {study_year}*10000+hour_of_year AS timepoint, 
         '{load_component_name}' AS load_component, sum(weighted_load_mw) as 
         load_mw
         FROM (
@@ -335,6 +352,7 @@ def main(args=None):
             load_levels_scenario_id=parsed_args.load_levels_scenario_id,
             load_levels_scenario_name=parsed_args.load_levels_scenario_name,
             stage_id=parsed_args.stage_id,
+            study_year=int(parsed_args.study_year),
             load_component_name=parsed_args.load_component,
             overwrite=parsed_args.load_levels_overwrite,
         )
