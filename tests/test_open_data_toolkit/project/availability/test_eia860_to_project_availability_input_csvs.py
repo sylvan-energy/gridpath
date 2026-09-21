@@ -26,8 +26,10 @@ from open_data_toolkit.project.availability.eia860_to_project_availability_input
     main as availability_main,
     parse_month_list,
     get_seasonal_months,
+    get_seasonal_derate_op_type_filter_string,
     write_monthly_derate_csvs,
     warn_on_missing_seasonal_rating_data,
+    DEFAULT_SEASONAL_DERATE_EXCLUDED_OP_TYPES,
 )
 
 RAW_DATA_DB_SCHEMA = os.path.join(
@@ -299,6 +301,92 @@ class TestSeasonalCapacityDerates(unittest.TestCase):
             zip(df["project"], df["exogenous_availability_monthly_scenario_id"])
         )
         self.assertEqual(id_by_project["1__1"], "3")
+
+    def test_op_type_exclusion_override(self):
+        # Excluding only storage brings the wind unit into the derates
+        output_dir, _ = self.run_step(
+            [
+                "--seasonal_capacity_derates",
+                "--seasonal_derate_excluded_operational_types",
+                "stor",
+            ]
+        )
+        self.assertIn(
+            "3__W1-1-summer_winter_ratings.csv",
+            os.listdir(os.path.join(output_dir, "exogenous_monthly")),
+        )
+        self.assertNotIn(
+            "4__B1-1-summer_winter_ratings.csv",
+            os.listdir(os.path.join(output_dir, "exogenous_monthly")),
+        )
+        wind = read_monthly_csv(output_dir, "3__W1-1-summer_winter_ratings.csv")
+        self.assertEqual(
+            list(zip(wind["month"], wind["availability_derate_monthly"])),
+            [
+                (1, 0.833333),
+                (2, 0.833333),
+                (6, 0.666667),
+                (7, 0.666667),
+                (8, 0.666667),
+                (9, 0.666667),
+                (12, 0.833333),
+            ],
+        )
+        df = read_availability_csv(output_dir)
+        id_by_project = dict(
+            zip(df["project"], df["exogenous_availability_monthly_scenario_id"])
+        )
+        self.assertEqual(id_by_project["3__W1"], "1")
+        self.assertEqual(id_by_project["4__B1"], "")
+
+    def test_op_type_exclusion_empty_derates_every_type(self):
+        output_dir, _ = self.run_step(
+            [
+                "--seasonal_capacity_derates",
+                "--seasonal_derate_excluded_operational_types",
+                "",
+            ]
+        )
+        self.assertEqual(
+            sorted(os.listdir(os.path.join(output_dir, "exogenous_monthly"))),
+            [
+                "1__1-1-summer_winter_ratings.csv",
+                "3__W1-1-summer_winter_ratings.csv",
+                "4__B1-1-summer_winter_ratings.csv",
+                "5__1_1-1-summer_winter_ratings.csv",
+            ],
+        )
+        battery = read_monthly_csv(output_dir, "4__B1-1-summer_winter_ratings.csv")
+        self.assertEqual(
+            list(zip(battery["month"], battery["availability_derate_monthly"]))[:3],
+            [(1, 0.966667), (2, 0.966667), (6, 0.916667)],
+        )
+
+
+class TestOpTypeExclusionSetting(unittest.TestCase):
+    def test_default_builds_not_in_clause(self):
+        clause = get_seasonal_derate_op_type_filter_string(
+            DEFAULT_SEASONAL_DERATE_EXCLUDED_OP_TYPES
+        )
+        self.assertIn("NOT IN", clause)
+        for op_type in [
+            "gen_var",
+            "gen_var_must_take",
+            "gen_hydro",
+            "gen_hydro_must_take",
+            "stor",
+        ]:
+            self.assertIn(f"'{op_type}'", clause)
+
+    def test_empty_value_builds_no_clause(self):
+        self.assertEqual(get_seasonal_derate_op_type_filter_string(""), "")
+        self.assertEqual(get_seasonal_derate_op_type_filter_string(" , "), "")
+
+    def test_non_identifier_token_raises(self):
+        # tokens are interpolated into SQL, so anything beyond
+        # operational-type-name characters must be refused
+        with self.assertRaisesRegex(ValueError, "operational-type names"):
+            get_seasonal_derate_op_type_filter_string("stor,gen_var') OR ('1'='1")
 
 
 class TestMonthSettings(unittest.TestCase):

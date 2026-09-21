@@ -37,10 +37,12 @@ For aggregated projects the derate is capacity-weighted across the group's
 units. Derates above 1 are kept (winter ratings above nameplate occur, e.g.
 for combustion turbines in cold, dense air).
 
-Seasonal derates are only written for operational types whose seasonal
-capability is not already modeled elsewhere: variable generators
+By default, seasonal derates are only written for operational types whose
+seasonal capability is not already modeled elsewhere: variable generators
 (capacity-factor profiles) and hydro (energy budgets) are excluded, as is
-storage (seasonal ratings match nameplate).
+storage (seasonal ratings match nameplate). The excluded types can be
+changed with ``seasonal_derate_excluded_operational_types`` (an empty
+value derates every type).
 
 .. note:: EIA's net summer/winter ratings are net of station service while
     nameplate capacity is gross, so these derates also fold in auxiliary
@@ -94,6 +96,7 @@ Settings
     * seasonal_capacity_derates
     * summer_months
     * winter_months
+    * seasonal_derate_excluded_operational_types
     * exogenous_availability_monthly_scenario_id
     * exogenous_availability_monthly_scenario_name
 
@@ -105,13 +108,21 @@ import os.path
 import pandas as pd
 import sys
 
-from open_data_toolkit.project.fleet.fleet_filters import SEASONAL_DERATE_FILTER_STR
 from open_data_toolkit.project.fleet.step_common import (
     connect_and_check_scope,
     get_fleet_relation_sql_from_args,
     get_project_name_str_from_args,
     warn_on_fleet_data_gaps,
     add_shared_project_step_arguments,
+)
+
+# Types whose seasonal capability is already modeled elsewhere — variable
+# generators through their capacity-factor profiles, hydro through its
+# energy budgets (a seasonal capacity derate on top would double-count) —
+# or whose seasonal ratings match nameplate (storage): excluded from the
+# seasonal capacity derates by default
+DEFAULT_SEASONAL_DERATE_EXCLUDED_OP_TYPES = (
+    "gen_var,gen_var_must_take,gen_hydro,gen_hydro_must_take,stor"
 )
 
 
@@ -167,6 +178,17 @@ def parse_arguments(args):
         help="Comma-separated months (1-12) that get the net-winter-capacity "
         "derate when --seasonal_capacity_derates is used. Defaults to "
         "December-February, EIA's net-winter demonstration window.",
+    )
+    parser.add_argument(
+        "-szn_x",
+        "--seasonal_derate_excluded_operational_types",
+        default=DEFAULT_SEASONAL_DERATE_EXCLUDED_OP_TYPES,
+        help="Comma-separated GridPath operational types (as mapped in "
+        "user_defined_eia_gridpath_key) that do NOT get seasonal capacity "
+        "derates. Defaults to the variable-generator, hydro, and storage "
+        "types, whose seasonal capability is already modeled through "
+        "capacity-factor profiles and energy budgets or matches nameplate. "
+        "Pass an empty value to derate every operational type.",
     )
     parser.add_argument(
         "-mnth_id",
@@ -226,6 +248,30 @@ def get_seasonal_months(summer_months_setting, winter_months_setting):
         )
 
     return summer_months, winter_months
+
+
+def get_seasonal_derate_op_type_filter_string(excluded_operational_types):
+    """
+    The extra WHERE clause keeping *excluded_operational_types* (a
+    comma-separated setting value) out of the seasonal derates; empty
+    string when nothing is excluded. Tokens are restricted to identifier
+    characters since they are interpolated into SQL.
+    """
+    op_types = [
+        t.strip() for t in str(excluded_operational_types).split(",") if t.strip()
+    ]
+    for op_type in op_types:
+        if not all(c.isalnum() or c == "_" for c in op_type):
+            raise ValueError(
+                f"seasonal_derate_excluded_operational_types entries must "
+                f"be operational-type names (letters, digits, "
+                f"underscores), got '{op_type}'"
+            )
+    if not op_types:
+        return ""
+
+    quoted_op_types = ", ".join(f"'{op_type}'" for op_type in op_types)
+    return f"gridpath_operational_type NOT IN ({quoted_op_types})"
 
 
 def warn_on_missing_seasonal_rating_data(conn):
@@ -411,7 +457,10 @@ def main(args=None):
             winter_months_setting=parsed_args.winter_months,
         )
         derate_relation_sql = get_fleet_relation_sql_from_args(
-            parsed_args, extra_where=SEASONAL_DERATE_FILTER_STR
+            parsed_args,
+            extra_where=get_seasonal_derate_op_type_filter_string(
+                parsed_args.seasonal_derate_excluded_operational_types
+            ),
         )
 
     conn = connect_and_check_scope(parsed_args)
