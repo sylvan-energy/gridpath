@@ -18,13 +18,28 @@ once per (weather, hydro, availability) iteration x subproblem x stage. Until
 September 2026 main() looped over the iterations around a function that
 already looped over them, so every validator ran N times per iteration for
 N iterations (two hours to validate a 15-iteration ensemble).
+
+The driver's writes must also survive the run ending: until September 2026
+nothing in the validation flow ever committed (spin_on_database_lock defaults
+to commit_immediately=False), so closing the connection rolled back the
+validation reset, every status_validation row, and the status update -- the
+findings printed correctly (same transaction) but the database was left
+untouched.
 """
 
+import contextlib
+import io
+import os
+import sqlite3
+import tempfile
 import types
 import unittest
 from unittest import mock
 
 from gridpath import validate_inputs
+from gridpath.auxiliary.validations import write_validation_to_database
+
+DB_SCHEMA_FILE = os.path.join(os.path.dirname(__file__), "..", "db", "db_schema.sql")
 
 
 class FakeStructure:
@@ -115,6 +130,60 @@ class TestValidateInputsDriver(unittest.TestCase):
             )
 
         self.assertEqual(driver.call_count, 1)
+
+
+class TestValidationResultsPersist(unittest.TestCase):
+    def test_validation_writes_survive_the_connection_closing(self):
+        """
+        Mirror main()'s write sequence -- reset, a module writing an error,
+        the status update (which closes the connection) -- against a real
+        database file, then assert the rows are there on a NEW connection.
+        """
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        db_path = os.path.join(tmp_dir.name, "validate.db")
+        conn = sqlite3.connect(db_path)
+        with open(DB_SCHEMA_FILE) as f:
+            conn.executescript(f.read())
+        conn.execute("""INSERT INTO scenarios (scenario_id, scenario_name,
+            validation_status_id) VALUES (1, 'test_scenario', 0)""")
+        conn.commit()
+
+        validate_inputs.reset_input_validation(conn, 1)
+        write_validation_to_database(
+            conn=conn,
+            scenario_id=1,
+            weather_iteration=0,
+            hydro_iteration=0,
+            availability_iteration=0,
+            subproblem_id=1,
+            stage_id=1,
+            gridpath_module="test_module",
+            db_table="inputs_test",
+            severity="High",
+            errors=["a validation error"],
+        )
+        # update_validation_status prints the errors it finds; keep the
+        # suite output clean
+        with contextlib.redirect_stdout(io.StringIO()):
+            validate_inputs.update_validation_status(conn, 1)
+
+        check_conn = sqlite3.connect(db_path)
+        self.addCleanup(check_conn.close)
+        self.assertEqual(
+            [(1, "test_module", "High", "a validation error")],
+            check_conn.execute(
+                """SELECT scenario_id, gridpath_module, severity, description
+                FROM status_validation"""
+            ).fetchall(),
+        )
+        # 2 = invalid (errors were found)
+        self.assertEqual(
+            2,
+            check_conn.execute(
+                "SELECT validation_status_id FROM scenarios WHERE scenario_id = 1"
+            ).fetchone()[0],
+        )
 
 
 if __name__ == "__main__":

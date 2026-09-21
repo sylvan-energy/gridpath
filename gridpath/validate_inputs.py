@@ -341,6 +341,12 @@ def update_validation_status(conn, scenario_id):
         conn=conn, cursor=c, sql=sql, data=(status, scenario_id), many=False
     )
 
+    # Nothing in the validation flow commits before this point, so this
+    # single commit persists the validation reset, every status_validation
+    # row the modules wrote, and the status update (or, if anything raised
+    # before we got here, none of them -- closing without a commit rolls
+    # the open transaction back)
+    conn.commit()
     conn.close()
 
 

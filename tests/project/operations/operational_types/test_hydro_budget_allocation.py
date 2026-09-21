@@ -219,6 +219,31 @@ class TestHydroBudgetAllocationDatabase(unittest.TestCase):
     def test_validation_passes_for_nested_limits(self):
         self.assertListEqual([], self.get_validation_errors())
 
+    def test_validation_passes_with_horizon_map(self):
+        """
+        With the horizon map assigned, the days of the second month carry
+        the first month's limits relabeled with their own horizons; the
+        nesting and coverage checks must evaluate those model horizons (day
+        202003/202004 nest in month 202002), not the raw data horizons.
+        """
+        self.conn.execute("""UPDATE inputs_project_operational_chars
+            SET hydro_budget_allocation_hrz_map_scenario_id = 1
+            WHERE project = 'Hydro'""")
+        self.assertListEqual([], self.get_validation_errors())
+
+    def test_validation_ignores_other_subscenarios_and_iterations(self):
+        """
+        Raw-table rows under a subscenario ID or iteration other than the
+        validated scenario's must not participate in any of the checks.
+        """
+        self.conn.execute("""INSERT INTO inputs_project_hydro_budget_allocation
+            (project, hydro_budget_allocation_scenario_id, weather_iteration,
+            hydro_iteration, stage_id, balancing_type_horizon, horizon,
+            min_budget_fraction, max_budget_fraction)
+            VALUES ('Hydro', 2, 0, 0, 1, 'week', 202001, 0.2, 0.3),
+            ('Hydro', 1, 0, 5, 1, 'week', 202001, 0.2, 0.3)""")
+        self.assertListEqual([], self.get_validation_errors())
+
     def test_validation_flags_non_nested_sub_horizon(self):
         """
         The 'week' horizon straddles both months.
