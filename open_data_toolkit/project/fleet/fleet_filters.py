@@ -1265,6 +1265,14 @@ VAR_GEN_FILTER_STR = """gridpath_operational_type IN ('gen_var', 'gen_var_must_t
 HYDRO_FILTER_STR = (
     """gridpath_operational_type IN ('gen_hydro', 'gen_hydro_must_take')"""
 )
+# Types whose seasonal capability is already modeled elsewhere — variable
+# generators through their capacity-factor profiles, hydro through its
+# energy budgets (a seasonal capacity derate on top would double-count) —
+# or whose seasonal ratings match nameplate (storage): excluded from the
+# availability step's seasonal capacity derates
+SEASONAL_DERATE_FILTER_STR = """gridpath_operational_type NOT IN
+        ('gen_var', 'gen_var_must_take', 'gen_hydro', 'gen_hydro_must_take',
+        'stor')"""
 
 
 def add_fleet_selection_arguments(parser):
