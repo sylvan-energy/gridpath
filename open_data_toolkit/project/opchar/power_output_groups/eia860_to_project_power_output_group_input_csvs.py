@@ -44,13 +44,29 @@ once components are aggregated).
 **The POI limit is an assumption, not data**: EIA-860 collects no
 point-of-interconnection capacity. The default rule (``max_component``)
 takes each cluster's limit as max(total variable-component AC nameplate,
-total battery discharge capacity — the supplement's
-``max_discharge_rate_mw`` where filed, nameplate otherwise): the AC
-nameplate is each component's inverter/turbine limit, and a shared POI
-cannot be smaller than the largest component that ever uses it alone.
-The ``sum`` rule instead writes the (non-binding) sum of both sides —
-pure plumbing until real limits replace it. Correct known limits by
-editing the generated requirements CSV.
+total battery MW): the AC nameplate is each component's inverter/turbine
+limit, and a shared POI cannot be smaller than the largest component that
+ever uses it alone. The ``sum`` rule instead writes the (non-binding) sum
+of both sides — pure plumbing until real limits replace it. Correct known
+limits by editing the generated requirements CSV.
+
+**The battery side's MW basis** is the ``hybrid_battery_mw_basis``
+setting. The default, ``nameplate``, uses the battery's ``capacity_mw``
+from the fleet (generators) table — the same number the capacity step
+writes as the member's ``specified_capacity_mw``, so the group limit and
+the member capacity agree by construction. ``discharge_rating`` instead
+uses the EIA-860 energy-storage supplement's ``max_discharge_rate_mw``
+where a row is filed (nameplate otherwise). The supplement is an
+annual-form-only table pinned to one (by default the latest annual)
+vintage by the convert step, typically a year behind the fleet table's
+860M-derived reconstruction of the in-progress year; its ratings can
+describe an earlier build stage of a battery that has since expanded, or
+carry filing errors, so ``discharge_rating`` mixes EIA-860 vintages within
+one scenario and can put a group's cap BELOW its battery member's own
+modeled capacity. Under either basis the step warns — regardless of
+``quiet`` — for every hybrid battery whose filed discharge rating differs
+from its nameplate by more than 10 %, listing both values: those rows are
+the ones that need a human look.
 
 .. note:: The group couples net output within ``[0, POI]``. GridPath's
     group minimum parameter is non-negative (default 0), so a grouped
@@ -111,6 +127,7 @@ Settings
     * aggregation_level
     * hybrid_treatment
     * hybrid_poi_rule
+    * hybrid_battery_mw_basis
     * project_power_output_group_scenario_id
     * project_power_output_group_scenario_name
     * project_power_output_group_requirement_scenario_id
@@ -140,6 +157,10 @@ from open_data_toolkit.project.fleet.step_common import (
 )
 
 POI_RULE_CHOICES = ("max_component", "sum")
+BATTERY_MW_BASIS_CHOICES = ("nameplate", "discharge_rating")
+# Relative difference between a hybrid battery's filed discharge rating
+# and its nameplate above which the step warns (see the module docstring)
+BATTERY_RATING_MISMATCH_TOLERANCE = 0.1
 
 # The exact inputs_project_power_output_group(_requirement)s column sets,
 # in order — the CSV-to-DB loader enforces both
@@ -179,9 +200,25 @@ def parse_arguments(args):
         help="How each hybrid cluster's shared interconnection (POI) limit "
         "is derived — EIA-860 collects no POI capacity, so this is an "
         "assumption: 'max_component' (the default) = max(total variable "
-        "AC nameplate, total battery discharge capacity); 'sum' = their "
-        "non-binding sum (plumbing only, until real limits are edited "
-        "in).",
+        "AC nameplate, total battery MW); 'sum' = their non-binding sum "
+        "(plumbing only, until real limits are edited in). The battery "
+        "MW basis is hybrid_battery_mw_basis.",
+    )
+    parser.add_argument(
+        "-batt_mw",
+        "--hybrid_battery_mw_basis",
+        default="nameplate",
+        choices=list(BATTERY_MW_BASIS_CHOICES),
+        help="The MW basis of each hybrid battery in the POI rule: "
+        "'nameplate' (the default) = the fleet table's capacity_mw, the "
+        "same basis as the capacity step's specified_capacity_mw, so the "
+        "group limit and the member capacity agree by construction; "
+        "'discharge_rating' = the EIA-860 energy-storage supplement's "
+        "max_discharge_rate_mw where filed (nameplate otherwise) — an "
+        "annual-only table pinned to an older vintage than the fleet "
+        "table, whose ratings can lag a battery's build-out. Either way "
+        "the step warns for batteries whose filed rating and nameplate "
+        "differ by more than 10%%.",
     )
     parser.add_argument(
         "-grp_id", "--project_power_output_group_scenario_id", default=1
@@ -294,22 +331,89 @@ def cluster_hybrid_units(units_df, links_df):
     return units_df
 
 
-def get_cluster_poi_limits(units_df, hybrid_poi_rule):
+def get_battery_mw(units_df, hybrid_battery_mw_basis):
+    """
+    Each unit's battery-side MW under *hybrid_battery_mw_basis*:
+    ``nameplate`` = the fleet table's ``capacity_mw``;
+    ``discharge_rating`` = the supplement's ``max_discharge_rate_mw``
+    where filed, nameplate otherwise. Returns a Series aligned with
+    *units_df* (variable units included; callers mask them).
+    """
+    if hybrid_battery_mw_basis == "nameplate":
+        return units_df["capacity_mw"]
+    elif hybrid_battery_mw_basis == "discharge_rating":
+        return units_df["max_discharge_rate_mw"].fillna(units_df["capacity_mw"])
+    else:
+        raise ValueError(
+            f"Unknown hybrid_battery_mw_basis '{hybrid_battery_mw_basis}'; "
+            f"choose from {BATTERY_MW_BASIS_CHOICES}."
+        )
+
+
+def warn_on_battery_rating_nameplate_mismatch(
+    units_df, tolerance=BATTERY_RATING_MISMATCH_TOLERANCE
+):
+    """
+    Warn — loudly, regardless of any quiet setting — for every hybrid
+    battery whose filed supplement discharge rating differs from its
+    fleet-table nameplate by more than *tolerance* (relative to
+    nameplate), listing plant, generator, both values and the ratio.
+    The two come from different EIA-860 vintages (see the module
+    docstring): a large gap means a stale supplement row (partial build
+    stage), a filing error, or a genuinely derated battery — under the
+    ``nameplate`` basis the limit ignores the rating, under
+    ``discharge_rating`` it uses it, and either way the row deserves a
+    look. Returns the offending rows (empty when none).
+    """
+    is_battery = units_df["prime_mover_code"].isin(HYBRID_STORAGE_PRIME_MOVERS)
+    filed = units_df["max_discharge_rate_mw"].notna()
+    nameplate = units_df["capacity_mw"]
+    relative_gap = (units_df["max_discharge_rate_mw"] - nameplate).abs() / nameplate
+    mismatched = units_df.loc[
+        is_battery & filed & (nameplate > 0) & (relative_gap > tolerance),
+        ["plant_id_eia", "generator_id", "capacity_mw", "max_discharge_rate_mw"],
+    ].copy()
+
+    if not mismatched.empty:
+        mismatched["nameplate_to_rating_ratio"] = (
+            mismatched["capacity_mw"] / mismatched["max_discharge_rate_mw"]
+        )
+        mismatched = mismatched.sort_values(
+            "nameplate_to_rating_ratio", ascending=False
+        ).reset_index(drop=True)
+        print(
+            f"WARNING: {len(mismatched)} hybrid batter"
+            f"{'y has' if len(mismatched) == 1 else 'ies have'} a filed EIA-860 "
+            f"energy-storage-supplement discharge rating "
+            f"(max_discharge_rate_mw) differing from the fleet table's "
+            f"nameplate (capacity_mw) by more than {tolerance:.0%}. The two "
+            f"come from different EIA-860 vintages (the supplement is "
+            f"annual-only and typically older); a large gap usually means "
+            f"the supplement describes an earlier build stage or a filing "
+            f"error. The hybrid_battery_mw_basis setting decides which "
+            f"number the POI limit uses ('nameplate', the default, matches "
+            f"the capacity step). Review these units:\n"
+            + mismatched.to_string(index=False)
+        )
+
+    return mismatched
+
+
+def get_cluster_poi_limits(units_df, hybrid_poi_rule, hybrid_battery_mw_basis):
     """
     Each cluster's POI limit under *hybrid_poi_rule* (see the module
     docstring): per cluster, the variable side sums AC nameplate and the
-    storage side sums the supplement's discharge rating (nameplate where
-    unfiled). Returns a dataframe indexed by cluster with
-    ``poi_limit_mw``.
+    storage side sums each battery's MW under *hybrid_battery_mw_basis*
+    (``nameplate``, or the supplement's ``discharge_rating`` with a
+    nameplate fallback where unfiled). Returns a dataframe indexed by
+    cluster with ``poi_limit_mw``.
     """
     units_df = units_df.copy()
     is_battery = units_df["prime_mover_code"].isin(HYBRID_STORAGE_PRIME_MOVERS)
     units_df["variable_mw"] = units_df["capacity_mw"].where(~is_battery, 0)
-    units_df["battery_mw"] = (
-        units_df["max_discharge_rate_mw"]
-        .fillna(units_df["capacity_mw"])
-        .where(is_battery, 0)
-    )
+    units_df["battery_mw"] = get_battery_mw(
+        units_df=units_df, hybrid_battery_mw_basis=hybrid_battery_mw_basis
+    ).where(is_battery, 0)
 
     sides = units_df.groupby("cluster")[["variable_mw", "battery_mw"]].sum()
     if hybrid_poi_rule == "max_component":
@@ -320,7 +424,14 @@ def get_cluster_poi_limits(units_df, hybrid_poi_rule):
     return sides[["poi_limit_mw"]]
 
 
-def build_group_dfs(units_df, links_df, hybrid_poi_rule, aggregate_projects, period):
+def build_group_dfs(
+    units_df,
+    links_df,
+    hybrid_poi_rule,
+    hybrid_battery_mw_basis,
+    aggregate_projects,
+    period,
+):
     """
     The two output dataframes (group membership; group-period
     requirements) from the hybrid-component units. Disaggregated mode:
@@ -332,7 +443,9 @@ def build_group_dfs(units_df, links_df, hybrid_poi_rule, aggregate_projects, per
     """
     units_df = cluster_hybrid_units(units_df=units_df, links_df=links_df)
     poi_limits = get_cluster_poi_limits(
-        units_df=units_df, hybrid_poi_rule=hybrid_poi_rule
+        units_df=units_df,
+        hybrid_poi_rule=hybrid_poi_rule,
+        hybrid_battery_mw_basis=hybrid_battery_mw_basis,
     )
 
     if aggregate_projects:
@@ -451,10 +564,12 @@ def main(args=None):
         projects_df = pd.DataFrame(columns=PROJECTS_CSV_COLUMNS)
         requirements_df = pd.DataFrame(columns=REQUIREMENTS_CSV_COLUMNS)
     else:
+        warn_on_battery_rating_nameplate_mismatch(units_df=units_df)
         projects_df, requirements_df = build_group_dfs(
             units_df=units_df,
             links_df=links_df,
             hybrid_poi_rule=parsed_args.hybrid_poi_rule,
+            hybrid_battery_mw_basis=parsed_args.hybrid_battery_mw_basis,
             aggregate_projects=parsed_args.project_aggregation != "none",
             period=parsed_args.study_year,
         )
