@@ -14,12 +14,16 @@
 
 """
 The hybrid power-output-group step: clustering (co-location and
-cross-plant direct-support links), the POI-limit rules, per-cluster
-groups in the disaggregated mode vs per-token groups in aggregated
-modes, the exact output column sets, the empty-fleet header-only CSVs,
-and the treatment guards.
+cross-plant direct-support links), the POI-limit rules, the battery MW
+basis (nameplate default vs the supplement's discharge rating) and the
+rating-vs-nameplate mismatch warning, per-cluster groups in the
+disaggregated mode vs per-token groups in aggregated modes, the exact
+output column sets, the empty-fleet header-only CSVs, and the treatment
+guards.
 """
 
+import contextlib
+import io
 import os
 import pandas as pd
 import sqlite3
@@ -46,7 +50,8 @@ RAW_DATA_DB_SCHEMA = os.path.join(
 class TestPowerOutputGroupStep(unittest.TestCase):
     """
     Fixture fleet (all operating, one BA): plant 1 — co-located solar
-    (100 MW) + battery (50 MW nameplate, 40 MW filed discharge rating);
+    (100 MW) + battery (50 MW nameplate, 46 MW filed discharge rating —
+    within the mismatch-warning tolerance);
     plant 2 — standalone solar; plant 4 — battery (30 MW, no supplement
     rating) direct-supporting plant 5's solar (90 MW); plant 3 — solar +
     is_independent battery (never grouped).
@@ -106,7 +111,7 @@ class TestPowerOutputGroupStep(unittest.TestCase):
             VALUES ('v-test', '2025-01-01', ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (1, "B1", 40.0, 0, 0, None, None),
+                (1, "B1", 46.0, 0, 0, None, None),
                 (3, "B1", None, 1, 0, None, None),
                 (4, "B1", None, 0, 1, 5, "S1"),
             ],
@@ -116,22 +121,28 @@ class TestPowerOutputGroupStep(unittest.TestCase):
 
     def run_step(self, extra_args=()):
         output_directory = tempfile.mkdtemp(dir=self.tmp_dir.name)
-        step.main(
-            [
-                "--database",
-                self.db_path,
-                "--output_directory",
-                output_directory,
-                "--study_year",
-                "2030",
-                "--footprint",
-                "Interconnect1",
-                "--hybrid_treatment",
-                "power_output_group",
-                "--quiet",
-            ]
-            + list(extra_args)
-        )
+        self.stdout = io.StringIO()
+        with contextlib.redirect_stdout(self.stdout):
+            step.main(
+                [
+                    "--database",
+                    self.db_path,
+                    "--output_directory",
+                    output_directory,
+                    "--study_year",
+                    "2030",
+                    "--footprint",
+                    "Interconnect1",
+                    "--hybrid_treatment",
+                    "power_output_group",
+                    # No net-metering data in the fixture: silence that
+                    # loud warning so stdout assertions see only this
+                    # step's own
+                    "--include_net_metered",
+                    "--quiet",
+                ]
+                + list(extra_args)
+            )
         projects_df = pd.read_csv(
             os.path.join(output_directory, "projects", "1_hybrids.csv")
         )
@@ -156,9 +167,7 @@ class TestPowerOutputGroupStep(unittest.TestCase):
                 ("hybrid_4", "5__S1"),
             ],
         )
-        # POI = max(var, battery discharge): plant 1 uses the FILED 40 MW
-        # rating (not the 50 MW nameplate), plant 4's unfiled battery
-        # falls back to nameplate
+        # POI = max(var, battery MW); the solar side dominates both
         self.assertEqual(
             list(requirements_df.itertuples(index=False, name=None)),
             [
@@ -168,19 +177,109 @@ class TestPowerOutputGroupStep(unittest.TestCase):
         )
         self.assertEqual(list(projects_df.columns), step.PROJECTS_CSV_COLUMNS)
         self.assertEqual(list(requirements_df.columns), step.REQUIREMENTS_CSV_COLUMNS)
+        # Fixture ratings are within tolerance: no mismatch warning
+        self.assertNotIn("discharge rating", self.stdout.getvalue())
 
-    def test_sum_poi_rule(self):
-        _projects_df, requirements_df = self.run_step(
-            extra_args=["--hybrid_poi_rule", "sum"]
-        )
-        limits = dict(
+    def get_limits(self, requirements_df):
+        return dict(
             zip(
                 requirements_df["power_output_group"],
                 requirements_df["power_output_group_total_power_max"],
             )
         )
-        # var + battery discharge (filed rating / nameplate fallback)
-        self.assertEqual(limits, {"hybrid_1": 140.0, "hybrid_4": 120.0})
+
+    def test_sum_poi_rule(self):
+        _projects_df, requirements_df = self.run_step(
+            extra_args=["--hybrid_poi_rule", "sum"]
+        )
+        # var + battery NAMEPLATE (the default basis): plant 1's filed
+        # 46 MW rating is ignored
+        self.assertEqual(
+            self.get_limits(requirements_df), {"hybrid_1": 150.0, "hybrid_4": 120.0}
+        )
+
+    def test_sum_poi_rule_discharge_rating_basis(self):
+        _projects_df, requirements_df = self.run_step(
+            extra_args=[
+                "--hybrid_poi_rule",
+                "sum",
+                "--hybrid_battery_mw_basis",
+                "discharge_rating",
+            ]
+        )
+        # var + filed rating (plant 1), nameplate fallback where unfiled
+        # (plant 4)
+        self.assertEqual(
+            self.get_limits(requirements_df), {"hybrid_1": 146.0, "hybrid_4": 120.0}
+        )
+
+    def set_plant_1_battery(self, nameplate_mw, discharge_rating_mw):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "UPDATE raw_data_eia860_generators SET capacity_mw = ? "
+            "WHERE plant_id_eia = 1 AND generator_id = 'B1'",
+            (nameplate_mw,),
+        )
+        conn.execute(
+            "UPDATE raw_data_eia860_energy_storage SET max_discharge_rate_mw = ? "
+            "WHERE plant_id_eia = 1 AND generator_id = 'B1'",
+            (discharge_rating_mw,),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_battery_mw_basis_and_mismatch_warning(self):
+        # Plant 1's battery: 120 MW nameplate (larger than the 100 MW
+        # solar) but a stale 12 MW filed rating, 10% of nameplate
+        self.set_plant_1_battery(nameplate_mw=120, discharge_rating_mw=12)
+
+        # Default basis: the group cap is the battery's NAMEPLATE, the
+        # same number the capacity step writes for the member
+        _projects_df, requirements_df = self.run_step()
+        self.assertEqual(self.get_limits(requirements_df)["hybrid_1"], 120.0)
+        nameplate_output = self.stdout.getvalue()
+
+        # discharge_rating basis: the rating caps the battery side and the
+        # solar side wins the max
+        _projects_df, requirements_df = self.run_step(
+            extra_args=["--hybrid_battery_mw_basis", "discharge_rating"]
+        )
+        self.assertEqual(self.get_limits(requirements_df)["hybrid_1"], 100.0)
+        rating_output = self.stdout.getvalue()
+
+        # The mismatch warning fires under BOTH bases despite --quiet,
+        # naming the unit, both values and the ratio
+        for output in (nameplate_output, rating_output):
+            self.assertIn("WARNING: 1 hybrid battery", output)
+            self.assertIn("more than 10%", output)
+            self.assertRegex(output, r"\b1\s+B1\s+120\.0\s+12\.0\s+10\.0")
+
+    def test_mismatch_warning_lists_only_offenders(self):
+        # A 9% gap is within the 10% tolerance: silent
+        self.set_plant_1_battery(nameplate_mw=50, discharge_rating_mw=45.5)
+        self.run_step()
+        self.assertNotIn("WARNING", self.stdout.getvalue())
+
+        # A 12% gap below nameplate warns
+        self.set_plant_1_battery(nameplate_mw=50, discharge_rating_mw=44)
+        self.run_step()
+        self.assertIn("WARNING: 1 hybrid battery has", self.stdout.getvalue())
+
+        # ... and so does a rating ABOVE nameplate
+        self.set_plant_1_battery(nameplate_mw=50, discharge_rating_mw=60)
+        self.run_step()
+        self.assertIn("WARNING: 1 hybrid battery has", self.stdout.getvalue())
+        # Plant 4's unfiled battery is never reported
+        self.assertNotRegex(self.stdout.getvalue(), r"\b4\s+B1\b")
+
+    def test_unknown_battery_mw_basis_raises(self):
+        with self.assertRaisesRegex(ValueError, "hybrid_battery_mw_basis"):
+            step.get_battery_mw(
+                units_df=pd.DataFrame(
+                    {"capacity_mw": [1.0], "max_discharge_rate_mw": [1.0]}
+                ),
+                hybrid_battery_mw_basis="bogus",
+            )
 
     def test_aggregated_groups_merge_per_token(self):
         projects_df, requirements_df = self.run_step(
