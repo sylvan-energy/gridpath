@@ -511,19 +511,30 @@ def validate_hydro_budget_allocation(
 
     # Nesting: each sub-horizon must be of a balancing type other than the
     # project's own, and its timepoints must map to exactly one horizon of
-    # the project's energy-budget balancing type
+    # the project's energy-budget balancing type. The sub-horizons to check
+    # come from the already-queried df, NOT the raw table: df's rows are
+    # scoped by subscenario ID and iteration and, with a
+    # hydro_budget_allocation_hrz_map_scenario_id assigned, carry the
+    # model's own horizons rather than the raw data horizons (which may not
+    # exist in this temporal scenario at all)
+    sub_horizons = [
+        (str(prj), str(bt), int(hrz))
+        for prj, bt, hrz in df[idx_cols].drop_duplicates().itertuples(index=False)
+    ]
+    sub_relation_sql = " UNION ALL ".join(
+        ["SELECT ? AS project, ? AS balancing_type_horizon, ? AS horizon"]
+        + ["SELECT ?, ?, ?"] * (len(sub_horizons) - 1)
+    )
     c = conn.cursor()
-    parent_rows = c.execute(f"""
+    parent_rows = c.execute(
+        f"""
         SELECT sub.project, sub.balancing_type_horizon, sub.horizon,
             COALESCE(opchar.energy_budget_balancing_type,
                 opchar.balancing_type_project),
             COUNT(DISTINCT parent.horizon) AS n_parents,
             MIN(parent.horizon) AS parent_horizon,
             COUNT(DISTINCT sub_tmps.timepoint) AS n_sub_tmps
-        FROM (
-            SELECT DISTINCT project, balancing_type_horizon, horizon
-            FROM {HYDRO_BUDGET_ALLOCATION_TABLE}
-        ) AS sub
+        FROM ({sub_relation_sql}) AS sub
         JOIN inputs_project_operational_chars AS opchar
             ON opchar.project = sub.project
             AND opchar.project_operational_chars_scenario_id =
@@ -544,7 +555,9 @@ def validate_hydro_budget_allocation(
         GROUP BY sub.project, sub.balancing_type_horizon, sub.horizon,
             COALESCE(opchar.energy_budget_balancing_type,
                 opchar.balancing_type_project)
-    """).fetchall()
+        """,
+        [value for row in sub_horizons for value in row],
+    ).fetchall()
     parent_df = pd.DataFrame(
         parent_rows,
         columns=idx_cols

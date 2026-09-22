@@ -189,9 +189,15 @@ class TestExamples(unittest.TestCase):
             WHERE scenario_name = '{}'
             """.format(test))
         actual_validations = validations.fetchall()
+        # The validation run must also have committed its status update
+        # (1 = valid); this is a fresh connection, so a run that rolls its
+        # writes back on close would still show 0 = not_validated here
+        validation_status_id = c.execute("""SELECT validation_status_id FROM scenarios
+            WHERE scenario_name = '{}'""".format(test)).fetchone()[0]
         conn.close()
 
         self.assertListEqual(expected_validations, actual_validations)
+        self.assertEqual(1, validation_status_id)
 
     def run_and_check_objective(
         self,

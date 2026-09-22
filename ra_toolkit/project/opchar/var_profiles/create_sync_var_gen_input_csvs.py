@@ -39,8 +39,15 @@ Settings
     * output_directory
     * variable_generator_profile_scenario_id
     * variable_generator_profile_scenario_name
+    * stage_id
+    * study_year
     * overwrite
     * n_parallel_projects
+
+Timepoint IDs are the hour of the historical year (1 through 8760, or 8784 in
+a leap year) offset by ``study_year * 10000``, so they start at 1 by default
+or at ``YYYY0001`` when a study year is provided -- the same convention the
+Monte Carlo steps use. Each historical year becomes a weather iteration.
 
 """
 
@@ -109,6 +116,14 @@ def parse_arguments(args):
     )
 
     parser.add_argument(
+        "-s_y",
+        "--study_year",
+        default=0,
+        help=f"Defaults to 0. Timepoint IDs will start at 1. Set to YYYY to "
+        f"have timepoint IDs start at YYYY0001.",
+    )
+
+    parser.add_argument(
         "-o",
         "--overwrite",
         default=False,
@@ -169,6 +184,7 @@ def main(args=None):
         profile_scenario_id=parsed_args.variable_generator_profile_scenario_id,
         profile_scenario_name=parsed_args.variable_generator_profile_scenario_name,
         stage_id=parsed_args.stage_id,
+        study_year=int(parsed_args.study_year),
         output_directory=parsed_args.output_directory,
         overwrite=parsed_args.overwrite,
         varies_by_weather=1,

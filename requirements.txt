@@ -13,7 +13,7 @@ dill==0.4.1
 docutils==0.20.1
 duckdb==1.5.4
 execnet==2.1.2
-GridPath==2026.11.0
+GridPath==2026.11.1
 gurobipy==13.0.3
 highspy==1.15.1
 highspy-extras==1.15.1
@@ -33,7 +33,7 @@ packaging==26.3
 pandas==3.0.3
 pathspec==1.1.1
 pillow==12.3.0
-platformdirs==4.11.10
+platformdirs==4.11.11
 pluggy==1.6.0
 pscript==0.8.1
 Pygments==2.21.0
