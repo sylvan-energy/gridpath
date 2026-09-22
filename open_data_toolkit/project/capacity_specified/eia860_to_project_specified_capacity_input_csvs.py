@@ -26,6 +26,17 @@ Create specified capacity CSV for a EIA860-based project portfolio.
     default) is PUDL's EIA860M-derived reconstruction of the in-progress
     report year, not an as-filed annual survey.
 
+Storage units with no EIA-reported energy capacity — common among
+planned and under-construction batteries — contribute no
+``specified_stor_capacity_mwh``, which silently understates an
+aggregated project whenever some (but not all) of its units are unrated.
+The ``default_battery_duration_hours`` and
+``default_pumped_storage_duration_hours`` settings fill such units PER
+UNIT as duration × capacity_mw before aggregation (see
+``open_data_toolkit.project.fleet.storage_durations``); the run prints what was
+filled, and the fleet audit's ``energy_mwh_source`` column shows the
+assumption per unit under the same settings.
+
 =====
 Usage
 =====
@@ -60,6 +71,8 @@ Settings
     * aggregation_dimensions
     * aggregation_level
     * hybrid_treatment
+    * default_battery_duration_hours
+    * default_pumped_storage_duration_hours
     * project_specified_capacity_scenario_id
     * project_specified_capacity_scenario_name
 
@@ -73,11 +86,18 @@ import pandas as pd
 import sys
 
 from open_data_toolkit.project.fleet.step_common import (
+    EIA860_GENERATORS_TABLE,
     connect_and_check_scope,
     get_fleet_relation_sql_from_args,
     get_project_name_str_from_args,
     warn_on_fleet_data_gaps,
     add_shared_project_step_arguments,
+)
+from open_data_toolkit.project.fleet.storage_durations import (
+    add_default_storage_duration_arguments,
+    get_default_durations_from_args,
+    get_specified_stor_capacity_mwh_expr,
+    report_default_storage_duration_fill,
 )
 
 
@@ -104,6 +124,7 @@ def parse_arguments(args):
     parser.add_argument(
         "-cap_name", "--project_specified_capacity_scenario_name", default="base"
     )
+    add_default_storage_duration_arguments(parser=parser)
 
     parser.add_argument("-q", "--quiet", default=False, action="store_true")
 
@@ -120,8 +141,16 @@ def get_project_capacity(
     csv_location,
     subscenario_id,
     subscenario_name,
+    default_durations,
     aggregate_projects=False,
 ):
+    # The per-unit storage energy capacity, with any requested
+    # default-duration fill for unrated units
+    stor_capacity_mwh_expr = get_specified_stor_capacity_mwh_expr(
+        generators_table=EIA860_GENERATORS_TABLE,
+        default_durations=default_durations,
+    )
+
     # The two modes share the fleet relation but differ in the SELECT
     # list: aggregated groups SUM their units' capacities
     if aggregate_projects:
@@ -133,11 +162,7 @@ def get_project_capacity(
             NULL AS shaping_capacity_mw,
             NULL AS hyb_gen_specified_capacity_mw,
             NULL AS hyb_stor_specified_capacity_mw,
-            SUM(CASE
-                WHEN raw_data_eia860_generators.prime_mover_code NOT IN ('BA',
-                'ES', 'FW', 'PS') THEN NULL
-                ELSE energy_storage_capacity_mwh
-            END)
+            SUM({stor_capacity_mwh_expr})
                 AS specified_stor_capacity_mwh,
             NULL AS fuel_production_capacity_fuelunitperhour,
             NULL AS fuel_release_capacity_fuelunitperhour,
@@ -155,11 +180,7 @@ def get_project_capacity(
         NULL AS shaping_capacity_mw,
         NULL AS hyb_gen_specified_capacity_mw,
         NULL AS hyb_stor_specified_capacity_mw,
-        CASE
-            WHEN raw_data_eia860_generators.prime_mover_code NOT IN ('BA',
-            'ES', 'FW', 'PS') THEN NULL
-            ELSE energy_storage_capacity_mwh
-        END
+        {stor_capacity_mwh_expr}
             AS specified_stor_capacity_mwh,
         NULL AS fuel_production_capacity_fuelunitperhour,
         NULL AS fuel_release_capacity_fuelunitperhour,
@@ -188,6 +209,7 @@ def main(args=None):
 
     project_name_str = get_project_name_str_from_args(parsed_args)
     fleet_relation_sql = get_fleet_relation_sql_from_args(parsed_args)
+    default_durations = get_default_durations_from_args(parsed_args)
 
     conn = connect_and_check_scope(parsed_args)
     warn_on_fleet_data_gaps(conn=conn, parsed_args=parsed_args)
@@ -200,7 +222,16 @@ def main(args=None):
         csv_location=parsed_args.output_directory,
         subscenario_id=parsed_args.project_specified_capacity_scenario_id,
         subscenario_name=parsed_args.project_specified_capacity_scenario_name,
+        default_durations=default_durations,
         aggregate_projects=parsed_args.project_aggregation != "none",
+    )
+
+    report_default_storage_duration_fill(
+        conn=conn,
+        project_name_str=project_name_str,
+        fleet_relation_sql=fleet_relation_sql,
+        default_durations=default_durations,
+        generators_table=EIA860_GENERATORS_TABLE,
     )
 
     conn.close()
