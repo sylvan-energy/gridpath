@@ -45,7 +45,15 @@ unit, the audit CSV (``fleet_audit.csv`` in the output directory) shows:
   pairing is against in-fleet partners, so it follows the fleet-selection
   settings) and ``storage_coupling`` (the EIA860 energy-storage
   supplement's coupling flags for batteries with a supplement row — the
-  evidence base for how a study should treat hybrids).
+  evidence base for how a study should treat hybrids);
+* the storage-energy columns: ``energy_storage_capacity_mwh`` as
+  reported, and ``energy_mwh_source`` labeling where each storage unit's
+  energy capacity comes from under the default-storage-duration settings
+  (``filed``/``default_duration``/``missing`` — see
+  ``open_data_toolkit.project.fleet.storage_durations``; run the audit with the
+  same ``default_battery_duration_hours``/
+  ``default_pumped_storage_duration_hours`` values as the
+  specified-capacity step so the labels describe the generated CSV).
 
 A units/MW waterfall per stage is printed, and the audit CROSS-CHECKS its
 verdicts against the actual fleet relation the input-CSV steps query
@@ -105,6 +113,8 @@ Settings
 * aggregation_dimensions
 * aggregation_level
 * hybrid_treatment
+* default_battery_duration_hours
+* default_pumped_storage_duration_hours
 
 """
 
@@ -146,6 +156,11 @@ from open_data_toolkit.project.fleet.step_common import (
     warn_on_fleet_data_gaps,
     add_shared_project_step_arguments,
 )
+from open_data_toolkit.project.fleet.storage_durations import (
+    add_default_storage_duration_arguments,
+    get_default_durations_from_args,
+    get_energy_mwh_source_expr,
+)
 
 AUDIT_FILE_NAME = "fleet_audit.csv"
 
@@ -167,6 +182,7 @@ def parse_arguments(args):
         "--output_directory",
         default="../../csvs_open_data/project/fleet_audit",
     )
+    add_default_storage_duration_arguments(parser=parser)
 
     parser.add_argument("-q", "--quiet", default=False, action="store_true")
 
@@ -189,6 +205,7 @@ def get_fleet_audit_sql(
     require_plant_in_eia860_vintage,
     project_name_str,
     fleet_relation_sql,
+    default_durations,
 ):
     """
     The per-unit audit query: every raw_data_eia860_generators unit with
@@ -201,7 +218,11 @@ def get_fleet_audit_sql(
     paired hybrid component — 'direct_support'/'co_located'/empty; built
     over *fleet_relation_sql*, since units pair only against in-fleet
     partners) and storage_coupling (the EIA860 energy-storage supplement's
-    coupling flags — the evidence base for choosing a hybrid treatment).
+    coupling flags — the evidence base for choosing a hybrid treatment) —
+    and the storage-energy columns: energy_storage_capacity_mwh as
+    reported and energy_mwh_source, labeling where each storage unit's
+    energy capacity comes from under *default_durations*
+    ('filed'/'default_duration'/'missing').
     """
     # The audit joins EIA-930A unconditionally (to SHOW each unit's 930A
     # BAs under either ba_source); the resolution mirrors
@@ -292,6 +313,10 @@ def get_fleet_audit_sql(
     storage_coupling_expr = get_storage_coupling_expr(
         generators_table="raw_data_eia860_generators"
     )
+    energy_mwh_source_expr = get_energy_mwh_source_expr(
+        generators_table="raw_data_eia860_generators",
+        default_durations=default_durations,
+    )
 
     return f"""
     SELECT
@@ -329,6 +354,8 @@ def get_fleet_audit_sql(
         CASE WHEN {in_fleet_predicate}
             THEN {hybrid_pairing_expr} END AS hybrid_pairing,
         {storage_coupling_expr} AS storage_coupling,
+        energy_storage_capacity_mwh,
+        {energy_mwh_source_expr} AS energy_mwh_source,
         CASE WHEN {in_fleet_predicate}
             THEN {project_name_str} END AS project
     FROM (
@@ -457,6 +484,7 @@ def main(args=None):
         require_plant_in_eia860_vintage=parsed_args.require_plant_in_eia860_vintage,
         project_name_str=project_name_str,
         fleet_relation_sql=fleet_relation_sql,
+        default_durations=get_default_durations_from_args(parsed_args),
     )
 
     conn = connect_and_check_scope(parsed_args)

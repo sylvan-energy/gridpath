@@ -414,9 +414,11 @@ def validate_inputs(
         ),
     )
 
-    # Check for missing values (vs. missing row entries above)
+    # Check for missing values (vs. missing row entries above); a NULL
+    # energy capacity would otherwise surface only at model load
     cols = [
         "specified_capacity_mw",
+        "specified_stor_capacity_mwh",
     ]
     write_validation_to_database(
         conn=conn,

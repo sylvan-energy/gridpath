@@ -38,6 +38,19 @@ kinds of adjustment are made:
   and ``pumped_storage_duration`` settings for battery (BA) and
   pumped-storage (PS) prime movers respectively.
 
+  .. warning:: This patch is PROJECT-level and is superseded by the
+      specified-capacity steps' per-unit
+      ``default_battery_duration_hours``/
+      ``default_pumped_storage_duration_hours`` settings (see
+      ``open_data_toolkit.project.fleet.storage_durations``), which should be
+      preferred. In an aggregated fleet, a project's CSV value is NULL
+      only when NO unit is rated; a project where SOME units are unrated
+      has a positive-but-understated value this patch cannot see (the
+      unit information is gone from the CSV), and filling a fully-NULL
+      project as duration × the WHOLE project's MW misstates it if any
+      unit was rated at zero. The per-unit fill handles all of these; the
+      two compose safely (this patch never touches non-NULL values).
+
 Because its patches only ever update rows that already exist in the
 generated CSVs, this step deliberately queries a SUPERSET fleet (e.g.
 behind-the-meter units are always included, and it takes no
@@ -149,7 +162,10 @@ def parse_arguments(args):
         "-ba_dur",
         "--battery_duration",
         default=STORAGE_DURATION_DEFAULTS["BA"],
-        help=f"Defaults to '{STORAGE_DURATION_DEFAULTS['PS']}'.",
+        help=f"Defaults to '{STORAGE_DURATION_DEFAULTS['BA']}'. Superseded "
+        "by the specified-capacity steps' per-unit "
+        "default_battery_duration_hours setting — see this step's "
+        "documentation.",
     )
     parser.add_argument(
         "-ps_dur",
