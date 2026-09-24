@@ -1,7 +1,7 @@
-horizon	balancing_type_horizon	boundary
-202001	day	circular
-202002	day	linear
-203001	day	circular
-203002	day	linear
-2020	year	circular
-2030	year	linear
+horizon	balancing_type_horizon	boundary	stor_stress_hrz_type
+202001	day	circular	.
+202002	day	linear	stress
+203001	day	circular	.
+203002	day	linear	stress
+2020	year	circular	.
+2030	year	linear	.
