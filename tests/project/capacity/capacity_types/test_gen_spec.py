@@ -151,6 +151,10 @@ class TestGenSpec(unittest.TestCase):
                 ("DSM_Load_Component_Shift", 2030),
                 ("Gen_Simple_No_Load_Balance_Power", 2020),
                 ("Gen_Simple_No_Load_Balance_Power", 2030),
+                ("Gen_Strike_Price", 2020),
+                ("Gen_Strike_Price", 2030),
+                ("Gen_Strike_Price_Tie", 2020),
+                ("Gen_Strike_Price_Tie", 2030),
             ]
         )
         actual_proj_period_set = sorted(
@@ -208,6 +212,10 @@ class TestGenSpec(unittest.TestCase):
                     ("DSM_Load_Component_Shift", 2030): 1,
                     ("Gen_Simple_No_Load_Balance_Power", 2020): 100,
                     ("Gen_Simple_No_Load_Balance_Power", 2030): 100,
+                    ("Gen_Strike_Price", 2020): 100,
+                    ("Gen_Strike_Price", 2030): 100,
+                    ("Gen_Strike_Price_Tie", 2020): 100,
+                    ("Gen_Strike_Price_Tie", 2030): 100,
                 }.items()
             )
         )
@@ -270,6 +278,10 @@ class TestGenSpec(unittest.TestCase):
                     ("DSM_Load_Component_Shift", 2030): 0,
                     ("Gen_Simple_No_Load_Balance_Power", 2020): 0,
                     ("Gen_Simple_No_Load_Balance_Power", 2030): 0,
+                    ("Gen_Strike_Price", 2020): 0,
+                    ("Gen_Strike_Price", 2030): 0,
+                    ("Gen_Strike_Price_Tie", 2020): 0,
+                    ("Gen_Strike_Price_Tie", 2030): 0,
                 }.items()
             )
         )

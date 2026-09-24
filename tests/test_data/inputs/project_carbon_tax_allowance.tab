@@ -29,3 +29,5 @@ Disp_Cont_Commit	2030	Gas	5
 Disp_No_Commit	2030	Gas	5
 Clunky_Old_Gen	2030	Solid	3
 Clunky_Old_Gen2	2030	Solid	3
+Gen_Strike_Price	2020	Gas	0.01
+Gen_Strike_Price	2030	Gas	0.005
