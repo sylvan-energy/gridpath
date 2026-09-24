@@ -31,7 +31,7 @@ of_markets,
 of_water,
 of_tuning,
 of_policy,
-temporal_scenario_id,2
+temporal_scenario_id,27
 load_zone_scenario_id,1
 load_balance_scenario_id,1
 lf_reserves_up_ba_scenario_id,1
@@ -61,7 +61,6 @@ water_system_params_scenario_id,NULL
 water_network_scenario_id,NULL
 project_portfolio_scenario_id,38
 project_operational_chars_scenario_id,1
-stor_stress_hrz_type_scenario_id,1
 project_availability_scenario_id,1
 fuel_scenario_id,1
 project_load_zone_scenario_id,1

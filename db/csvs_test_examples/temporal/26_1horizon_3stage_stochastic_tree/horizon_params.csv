@@ -1,8 +1,8 @@
-balancing_type_horizon,horizon,boundary
-day,202001,circular
-day,2030101,circular
-day,2030201,circular
-day,2040101,circular
-day,2040201,circular
-day,2040301,circular
-day,2040401,circular
+balancing_type_horizon,horizon,boundary,stor_stress_hrz_type
+day,202001,circular,
+day,2030101,circular,
+day,2030201,circular,
+day,2040101,circular,
+day,2040201,circular,
+day,2040301,circular,
+day,2040401,circular,

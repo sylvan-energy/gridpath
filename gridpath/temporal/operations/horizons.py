@@ -41,6 +41,11 @@ of a horizon. If the boundary is 'linked,' then we use the last timepoint of
 the previous horizon as the previous timepoint for the first timepoint of a
 horizon (this can only be done when running multiple subproblems and inputs
 must be specified appropriately).
+
+Each *horizon* can optionally also be designated as an 'average' or 'stress'
+horizon via the :code:`stor_stress_hrz_type` input; this designation is used
+only by projects of the :code:`stor_stress_hrz` operational type and is
+ignored otherwise (see that module for the semantics).
 """
 
 import csv
@@ -605,7 +610,8 @@ def get_inputs_from_database(
     """
     builtin_hrz_types_list = ", ".join(f"'{h}'" for h in BUILTIN_HORIZON_TYPES)
     c1 = conn.cursor()
-    horizons = c1.execute(f"""SELECT horizon, balancing_type_horizon, boundary
+    horizons = c1.execute(f"""SELECT horizon, balancing_type_horizon, boundary,
+        stor_stress_hrz_type
         FROM inputs_temporal_horizons
         WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
         AND (balancing_type_horizon, horizon) in (
@@ -687,7 +693,8 @@ def write_model_inputs(
         stage=stage,
         fname="horizons_user_defined.tab",
         data=horizons,
-        replace_nulls=False,
+        # stor_stress_hrz_type is NULL for horizons without a designation
+        replace_nulls=True,
     )
 
     write_tab_file_model_inputs(

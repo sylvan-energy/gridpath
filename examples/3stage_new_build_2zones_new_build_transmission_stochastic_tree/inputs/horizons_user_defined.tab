@@ -1,8 +1,8 @@
-horizon	balancing_type_horizon	boundary
-202001	day	circular
-2030101	day	circular
-2030201	day	circular
-2040101	day	circular
-2040201	day	circular
-2040301	day	circular
-2040401	day	circular
+horizon	balancing_type_horizon	boundary	stor_stress_hrz_type
+202001	day	circular	.
+2030101	day	circular	.
+2030201	day	circular	.
+2040101	day	circular	.
+2040201	day	circular	.
+2040301	day	circular	.
+2040401	day	circular	.

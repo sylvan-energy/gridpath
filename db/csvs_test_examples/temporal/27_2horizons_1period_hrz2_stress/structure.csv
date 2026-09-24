@@ -1,0 +1,5 @@
+subproblem_id,stage_id,timepoint,period,number_of_hours_in_timepoint,timepoint_weight,previous_stage_timepoint_map,spinup_or_lookahead,linked_timepoint,year,month,day_of_month,hour_of_day,timestamp,ignore_horizon_day,ignore_horizon_year
+1,1,20200101,2020,1,2190,,0,,2020,1,1,1,1/1/20 0:00,202001,2020
+1,1,20200102,2020,1,2190,,0,,2020,1,1,2,1/1/20 1:00,202001,2020
+1,1,20200201,2020,1,2190,,0,,2020,2,1,1,2/1/20 0:00,202002,2020
+1,1,20200202,2020,1,2190,,0,,2020,2,1,2,2/1/20 1:00,202002,2020
