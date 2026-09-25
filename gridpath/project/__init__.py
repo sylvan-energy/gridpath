@@ -166,6 +166,7 @@ def add_model_components(
             "gen_hydro_must_take",
             "gen_must_run",
             "gen_simple",
+            "gen_simple_strike_price",
             "gen_var",
             "gen_var_must_take",
             "stor",

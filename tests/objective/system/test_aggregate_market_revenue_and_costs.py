@@ -30,6 +30,7 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.operations.horizons",
     "geography.load_zones",
     "geography.markets",
+    "system.markets.prices",
     "geography.water_network",
     "system.water.water_system_params",
     "system.water.water_nodes",
@@ -48,7 +49,6 @@ PREREQUISITE_MODULE_NAMES = [
     "project.operations.operational_types",
     "project.operations.power",
     "system.markets.market_participation",
-    "system.markets.prices",
     "system.markets.volume",
 ]
 NAME_OF_MODULE_BEING_TESTED = "objective.system.aggregate_market_revenue_and_costs"

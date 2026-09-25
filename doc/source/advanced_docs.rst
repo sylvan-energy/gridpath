@@ -220,6 +220,10 @@ gridpath.project.capacity.operational_types.gen_must_run
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_must_run.add_model_components
 
+gridpath.project.capacity.operational_types.gen_simple_strike_price
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. automodule:: gridpath.project.operations.operational_types.gen_simple_strike_price.add_model_components
+
 gridpath.project.capacity.operational_types.gen_always_on
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_always_on.add_model_components

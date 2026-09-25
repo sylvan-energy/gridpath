@@ -456,6 +456,10 @@ Must-Run Generation (*gen_must_run*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_must_run
 
+Strike-Price Generation (*gen_simple_strike_price*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. automodule:: gridpath.project.operations.operational_types.gen_simple_strike_price
+
 Always-On Generation (*gen_always_on*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_always_on

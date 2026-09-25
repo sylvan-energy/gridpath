@@ -365,6 +365,8 @@ class TestOperationsInit(unittest.TestCase):
                 ("Nuclear_Flexible", 2030, 0),
                 ("DAC", 2020, 0),
                 ("DAC", 2030, 0),
+                ("Gen_Strike_Price", 2020, 0),
+                ("Gen_Strike_Price", 2030, 0),
             ]
         )
 
@@ -730,6 +732,8 @@ class TestOperationsInit(unittest.TestCase):
                     ("Nuclear_z2", 2030, 0): 1666.67,
                     ("DAC", 2020, 0): 1000.0,
                     ("DAC", 2030, 0): 1000.0,
+                    ("Gen_Strike_Price", 2020, 0): 1.1,
+                    ("Gen_Strike_Price", 2030, 0): 1.1,
                 }.items()
             )
         )
@@ -786,6 +790,8 @@ class TestOperationsInit(unittest.TestCase):
                     ("Nuclear_z2", 2030, 0): 0,
                     ("DAC", 2020, 0): 0,
                     ("DAC", 2030, 0): 0,
+                    ("Gen_Strike_Price", 2020, 0): 0,
+                    ("Gen_Strike_Price", 2030, 0): 0,
                 }.items()
             )
         )

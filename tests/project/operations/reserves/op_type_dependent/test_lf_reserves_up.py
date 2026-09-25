@@ -31,6 +31,8 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.investment.periods",
     "temporal.operations.horizons",
     "geography.load_zones",
+    "geography.markets",
+    "system.markets.prices",
     "geography.load_following_up_balancing_areas",
     "project",
     "project.capacity.capacity",

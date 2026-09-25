@@ -1346,6 +1346,8 @@ def get_optype_inputs_from_db(scenario_id, subscenarios, conn, op_type):
         "upward_reserves_to_soc_depletion",
         "reserves_setpoint_duration_hours",
         "energy_budget_balancing_type",
+        "market",
+        "dispatch_at_equal_cost",
     ]
 
     sql = """SELECT {}

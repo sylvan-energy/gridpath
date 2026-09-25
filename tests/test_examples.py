@@ -1505,6 +1505,24 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_strike_price(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_strike_price" example
+        :return:
+        """
+        scenario_name = "test_markets_w_strike_price"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_strike_price_carbon_tax(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_strike_price_carbon_tax" example
+        :return:
+        """
+        scenario_name = "test_markets_w_strike_price_carbon_tax"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_horizon_energy_target(self):
         """
         Check validation and objective function value of

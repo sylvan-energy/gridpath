@@ -31,6 +31,7 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.operations.horizons",
     "geography.load_zones",
     "geography.markets",
+    "system.markets.prices",
     "geography.water_network",
     "system.water.water_system_params",
     "system.water.water_nodes",

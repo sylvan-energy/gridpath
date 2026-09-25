@@ -146,6 +146,8 @@ class TestExogenousAvailabilityType(unittest.TestCase):
                 "DSM_Load_Component_Modifier",
                 "DSM_Load_Component_Shift",
                 "Gen_Simple_No_Load_Balance_Power",
+                "Gen_Strike_Price",
+                "Gen_Strike_Price_Tie",
             ]
         )
         actual_project_subset = sorted([prj for prj in instance.AVL_EXOG])

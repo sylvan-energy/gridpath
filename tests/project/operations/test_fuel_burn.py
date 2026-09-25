@@ -30,6 +30,8 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.investment.periods",
     "temporal.operations.horizons",
     "geography.load_zones",
+    "geography.markets",
+    "system.markets.prices",
     "geography.water_network",
     "system.water.water_system_params",
     "system.water.water_nodes",
@@ -249,6 +251,8 @@ class TestFuelBurn(unittest.TestCase):
             ("Nuclear_Flexible", 2030): [0],
             ("DAC", 2020): [0],
             ("DAC", 2030): [0],
+            ("Gen_Strike_Price", 2020): [0],
+            ("Gen_Strike_Price", 2030): [0],
         }
         expected_hr_curve_prj_tmp_sgms = list()
         for prj, tmp in expected_hr_curve_prj_tmps:
