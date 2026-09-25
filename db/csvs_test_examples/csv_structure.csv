@@ -207,7 +207,9 @@ markets/prices,markets,market_price_scenario_id,market_prices,simple,,0,,,,,
 markets/prices/price_profiles,markets,market_price_profile_scenario_id,market_price_profiles,simple,,1,market,,,market_price_scenario_id,market_prices
 markets/volume,markets,market_volume_scenario_id,market_volume,simple,,0,,,,,
 markets/volume/volume_profiles,markets,market_volume_profile_scenario_id,market_volume_profiles,simple,,1,market,,,market_volume_scenario_id,market_volume
+markets/volume/volume_hrz_profiles,markets,market_volume_profile_scenario_id,market_volume_hrz_profiles,skip_subscenario,,1,market,,,market_volume_scenario_id,market_volume
 markets/volume_totals_in_tmp,markets,market_volume_total_in_tmp_scenario_id,market_volume_totals_in_tmp,simple,,0,,,,,
+markets/volume_totals_in_hrz,markets,market_volume_total_in_hrz_scenario_id,market_volume_totals_in_hrz,simple,,0,,,,,
 markets/volume_totals_in_prd,markets,market_volume_total_in_prd_scenario_id,market_volume_totals_in_prd,simple,,0,,,,,
 water/water_system_params,water,water_system_params_scenario_id,system_water_system_params,simple,,0,,,,,
 water/water_network,water,water_network_scenario_id,geography_water_network,simple,,0,,,,,

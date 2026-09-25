@@ -2485,6 +2485,92 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_prd_total_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_hrz_limits(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_hrz_limits" example.
+
+        The horizon-level limit is on the net position of Market_Hub, the
+        only market of market_scenario_id 1, over the 'day' horizon 202001,
+        which spans exactly the timepoints of period 2020; it is therefore
+        the same restriction as the all-market period total limit of
+        "test_markets_w_prd_total_limits", whose objective this example
+        shares.
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_hrz_total_limits(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_hrz_total_limits" example.
+
+        The all-market limit over the 'day' horizon 202001 is the period
+        total limit of "test_markets_w_prd_total_limits" imposed over the
+        horizon that spans the period, so the two share an objective.
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_total_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_default_volume(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_default_volume" example.
+
+        The market volume profile is written as a wildcard (timepoint 0)
+        row plus the timepoints that differ from it, so it resolves to the
+        limits "test_markets" states timepoint by timepoint and the two
+        share an objective. That the resolved limits are identical, not
+        merely equivalent, is checked in
+        test_market_volume_defaults_resolve_to_explicit_limits.
+        :return:
+        """
+        scenario_name = "test_markets_w_default_volume"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_market_volume_defaults_resolve_to_explicit_limits(self):
+        """
+        The wildcard row of the "test_markets_w_default_volume" market
+        volume profile must resolve to exactly the limits that
+        "test_markets" spells out per timepoint, so the two scenarios'
+        market_volume.tab files must be byte-identical. Compare the
+        resolved limits rather than the objectives, which a coincidence
+        could match.
+
+        Write both scenarios' inputs to a temporary directory instead of
+        reading the committed example directories, which the example tests
+        regenerate and may be rewriting concurrently.
+        :return:
+        """
+        limits = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for scenario_name in ["test_markets", "test_markets_w_default_volume"]:
+                get_scenario_inputs.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        temp_dir,
+                        "--quiet",
+                    ]
+                )
+                tab_file = os.path.join(
+                    temp_dir, scenario_name, "inputs", "market_volume.tab"
+                )
+                self.assertTrue(
+                    os.path.exists(tab_file), msg=f"{tab_file} was not written"
+                )
+                with open(tab_file) as f:
+                    limits[scenario_name] = f.read()
+
+        self.assertEqual(
+            limits["test_markets"], limits["test_markets_w_default_volume"]
+        )
+
     def test_example_test_new_build_storage_losses_limit(self):
         """
         Check validation and objective function value of
