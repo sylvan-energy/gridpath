@@ -65,11 +65,12 @@ try:
     MODULE_BEING_TESTED = import_module(
         "." + NAME_OF_MODULE_BEING_TESTED, package="gridpath"
     )
+    volume = MODULE_BEING_TESTED
 except ImportError:
     print("ERROR! Couldn't import module " + NAME_OF_MODULE_BEING_TESTED + " to test.")
 
 
-class TestMarketPrices(unittest.TestCase):
+class TestMarketVolume(unittest.TestCase):
     """ """
 
     def test_add_model_components(self):
@@ -120,213 +121,158 @@ class TestMarketPrices(unittest.TestCase):
         )
         instance = m.create_instance(data)
 
-        # Load test data
-        # Load test data
-        market_volume_df = pd.read_csv(
-            os.path.join(TEST_DATA_DIRECTORY, "inputs", "market_volume.tab"), sep="\t"
+        # Set: MARKET_GROUP_MARKETS and the sets derived from it
+        groups_df = pd.read_csv(
+            os.path.join(TEST_DATA_DIRECTORY, "inputs", "market_groups.tab"), sep="\t"
         )
+        expected_group_markets = sorted(
+            groups_df[["market_group", "market"]].itertuples(index=False, name=None)
+        )
+        self.assertListEqual(
+            expected_group_markets, sorted(instance.MARKET_GROUP_MARKETS)
+        )
+        self.assertListEqual(
+            sorted(set(groups_df["market_group"])), sorted(instance.MARKET_GROUPS)
+        )
+        for group, members in groups_df.groupby("market_group"):
+            self.assertListEqual(
+                sorted(members["market"]),
+                sorted(instance.MARKETS_BY_MARKET_GROUP[group]),
+                msg=group,
+            )
 
-        # Param: max_market_sales
-        expected_max_sales = OrderedDict(
-            sorted(
-                market_volume_df.set_index(["market", "timepoint"])
-                .to_dict()["max_market_sales"]
-                .items()
-            )
-        )
-        actual_max_sales = OrderedDict(
-            sorted(
-                {
-                    (mrkt, tmp): instance.max_market_sales[mrkt, tmp]
-                    for mrkt in instance.MARKETS
-                    for tmp in instance.TMPS
-                }.items()
-            )
-        )
-        self.assertDictEqual(expected_max_sales, actual_max_sales)
-
-        # Param: max_market_purchases
-        expected_max_purchases = OrderedDict(
-            sorted(
-                market_volume_df.set_index(["market", "timepoint"])
-                .to_dict()["max_market_purchases"]
-                .items()
-            )
-        )
-        actual_max_purchases = OrderedDict(
-            sorted(
-                {
-                    (mrkt, tmp): instance.max_market_purchases[mrkt, tmp]
-                    for mrkt in instance.MARKETS
-                    for tmp in instance.TMPS
-                }.items()
-            )
-        )
-        self.assertDictEqual(expected_max_purchases, actual_max_purchases)
-
-        # Param: max_final_market_sales
-        expected_max_final_sales = OrderedDict(
-            sorted(
-                market_volume_df.set_index(["market", "timepoint"])
-                .to_dict()["max_final_market_sales"]
-                .items()
-            )
-        )
-        for key in expected_max_final_sales.keys():
-            expected_max_final_sales[key] = float("inf")
-
-        actual_max_final_sales = OrderedDict(
-            sorted(
-                {
-                    (mrkt, tmp): instance.max_final_market_sales[mrkt, tmp]
-                    for mrkt in instance.MARKETS
-                    for tmp in instance.TMPS
-                }.items()
-            )
-        )
-        self.assertDictEqual(expected_max_final_sales, actual_max_final_sales)
-
-        # Param: max_final_market_purchases
-        expected_max_final_purchases = OrderedDict(
-            sorted(
-                market_volume_df.set_index(["market", "timepoint"])
-                .to_dict()["max_final_market_purchases"]
-                .items()
-            )
-        )
-        actual_max_final_purchases = OrderedDict(
-            sorted(
-                {
-                    (mrkt, tmp): instance.max_final_market_purchases[mrkt, tmp]
-                    for mrkt in instance.MARKETS
-                    for tmp in instance.TMPS
-                }.items()
-            )
-        )
-        self.assertDictEqual(expected_max_final_purchases, actual_max_final_purchases)
-
-        # Set: MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT
-        market_volume_hrz_df = pd.read_csv(
-            os.path.join(TEST_DATA_DIRECTORY, "inputs", "market_volume_hrz.tab"),
-            sep="\t",
-        )
-        expected_market_hrzs = sorted(
-            market_volume_hrz_df[
-                ["market", "balancing_type_horizon", "horizon"]
-            ].itertuples(index=False, name=None)
-        )
-        actual_market_hrzs = sorted(instance.MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT)
-        self.assertListEqual(expected_market_hrzs, actual_market_hrzs)
-
-        # Params: max_market_sales_in_hrz, max_market_purchases_in_hrz
-        # An unspecified limit ('.' in the tab file) defaults to infinity
-        for param_name in ["max_market_sales_in_hrz", "max_market_purchases_in_hrz"]:
-            expected = OrderedDict(
-                sorted(
-                    {
-                        (mrkt, bt, hrz): (float("inf") if pd.isna(limit) else limit)
-                        for mrkt, bt, hrz, limit in market_volume_hrz_df.assign(
-                            **{
-                                param_name: pd.to_numeric(
-                                    market_volume_hrz_df[param_name], errors="coerce"
-                                )
-                            }
-                        )[
-                            ["market", "balancing_type_horizon", "horizon", param_name]
-                        ].itertuples(
-                            index=False, name=None
-                        )
-                    }.items()
-                )
-            )
-            actual = OrderedDict(
-                sorted(
-                    {
-                        idx: getattr(instance, param_name)[idx]
-                        for idx in instance.MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT
-                    }.items()
-                )
-            )
-            self.assertDictEqual(expected, actual, msg=param_name)
-
-        # Set: BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT
-        totals_in_hrz_df = pd.read_csv(
-            os.path.join(
-                TEST_DATA_DIRECTORY, "inputs", "market_volume_totals_in_hrz.tab"
+        # The three limit resolutions: the fixture file, the index columns
+        # the set is keyed on, and the params with their defaults
+        resolutions = [
+            (
+                "market_volume_tmp.tab",
+                "MARKET_GROUP_TMPS_W_LIMIT",
+                ["timepoint"],
+                [
+                    ("max_market_sales", float("inf")),
+                    ("max_market_purchases", float("inf")),
+                    ("max_final_market_sales", float("inf")),
+                    ("max_final_market_purchases", float("inf")),
+                ],
             ),
-            sep="\t",
-        )
-        expected_total_hrzs = sorted(
-            totals_in_hrz_df[["balancing_type_horizon", "horizon"]].itertuples(
-                index=False, name=None
-            )
-        )
-        actual_total_hrzs = sorted(instance.BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT)
-        self.assertListEqual(expected_total_hrzs, actual_total_hrzs)
+            (
+                "market_volume_hrz.tab",
+                "MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT",
+                ["balancing_type_horizon", "horizon"],
+                [
+                    ("max_market_sales_in_hrz", float("inf")),
+                    ("max_market_purchases_in_hrz", float("inf")),
+                    ("max_market_sales_in_hrz_include_storage_losses", 0),
+                ],
+            ),
+            (
+                "market_volume_prd.tab",
+                "MARKET_GROUP_PRDS_W_LIMIT",
+                ["period"],
+                [
+                    ("max_market_sales_in_prd", float("inf")),
+                    ("max_market_purchases_in_prd", float("inf")),
+                    ("max_market_sales_in_prd_include_storage_losses", 0),
+                ],
+            ),
+        ]
 
-        # Params on the horizon totals; the storage-losses flag defaults to
-        # 0 rather than to infinity
-        for param_name, default in [
-            ("max_total_net_market_purchases_in_hrz", float("inf")),
-            ("max_total_net_market_sales_in_hrz", float("inf")),
-            ("max_total_net_market_sales_in_hrz_include_storage_losses", 0),
-        ]:
-            expected = OrderedDict(
-                sorted(
-                    {
-                        (bt, hrz): (default if pd.isna(limit) else limit)
-                        for bt, hrz, limit in totals_in_hrz_df.assign(
-                            **{
-                                param_name: pd.to_numeric(
-                                    totals_in_hrz_df[param_name], errors="coerce"
-                                )
-                            }
-                        )[["balancing_type_horizon", "horizon", param_name]].itertuples(
-                            index=False, name=None
-                        )
-                    }.items()
-                )
+        limited_groups = set()
+        for filename, set_name, index_columns, params in resolutions:
+            df = pd.read_csv(
+                os.path.join(TEST_DATA_DIRECTORY, "inputs", filename), sep="\t"
             )
-            actual = OrderedDict(
-                sorted(
-                    {
-                        idx: getattr(instance, param_name)[idx]
-                        for idx in instance.BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT
-                    }.items()
-                )
+            key_columns = ["market_group"] + index_columns
+            # Keep the file's row order so each index lines up with its
+            # limits below
+            row_idxs = list(df[key_columns].itertuples(index=False, name=None))
+            self.assertListEqual(
+                sorted(row_idxs), sorted(getattr(instance, set_name)), msg=set_name
             )
-            self.assertDictEqual(expected, actual, msg=param_name)
+            limited_groups |= set(df["market_group"])
+
+            for param_name, default in params:
+                # The '.' placeholders make the limit columns object dtype;
+                # coerce so an unspecified limit reads as NaN and maps to
+                # the model's default
+                limits = pd.to_numeric(df[param_name], errors="coerce")
+                expected = OrderedDict(
+                    sorted(
+                        {
+                            idx: (default if pd.isna(limit) else limit)
+                            for idx, limit in zip(row_idxs, limits)
+                        }.items()
+                    )
+                )
+                actual = OrderedDict(
+                    sorted(
+                        {
+                            idx: getattr(instance, param_name)[idx]
+                            for idx in getattr(instance, set_name)
+                        }.items()
+                    )
+                )
+                self.assertDictEqual(expected, actual, msg=param_name)
+
+        # Set: MARKET_GROUPS_W_LIMITS, the groups the position expressions
+        # are built for
+        self.assertListEqual(
+            sorted(limited_groups), sorted(instance.MARKET_GROUPS_W_LIMITS)
+        )
 
         # Set: MARKET_VOLUME_LIMIT_STOR_PRJS, the projects whose losses the
-        # *include_storage_losses* limits are based on
+        # include_storage_losses limits are based on
         expected_stor_prjs = sorted(
             prj for prj in instance.PROJECTS if instance.operational_type[prj] == "stor"
         )
-        actual_stor_prjs = sorted(instance.MARKET_VOLUME_LIMIT_STOR_PRJS)
-        self.assertListEqual(expected_stor_prjs, actual_stor_prjs)
+        self.assertListEqual(
+            expected_stor_prjs, sorted(instance.MARKET_VOLUME_LIMIT_STOR_PRJS)
+        )
         self.assertGreater(
-            len(actual_stor_prjs),
+            len(expected_stor_prjs),
             0,
             msg="the fixture must have a 'stor' project for the storage-loss "
             "term of the sales limits to be exercised",
         )
 
         # Constraints are built only where a limit is finite
-        self.assertListEqual(
-            sorted(
-                idx
-                for idx in instance.MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT
-                if instance.max_market_sales_in_hrz[idx] != float("inf")
+        for constraint_name, set_name, param_name in [
+            (
+                "Max_Market_Group_Sales_Constraint",
+                "MARKET_GROUP_TMPS_W_LIMIT",
+                "max_market_sales",
             ),
-            sorted(instance.Max_Market_Sales_in_Hrz_Constraint),
-        )
-        self.assertListEqual(
-            sorted(
-                idx
-                for idx in instance.BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT
-                if instance.max_total_net_market_sales_in_hrz[idx] != float("inf")
+            (
+                "Max_Market_Group_Final_Sales_Constraint",
+                "MARKET_GROUP_TMPS_W_LIMIT",
+                "max_final_market_sales",
             ),
-            sorted(instance.Aggregate_Sales_in_Hrz_Constraint),
+            (
+                "Max_Market_Group_Sales_in_Hrz_Constraint",
+                "MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT",
+                "max_market_sales_in_hrz",
+            ),
+            (
+                "Max_Market_Group_Purchases_in_Prd_Constraint",
+                "MARKET_GROUP_PRDS_W_LIMIT",
+                "max_market_purchases_in_prd",
+            ),
+        ]:
+            self.assertListEqual(
+                sorted(
+                    idx
+                    for idx in getattr(instance, set_name)
+                    if getattr(instance, param_name)[idx] != float("inf")
+                ),
+                sorted(getattr(instance, constraint_name)),
+                msg=constraint_name,
+            )
+
+        # A group's position is the sum over the markets it contains, so the
+        # group of every hub covers every (load zone, market) pair
+        self.assertListEqual(
+            sorted(instance.LZ_MARKETS),
+            sorted(volume.lz_markets_in_group(instance, "All_Hubs")),
         )
 
 

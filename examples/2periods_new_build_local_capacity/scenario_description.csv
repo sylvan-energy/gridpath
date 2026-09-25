@@ -147,10 +147,8 @@ prm_requirement_scenario_id,NULL
 local_capacity_requirement_scenario_id,1
 elcc_surface_scenario_id,NULL
 market_price_scenario_id,NULL
+market_group_scenario_id,NULL
 market_volume_scenario_id,NULL
-market_volume_total_in_tmp_scenario_id,NULL
-market_volume_total_in_hrz_scenario_id,NULL
-market_volume_total_in_prd_scenario_id,NULL
 water_node_reservoir_scenario_id,NULL
 water_flow_scenario_id,NULL
 water_inflow_tmp_scenario_id,NULL
