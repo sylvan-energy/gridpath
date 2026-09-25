@@ -205,6 +205,130 @@ class TestMarketPrices(unittest.TestCase):
         )
         self.assertDictEqual(expected_max_final_purchases, actual_max_final_purchases)
 
+        # Set: MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT
+        market_volume_hrz_df = pd.read_csv(
+            os.path.join(TEST_DATA_DIRECTORY, "inputs", "market_volume_hrz.tab"),
+            sep="\t",
+        )
+        expected_market_hrzs = sorted(
+            market_volume_hrz_df[
+                ["market", "balancing_type_horizon", "horizon"]
+            ].itertuples(index=False, name=None)
+        )
+        actual_market_hrzs = sorted(instance.MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT)
+        self.assertListEqual(expected_market_hrzs, actual_market_hrzs)
+
+        # Params: max_market_sales_in_hrz, max_market_purchases_in_hrz
+        # An unspecified limit ('.' in the tab file) defaults to infinity
+        for param_name in ["max_market_sales_in_hrz", "max_market_purchases_in_hrz"]:
+            expected = OrderedDict(
+                sorted(
+                    {
+                        (mrkt, bt, hrz): (float("inf") if pd.isna(limit) else limit)
+                        for mrkt, bt, hrz, limit in market_volume_hrz_df.assign(
+                            **{
+                                param_name: pd.to_numeric(
+                                    market_volume_hrz_df[param_name], errors="coerce"
+                                )
+                            }
+                        )[
+                            ["market", "balancing_type_horizon", "horizon", param_name]
+                        ].itertuples(
+                            index=False, name=None
+                        )
+                    }.items()
+                )
+            )
+            actual = OrderedDict(
+                sorted(
+                    {
+                        idx: getattr(instance, param_name)[idx]
+                        for idx in instance.MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT
+                    }.items()
+                )
+            )
+            self.assertDictEqual(expected, actual, msg=param_name)
+
+        # Set: BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT
+        totals_in_hrz_df = pd.read_csv(
+            os.path.join(
+                TEST_DATA_DIRECTORY, "inputs", "market_volume_totals_in_hrz.tab"
+            ),
+            sep="\t",
+        )
+        expected_total_hrzs = sorted(
+            totals_in_hrz_df[["balancing_type_horizon", "horizon"]].itertuples(
+                index=False, name=None
+            )
+        )
+        actual_total_hrzs = sorted(instance.BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT)
+        self.assertListEqual(expected_total_hrzs, actual_total_hrzs)
+
+        # Params on the horizon totals; the storage-losses flag defaults to
+        # 0 rather than to infinity
+        for param_name, default in [
+            ("max_total_net_market_purchases_in_hrz", float("inf")),
+            ("max_total_net_market_sales_in_hrz", float("inf")),
+            ("max_total_net_market_sales_in_hrz_include_storage_losses", 0),
+        ]:
+            expected = OrderedDict(
+                sorted(
+                    {
+                        (bt, hrz): (default if pd.isna(limit) else limit)
+                        for bt, hrz, limit in totals_in_hrz_df.assign(
+                            **{
+                                param_name: pd.to_numeric(
+                                    totals_in_hrz_df[param_name], errors="coerce"
+                                )
+                            }
+                        )[["balancing_type_horizon", "horizon", param_name]].itertuples(
+                            index=False, name=None
+                        )
+                    }.items()
+                )
+            )
+            actual = OrderedDict(
+                sorted(
+                    {
+                        idx: getattr(instance, param_name)[idx]
+                        for idx in instance.BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT
+                    }.items()
+                )
+            )
+            self.assertDictEqual(expected, actual, msg=param_name)
+
+        # Set: MARKET_VOLUME_LIMIT_STOR_PRJS, the projects whose losses the
+        # *include_storage_losses* limits are based on
+        expected_stor_prjs = sorted(
+            prj for prj in instance.PROJECTS if instance.operational_type[prj] == "stor"
+        )
+        actual_stor_prjs = sorted(instance.MARKET_VOLUME_LIMIT_STOR_PRJS)
+        self.assertListEqual(expected_stor_prjs, actual_stor_prjs)
+        self.assertGreater(
+            len(actual_stor_prjs),
+            0,
+            msg="the fixture must have a 'stor' project for the storage-loss "
+            "term of the sales limits to be exercised",
+        )
+
+        # Constraints are built only where a limit is finite
+        self.assertListEqual(
+            sorted(
+                idx
+                for idx in instance.MARKET_BLN_TYPE_HRZS_W_VOLUME_LIMIT
+                if instance.max_market_sales_in_hrz[idx] != float("inf")
+            ),
+            sorted(instance.Max_Market_Sales_in_Hrz_Constraint),
+        )
+        self.assertListEqual(
+            sorted(
+                idx
+                for idx in instance.BLN_TYPE_HRZS_W_TOTAL_VOLUME_LIMIT
+                if instance.max_total_net_market_sales_in_hrz[idx] != float("inf")
+            ),
+            sorted(instance.Aggregate_Sales_in_Hrz_Constraint),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

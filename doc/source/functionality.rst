@@ -647,7 +647,11 @@ Markets
 
 GridPath can allow a resource or a set of resources to participate in markets with
 pre-specified price streams, assuming resources are price-takers and subject to
-market volume limits.
+market volume limits. A volume limit applies either to a single market or to the
+total across all markets, and is imposed on the position in a timepoint, over a
+horizon of any balancing type in the scenario's temporal structure, or over a
+period. A limit that is the same across timepoints, horizons or periods can be
+entered once as a default rather than repeated.
 
 Policy
 ======

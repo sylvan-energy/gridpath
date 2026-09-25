@@ -1,0 +1,7 @@
+weather_iteration,hydro_iteration,stage_id,timepoint,max_market_sales,max_market_purchases,max_final_market_sales,max_final_market_purchases
+0,0,1,20200101,10,5,,
+0,0,1,20200102,5,10,,
+0,0,1,20200201,10,5,,
+0,0,1,20200202,5,10,,
+0,0,1,20200301,10,5,,
+0,0,1,20200302,5,10,,
