@@ -1,3 +1,3 @@
-market,market_volume_profile_scenario_id,varies_by_weather_iteration,varies_by_hydro_iteration
-Market_Hub,1,0,0
-Market_Hub2,1,0,0
+market_group,market_volume_profile_scenario_id,market_volume_hrz_profile_scenario_id,market_volume_prd_profile_scenario_id,varies_by_weather_iteration,varies_by_hydro_iteration
+Market_Hub,1,,,0,0
+Market_Hub2,1,,,0,0

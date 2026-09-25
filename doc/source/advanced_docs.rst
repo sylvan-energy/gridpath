@@ -492,8 +492,13 @@ Markets
 
 GridPath can model market participation of a project or a set of projects. A price
 stream is required and projects are assumed to be price-takers. The market volume can
-be constrained. In multi-stage modeling, the transactions from the previous stages
-can be fixed in the following stages.
+be constrained for a single market or for any user-defined group of them, by
+timepoint, by horizon or by period; see the
+:code:`gridpath.system.markets.volume` module below for the limits available, for
+the implicit group every market gets, for how a group is narrowed to the markets a
+scenario models, and for how to enter a limit once as a default instead of
+repeating it. In multi-stage modeling,
+the transactions from the previous stages can be fixed in the following stages.
 
 gridpath.system.markets.prices
 -------------------------------------

@@ -205,10 +205,11 @@ markets/geography_markets,markets,market_scenario_id,geography_markets,simple,,0
 markets/load_zone_markets,markets,load_zone_market_scenario_id,load_zone_markets,simple,,0,,,,,
 markets/prices,markets,market_price_scenario_id,market_prices,simple,,0,,,,,
 markets/prices/price_profiles,markets,market_price_profile_scenario_id,market_price_profiles,simple,,1,market,,,market_price_scenario_id,market_prices
+markets/market_groups,markets,market_group_scenario_id,market_groups,simple,,0,,,,,
+markets/volume/volume_profiles,markets,market_volume_profile_scenario_id,market_volume_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
+markets/volume/volume_hrz_profiles,markets,market_volume_hrz_profile_scenario_id,market_volume_hrz_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
+markets/volume/volume_prd_profiles,markets,market_volume_prd_profile_scenario_id,market_volume_prd_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
 markets/volume,markets,market_volume_scenario_id,market_volume,simple,,0,,,,,
-markets/volume/volume_profiles,markets,market_volume_profile_scenario_id,market_volume_profiles,simple,,1,market,,,market_volume_scenario_id,market_volume
-markets/volume_totals_in_tmp,markets,market_volume_total_in_tmp_scenario_id,market_volume_totals_in_tmp,simple,,0,,,,,
-markets/volume_totals_in_prd,markets,market_volume_total_in_prd_scenario_id,market_volume_totals_in_prd,simple,,0,,,,,
 water/water_system_params,water,water_system_params_scenario_id,system_water_system_params,simple,,0,,,,,
 water/water_network,water,water_network_scenario_id,geography_water_network,simple,,0,,,,,
 water/inflows,water,water_inflow_tmp_scenario_id,system_water_inflows,simple,,0,,,,,

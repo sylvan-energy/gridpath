@@ -1,0 +1,5 @@
+market_group	balancing_type_horizon	horizon	max_market_sales_in_hrz	max_market_purchases_in_hrz	max_market_sales_in_hrz_include_storage_losses
+All_Hubs	day	202001	1000	2000	1
+Market_Hub_1	day	202001	1000	2000	.
+Market_Hub_1	day	202002	.	2500	.
+Market_Hub_2	year	2020	5000	.	.

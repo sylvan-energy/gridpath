@@ -2485,6 +2485,169 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_prd_total_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_hrz_limits(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_hrz_limits" example.
+
+        The horizon-level limit is on Market_Hub, which needs no group
+        definition since every market is implicitly a group of its own, over
+        the 'day' horizon 202001, which spans the timepoints of period 2020;
+        it is therefore the same restriction as the period limit on the
+        All_Markets group in "test_markets_w_prd_total_limits", whose
+        objective this example shares.
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_hrz_total_limits(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_hrz_total_limits" example.
+
+        The All_Markets limit over the 'day' horizon 202001 is the period
+        limit of "test_markets_w_prd_total_limits" imposed over the horizon
+        that spans the period, so the two share an objective.
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_total_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_default_volume(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_default_volume" example.
+
+        The market volume profile is written as a wildcard (timepoint 0)
+        row plus the timepoints that differ from it, so it resolves to the
+        limits "test_markets" states timepoint by timepoint and the two
+        share an objective. That the resolved limits are identical, not
+        merely equivalent, is checked in
+        test_market_volume_defaults_resolve_to_explicit_limits.
+        :return:
+        """
+        scenario_name = "test_markets_w_default_volume"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_two_market_group_limit(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_two_market_group_limit" example.
+
+        The zone participates in both markets and the All_Markets group is
+        limited on the two of them together, at a level neither market's own
+        limit reaches. That the group's position is the sum over its markets
+        is checked in
+        test_market_group_position_is_the_sum_over_its_markets.
+        :return:
+        """
+        scenario_name = "test_markets_w_two_market_group_limit"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_market_group_position_is_the_sum_over_its_markets(self):
+        """
+        A market group's position must be the sum of the positions of the
+        markets it contains, and the limit on it must actually bind; a group
+        limit that never binds would prove nothing about the aggregation.
+
+        Solve the example into a temporary directory rather than reading the
+        committed example directory, whose results are not committed and
+        which the example tests may be rewriting concurrently.
+        :return:
+        """
+        scenario_name = "test_markets_w_two_market_group_limit"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    temp_dir,
+                    "--quiet",
+                ]
+            )
+            run_scenario.main(
+                [
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    temp_dir,
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--testing",
+                ]
+            )
+            results = os.path.join(temp_dir, scenario_name, "results")
+            group_results = os.path.join(results, "system_market_volume_tmp.csv")
+            market_results = os.path.join(results, "system_market_participation.csv")
+            for f in [group_results, market_results]:
+                self.assertTrue(os.path.exists(f), msg=f"{f} was not written")
+            group_df = pd.read_csv(group_results)
+            market_df = pd.read_csv(market_results)
+
+        group_df = group_df[group_df["market_group"] == "All_Markets"]
+        markets_by_tmp = market_df.groupby("timepoint")["net_buy_power"].sum()
+
+        self.assertGreater(len(group_df), 0, msg="no All_Markets group results")
+        for row in group_df.itertuples():
+            self.assertAlmostEqual(
+                markets_by_tmp[row.timepoint],
+                row.net_market_purchased_power_mw,
+                places=6,
+                msg=f"group position differs from the sum over its markets "
+                f"in timepoint {row.timepoint}",
+            )
+
+        # The group limit binds somewhere, so the aggregation is load-bearing
+        self.assertTrue(
+            (group_df["max_market_sales_dual"].fillna(0) != 0).any(),
+            msg="the All_Markets sales limit never binds",
+        )
+
+    def test_market_volume_defaults_resolve_to_explicit_limits(self):
+        """
+        The wildcard row of the "test_markets_w_default_volume" market
+        volume profile must resolve to exactly the limits that
+        "test_markets" spells out per timepoint, so the two scenarios'
+        market_volume_tmp.tab files must be byte-identical. Compare the
+        resolved limits rather than the objectives, which a coincidence
+        could match.
+
+        Write both scenarios' inputs to a temporary directory instead of
+        reading the committed example directories, which the example tests
+        regenerate and may be rewriting concurrently.
+        :return:
+        """
+        limits = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for scenario_name in ["test_markets", "test_markets_w_default_volume"]:
+                get_scenario_inputs.main(
+                    [
+                        "--database",
+                        DB_PATH,
+                        "--scenario",
+                        scenario_name,
+                        "--scenario_location",
+                        temp_dir,
+                        "--quiet",
+                    ]
+                )
+                tab_file = os.path.join(
+                    temp_dir, scenario_name, "inputs", "market_volume_tmp.tab"
+                )
+                self.assertTrue(
+                    os.path.exists(tab_file), msg=f"{tab_file} was not written"
+                )
+                with open(tab_file) as f:
+                    limits[scenario_name] = f.read()
+
+        self.assertEqual(
+            limits["test_markets"], limits["test_markets_w_default_volume"]
+        )
+
     def test_example_test_new_build_storage_losses_limit(self):
         """
         Check validation and objective function value of
