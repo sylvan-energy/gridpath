@@ -2490,8 +2490,9 @@ class TestExamples(unittest.TestCase):
         Check validation and objective function value of the
         "test_markets_w_hrz_limits" example.
 
-        The horizon-level limit is on the Market_Hub group over the 'day'
-        horizon 202001, which spans exactly the timepoints of period 2020;
+        The horizon-level limit is on Market_Hub, which needs no group
+        definition since every market is implicitly a group of its own, over
+        the 'day' horizon 202001, which spans the timepoints of period 2020;
         it is therefore the same restriction as the period limit on the
         All_Markets group in "test_markets_w_prd_total_limits", whose
         objective this example shares.

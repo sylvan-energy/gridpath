@@ -56,6 +56,16 @@ energy the system's storage loses, for a limit meant to cap net exports
 rather than gross ones. The losses are those of the projects of the *stor*
 operational type and are system-wide, not group-specific.
 
+**Every market is a group of its own.** A market is implicitly a group
+containing just that market, named after it, so limiting a single market
+takes no group definition at all: name the market in the volume subscenario
+and it is limited on its own. Only groups of more than one market have to be
+listed, and a scenario that needs none can leave its market group
+subscenario unset.
+
+A group may therefore not be named after a market unless it contains that
+market alone, which would merge the two silently; this is a validation error.
+
 **Groups and the scenario's markets.** A group is narrowed to the markets of
 the scenario's market subscenario, so one group definition serves scenarios
 with different market sets: a group of every hub in the interconnection
@@ -529,22 +539,34 @@ def no_rows_sql(columns):
     return "SELECT " + ", ".join(f"NULL AS {c}" for c in columns) + " WHERE 0"
 
 
-def get_market_groups_sql(subscenarios):
+def get_scenario_markets_sql(subscenarios):
     """
-    The scenario's market groups and their members, narrowed to the markets
-    of the scenario's market subscenario.
+    The markets of the scenario's market subscenario.
     """
     return f"""
+        SELECT market
+        FROM inputs_geography_markets
+        WHERE market_scenario_id = {subscenarios.MARKET_SCENARIO_ID}
+        """
+
+
+def get_market_groups_sql(subscenarios):
+    """
+    The scenario's market groups and their members: every market as a group
+    of its own, plus the user-defined groups narrowed to the scenario's
+    markets. An unset market group subscenario leaves just the implicit
+    singletons.
+    """
+    scenario_markets = get_scenario_markets_sql(subscenarios)
+    return f"""
+        SELECT market AS market_group, market
+        FROM ({scenario_markets})
+        UNION
         SELECT market_group, market
         FROM inputs_market_groups
         WHERE market_group_scenario_id =
         {subscenarios.MARKET_GROUP_SCENARIO_ID}
-        AND market IN (
-            SELECT market
-            FROM inputs_geography_markets
-            WHERE market_scenario_id = {subscenarios.MARKET_SCENARIO_ID}
-        )
-        ORDER BY market_group, market
+        AND market IN ({scenario_markets})
         """
 
 
@@ -566,7 +588,11 @@ def get_inputs_from_database(
     :return:
     """
     groups_c = conn.cursor()
-    market_groups = groups_c.execute(get_market_groups_sql(subscenarios))
+    market_groups = groups_c.execute(f"""
+        SELECT market_group, market
+        FROM ({get_market_groups_sql(subscenarios)})
+        ORDER BY market_group, market
+        """)
 
     c = conn.cursor()
     group_list = c.execute(f"""
@@ -581,14 +607,7 @@ def get_inputs_from_database(
         -- Limit groups that have at least one of the scenario's markets
         AND market_group IN (
             SELECT DISTINCT market_group
-            FROM inputs_market_groups
-            WHERE market_group_scenario_id =
-            {subscenarios.MARKET_GROUP_SCENARIO_ID}
-            AND market IN (
-                SELECT market
-                FROM inputs_geography_markets
-                WHERE market_scenario_id = {subscenarios.MARKET_SCENARIO_ID}
-            )
+            FROM ({get_market_groups_sql(subscenarios)})
         )
         """).fetchall()
 
@@ -754,8 +773,10 @@ def validate_inputs(
     """
     Get inputs from database and validate the inputs.
 
-    Limit rows are resolved against the scenario's temporal structure with
-    an inner join, so
+    Every market is implicitly a group of its own, so a user-defined group
+    named after a market would merge with it; flag that. Limit rows are
+    resolved against the scenario's temporal structure with an inner join,
+    so
     a row naming a balancing type or horizon the scenario does not have is
     dropped silently; flag those rather than let a typo quietly remove a
     limit. Also flag negative limits, which would otherwise fail only at
@@ -770,10 +791,28 @@ def validate_inputs(
     c = conn.cursor()
     errors = []
 
+    # A market is implicitly a group of its own, so a group named after one
+    # merges with it; that silently widens a limit meant for the single
+    # market, and there is no reason to define the singleton by hand
+    colliding_groups = c.execute(f"""
+        SELECT DISTINCT market_group
+        FROM inputs_market_groups
+        WHERE market_group_scenario_id =
+        {subscenarios.MARKET_GROUP_SCENARIO_ID}
+        AND market_group IN ({get_scenario_markets_sql(subscenarios)})
+        AND market != market_group
+        """).fetchall()
+    for (group,) in colliding_groups:
+        errors.append(
+            f"inputs_market_groups: market group '{group}' is named after a "
+            f"market but contains another one; every market is already a "
+            f"group of its own, so the two would be merged. Rename the group."
+        )
+
     # A group that narrows to none of the scenario's markets is not an
     # error: group and volume subscenarios are shared across scenarios with
     # different market sets, and such a group simply contributes no
-    # constraints. A group the group subscenario never defines at all is a
+    # constraints. A name that is neither a market nor a defined group is a
     # different matter, and is almost always a typo.
     undefined_groups = c.execute(f"""
         SELECT DISTINCT market_group
@@ -785,12 +824,18 @@ def validate_inputs(
             WHERE market_group_scenario_id =
             {subscenarios.MARKET_GROUP_SCENARIO_ID}
         )
+        -- Any known market names an implicit group of its own; check
+        -- against every market, not only this scenario's, since one volume
+        -- subscenario serves scenarios with different market sets
+        AND market_group NOT IN (
+            SELECT DISTINCT market FROM inputs_geography_markets
+        )
         """).fetchall()
     for (group,) in undefined_groups:
         errors.append(
-            f"inputs_market_volume: market group '{group}' is not defined by "
-            f"the scenario's market group subscenario, so its limits are "
-            f"ignored."
+            f"inputs_market_volume: '{group}' is neither a market nor a "
+            f"market group defined by the scenario's market group "
+            f"subscenario, so its limits are ignored."
         )
 
     # Each profile table has its own subscenario column, which the

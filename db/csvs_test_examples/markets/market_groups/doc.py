@@ -14,10 +14,11 @@
 |:code:`input_` tables          |:code:`inputs_market_groups`                   |
 +-------------------------------+-----------------------------------------------+
 
-The groups of markets that market volume limits apply to. A group of one
-limits a single market and a group of all of them is a system-wide limit;
-groups may overlap. Each group is narrowed to the markets of the scenario's
-:code:`market_scenario_id`.
+The groups of markets that market volume limits apply to. Every market is
+implicitly a group of its own, so only groups of more than one market are
+listed here and a scenario that needs none can leave
+:code:`market_group_scenario_id` unset. Groups may overlap, and each is
+narrowed to the markets of the scenario's :code:`market_scenario_id`.
 
 """
 

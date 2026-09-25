@@ -1093,9 +1093,12 @@ CREATE TABLE inputs_market_price_profiles
 
 -- Market groups
 -- A limit on market transactions applies to a group of markets: a group of
--- one is a limit on a single market, a group of all the scenario's markets
--- is a system-wide limit, and anything in between (e.g. all the hubs of one
--- region) is expressible too. Groups may overlap.
+-- all the scenario's markets is a system-wide limit and anything in between
+-- (e.g. all the hubs of one region) is expressible too. Groups may overlap.
+-- Every market is implicitly a group of its own, named after it, so only
+-- groups of more than one market are listed here and a scenario needing none
+-- can leave market_group_scenario_id unset. A group may not be named after a
+-- market unless it contains that market alone.
 -- A group is narrowed to the markets of the scenario's market_scenario_id,
 -- so one group definition serves scenarios with different market sets; a
 -- group left with none of them contributes no constraints.

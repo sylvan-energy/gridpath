@@ -16,17 +16,22 @@
 Resolution of the market volume limits against a scenario's market groups and
 temporal structure, including the wildcard (default) rows.
 
-Covers what an example scenario cannot easily express: a wildcard row on its
-own, a wildcard row overridden for one index, a NULL cell in an explicit row
-falling through to the wildcard row, a group that narrows to none of the
-scenario's markets, and a group limited at one resolution only.
+Covers what an example scenario cannot easily express: the implicit
+singleton group every market gets, a wildcard row on its own, a wildcard row
+overridden for one index, a NULL cell in an explicit row falling through to
+the wildcard row, a group that narrows to none of the scenario's markets, and
+a group limited at one resolution only.
 """
 
 import os.path
 import sqlite3
 import unittest
 
-from gridpath.system.markets.volume import get_inputs_from_database
+from gridpath.system.markets.volume import (
+    get_inputs_from_database,
+    get_market_groups_sql,
+    validate_inputs,
+)
 
 DB_SCHEMA = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "db", "db_schema.sql"
@@ -34,6 +39,9 @@ DB_SCHEMA = os.path.join(
 
 TEMPORAL_SCENARIO_ID = 1
 MARKET_SCENARIO_ID = 1
+# A second market subscenario that models both markets, so the one this
+# scenario uses is a strict subset
+OTHER_MARKET_SCENARIO_ID = 2
 MARKET_GROUP_SCENARIO_ID = 1
 MARKET_VOLUME_SCENARIO_ID = 1
 
@@ -108,21 +116,32 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
                 "VALUES (?, ?)",
                 (MARKET_SCENARIO_ID, market),
             )
+        # Market_Hub_2 is a real market, just not one this scenario models;
+        # that is how one volume subscenario serves scenarios with different
+        # market sets
+        for market in ALL_MARKETS:
+            c.execute(
+                "INSERT INTO inputs_geography_markets (market_scenario_id, market) "
+                "VALUES (?, ?)",
+                (OTHER_MARKET_SCENARIO_ID, market),
+            )
 
-        # All_Hubs spans both markets and so narrows to Market_Hub_1;
-        # Market_Hub_2 is a group that narrows to nothing
-        for group, markets in [
-            ("All_Hubs", ALL_MARKETS),
-            ("Market_Hub_1", ["Market_Hub_1"]),
-            ("Market_Hub_2", ["Market_Hub_2"]),
-        ]:
-            for market in markets:
-                c.execute(
-                    """INSERT INTO inputs_market_groups
-                    (market_group_scenario_id, market_group, market)
-                    VALUES (?, ?, ?)""",
-                    (MARKET_GROUP_SCENARIO_ID, group, market),
-                )
+        # Only groups of more than one market are defined; every market is
+        # implicitly a group of its own. All_Hubs spans both markets and so
+        # narrows to Market_Hub_1, and Nowhere narrows to nothing.
+        self.define_group("All_Hubs", ALL_MARKETS)
+        self.define_group("Nowhere", ["Market_Hub_2"])
+        self.conn.commit()
+
+    def define_group(self, group, markets):
+        c = self.conn.cursor()
+        for market in markets:
+            c.execute(
+                """INSERT INTO inputs_market_groups
+                (market_group_scenario_id, market_group, market)
+                VALUES (?, ?, ?)""",
+                (MARKET_GROUP_SCENARIO_ID, group, market),
+            )
         self.conn.commit()
 
     def tearDown(self):
@@ -225,14 +244,41 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
             )
         ]
 
-    def test_groups_are_narrowed_to_the_scenarios_markets(self):
+    def test_every_market_is_implicitly_a_group_of_its_own(self):
         """
-        A group keeps the members the scenario models and a group left with
-        none of them does not appear at all.
+        A market needs no group definition to be limited on its own: it is
+        a group named after itself. A group keeps the members the scenario
+        models, and one left with none of them does not appear at all.
         """
         groups, _, _, _ = self.resolve()
         self.assertListEqual(
             [("All_Hubs", "Market_Hub_1"), ("Market_Hub_1", "Market_Hub_1")], groups
+        )
+
+    def test_implicit_singletons_need_no_group_subscenario(self):
+        """
+        With no market group subscenario at all, every market is still a
+        group of its own and can be limited.
+        """
+        subscenarios = SubScenarios(MARKET_GROUP_SCENARIO_ID="NULL")
+        groups = self.conn.cursor().execute(f"""SELECT market_group, market
+            FROM ({get_market_groups_sql(subscenarios)})
+            ORDER BY market_group, market""").fetchall()
+        self.assertListEqual([("Market_Hub_1", "Market_Hub_1")], groups)
+
+    def test_a_market_may_be_limited_without_a_group_definition(self):
+        """
+        Naming a market in the volume subscenario limits that market alone.
+        """
+        self.limit_group("Market_Hub_1", tmp=1)
+        self.insert_tmp_limits("Market_Hub_1", 1, [(0, 10, 5, None, None)])
+        _, tmp_limits, _, _ = self.resolve()
+        self.assertListEqual(
+            [
+                ("Market_Hub_1", 1, 10, 5, None, None),
+                ("Market_Hub_1", 2, 10, 5, None, None),
+            ],
+            tmp_limits,
         )
 
     def test_limits_of_a_group_with_no_market_are_dropped(self):
@@ -240,10 +286,10 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         A group that narrows to none of the scenario's markets contributes no
         limits, so a scenario-wide group definition can be shared.
         """
-        self.limit_group("Market_Hub_2", tmp=1)
-        self.insert_tmp_limits("Market_Hub_2", 1, [(0, 10, 5, None, None)])
+        self.limit_group("Nowhere", tmp=1)
+        self.insert_tmp_limits("Nowhere", 1, [(0, 10, 5, None, None)])
         groups, tmp_limits, _, _ = self.resolve()
-        self.assertNotIn("Market_Hub_2", [grp for grp, mrkt in groups])
+        self.assertNotIn("Nowhere", [grp for grp, mrkt in groups])
         self.assertListEqual([], tmp_limits)
 
     def test_timepoint_wildcard_row_applies_to_every_timepoint(self):
@@ -341,6 +387,66 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         self.assertListEqual([], tmp_limits)
         self.assertListEqual([], hrz_limits)
         self.assertListEqual([], prd_limits)
+
+    def validate(self):
+        """
+        Run the module's validation and return the messages it recorded.
+        """
+        validate_inputs(
+            scenario_id=1,
+            subscenarios=SubScenarios(),
+            weather_iteration=0,
+            hydro_iteration=0,
+            availability_iteration=0,
+            subproblem=SUBPROBLEM,
+            stage=STAGE,
+            conn=self.conn,
+        )
+        return [
+            row[0]
+            for row in self.conn.cursor().execute(
+                "SELECT description FROM status_validation"
+            )
+        ]
+
+    def test_a_group_named_after_a_market_is_flagged(self):
+        """
+        A market is implicitly a group of its own, so a group named after one
+        but containing another would silently merge with it.
+        """
+        self.define_group("Market_Hub_1", ["Market_Hub_1", "Market_Hub_2"])
+        errors = self.validate()
+        self.assertEqual(1, len(errors), msg=errors)
+        self.assertIn("named after a market", errors[0])
+        self.assertIn("Market_Hub_1", errors[0])
+
+    def test_a_group_duplicating_an_implicit_singleton_is_not_flagged(self):
+        """
+        Spelling out the singleton a market already has is redundant but
+        harmless, since the two resolve to the same group.
+        """
+        self.define_group("Market_Hub_1", ["Market_Hub_1"])
+        self.assertListEqual([], self.validate())
+
+    def test_a_group_that_is_neither_market_nor_group_is_flagged(self):
+        """
+        A name in the volume subscenario that is neither a market nor a
+        defined group is a typo, and its limits would be ignored.
+        """
+        self.limit_group("Market_Hubb", tmp=1)
+        errors = self.validate()
+        self.assertEqual(1, len(errors), msg=errors)
+        self.assertIn("Market_Hubb", errors[0])
+
+    def test_limiting_a_market_directly_is_not_flagged(self):
+        """
+        Naming a market the scenario does not model is how one volume
+        subscenario serves scenarios with different market sets, so neither
+        that nor naming one it does model is an error.
+        """
+        self.limit_group("Market_Hub_1", tmp=1)
+        self.limit_group("Market_Hub_2", tmp=1)
+        self.assertListEqual([], self.validate())
 
 
 if __name__ == "__main__":
