@@ -206,7 +206,7 @@ markets/load_zone_markets,markets,load_zone_market_scenario_id,load_zone_markets
 markets/prices,markets,market_price_scenario_id,market_prices,simple,,0,,,,,
 markets/prices/price_profiles,markets,market_price_profile_scenario_id,market_price_profiles,simple,,1,market,,,market_price_scenario_id,market_prices
 markets/market_groups,markets,market_group_scenario_id,market_groups,simple,,0,,,,,
-markets/volume/volume_profiles,markets,market_volume_profile_scenario_id,market_volume_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
+markets/volume/volume_tmp_profiles,markets,market_volume_tmp_profile_scenario_id,market_volume_tmp_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
 markets/volume/volume_hrz_profiles,markets,market_volume_hrz_profile_scenario_id,market_volume_hrz_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
 markets/volume/volume_prd_profiles,markets,market_volume_prd_profile_scenario_id,market_volume_prd_profiles,simple,,1,market_group,,,market_volume_scenario_id,market_volume
 markets/volume,markets,market_volume_scenario_id,market_volume,simple,,0,,,,,

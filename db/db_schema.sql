@@ -1141,7 +1141,7 @@ CREATE TABLE inputs_market_volume
 (
     market_volume_scenario_id             INTEGER,
     market_group                          TEXT,
-    market_volume_profile_scenario_id     INTEGER,
+    market_volume_tmp_profile_scenario_id     INTEGER,
     market_volume_hrz_profile_scenario_id INTEGER,
     market_volume_prd_profile_scenario_id INTEGER,
     varies_by_weather_iteration           INTEGER,
@@ -1149,9 +1149,9 @@ CREATE TABLE inputs_market_volume
     PRIMARY KEY (market_volume_scenario_id, market_group),
     FOREIGN KEY (market_volume_scenario_id) REFERENCES
         subscenarios_market_volume (market_volume_scenario_id),
-    FOREIGN KEY (market_group, market_volume_profile_scenario_id) REFERENCES
-        subscenarios_market_volume_profiles
-            (market_group, market_volume_profile_scenario_id),
+    FOREIGN KEY (market_group, market_volume_tmp_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_tmp_profiles
+            (market_group, market_volume_tmp_profile_scenario_id),
     FOREIGN KEY (market_group, market_volume_hrz_profile_scenario_id) REFERENCES
         subscenarios_market_volume_hrz_profiles
             (market_group, market_volume_hrz_profile_scenario_id),
@@ -1165,21 +1165,21 @@ CREATE TABLE inputs_market_volume
 -- transactions carried over from the previous stages
 -- A row with timepoint = 0 sets the default for every timepoint that has no
 -- explicit row (and for every NULL cell in an explicit row)
-DROP TABLE IF EXISTS subscenarios_market_volume_profiles;
-CREATE TABLE subscenarios_market_volume_profiles
+DROP TABLE IF EXISTS subscenarios_market_volume_tmp_profiles;
+CREATE TABLE subscenarios_market_volume_tmp_profiles
 (
     market_group                      TEXT,
-    market_volume_profile_scenario_id INTEGER,
+    market_volume_tmp_profile_scenario_id INTEGER,
     name                              VARCHAR(32),
     description                       VARCHAR(128),
-    PRIMARY KEY (market_group, market_volume_profile_scenario_id)
+    PRIMARY KEY (market_group, market_volume_tmp_profile_scenario_id)
 );
 
-DROP TABLE IF EXISTS inputs_market_volume_profiles;
-CREATE TABLE inputs_market_volume_profiles
+DROP TABLE IF EXISTS inputs_market_volume_tmp_profiles;
+CREATE TABLE inputs_market_volume_tmp_profiles
 (
     market_group                      VARCHAR(32),
-    market_volume_profile_scenario_id INTEGER,
+    market_volume_tmp_profile_scenario_id INTEGER,
     weather_iteration                 INTEGER,
     hydro_iteration                   INTEGER,
     stage_id                          INTEGER,
@@ -1188,12 +1188,12 @@ CREATE TABLE inputs_market_volume_profiles
     max_market_purchases              FLOAT,
     max_final_market_sales            FLOAT,
     max_final_market_purchases        FLOAT,
-    PRIMARY KEY (market_group, market_volume_profile_scenario_id,
+    PRIMARY KEY (market_group, market_volume_tmp_profile_scenario_id,
                  weather_iteration, hydro_iteration, stage_id,
                  timepoint),
-    FOREIGN KEY (market_group, market_volume_profile_scenario_id) REFERENCES
-        subscenarios_market_volume_profiles
-            (market_group, market_volume_profile_scenario_id)
+    FOREIGN KEY (market_group, market_volume_tmp_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_tmp_profiles
+            (market_group, market_volume_tmp_profile_scenario_id)
 );
 
 -- Horizon-level limits, in MWh, on the group's net position summed over the

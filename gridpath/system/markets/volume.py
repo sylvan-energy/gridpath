@@ -597,7 +597,7 @@ def get_inputs_from_database(
     c = conn.cursor()
     group_list = c.execute(f"""
         SELECT market_group,
-        market_volume_profile_scenario_id,
+        market_volume_tmp_profile_scenario_id,
         market_volume_hrz_profile_scenario_id,
         market_volume_prd_profile_scenario_id,
         varies_by_weather_iteration,
@@ -615,8 +615,8 @@ def get_inputs_from_database(
     # against, the table it comes from, and how its wildcard row matches
     resolutions = [
         {
-            "table": "inputs_market_volume_profiles",
-            "profile_id_column": "market_volume_profile_scenario_id",
+            "table": "inputs_market_volume_tmp_profiles",
+            "profile_id_column": "market_volume_tmp_profile_scenario_id",
             "index_subquery": f"""
                 SELECT stage_id, timepoint
                 FROM inputs_temporal
@@ -703,7 +703,7 @@ def get_inputs_from_database(
         # the filter a valid query that matches no row, so the resolution is
         # simply skipped for this group
         profile_ids = {
-            "market_volume_profile_scenario_id": tmp_profile_id,
+            "market_volume_tmp_profile_scenario_id": tmp_profile_id,
             "market_volume_hrz_profile_scenario_id": hrz_profile_id,
             "market_volume_prd_profile_scenario_id": prd_profile_id,
         }
@@ -898,8 +898,8 @@ def validate_inputs(
     # otherwise fail only at model load
     negative_limit_checks = [
         (
-            "inputs_market_volume_profiles",
-            "market_volume_profile_scenario_id",
+            "inputs_market_volume_tmp_profiles",
+            "market_volume_tmp_profile_scenario_id",
             [
                 "max_market_sales",
                 "max_market_purchases",

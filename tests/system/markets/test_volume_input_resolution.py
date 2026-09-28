@@ -156,8 +156,8 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         for profile_id, table, column in [
             (
                 tmp,
-                "subscenarios_market_volume_profiles",
-                "market_volume_profile_scenario_id",
+                "subscenarios_market_volume_tmp_profiles",
+                "market_volume_tmp_profile_scenario_id",
             ),
             (
                 hrz,
@@ -179,7 +179,7 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         c.execute(
             """INSERT INTO inputs_market_volume
             (market_volume_scenario_id, market_group,
-             market_volume_profile_scenario_id,
+             market_volume_tmp_profile_scenario_id,
              market_volume_hrz_profile_scenario_id,
              market_volume_prd_profile_scenario_id,
              varies_by_weather_iteration, varies_by_hydro_iteration)
@@ -190,8 +190,8 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
 
     def insert_tmp_limits(self, group, profile_id, rows):
         self.conn.cursor().executemany(
-            """INSERT INTO inputs_market_volume_profiles
-            (market_group, market_volume_profile_scenario_id, weather_iteration,
+            """INSERT INTO inputs_market_volume_tmp_profiles
+            (market_group, market_volume_tmp_profile_scenario_id, weather_iteration,
              hydro_iteration, stage_id, timepoint, max_market_sales,
              max_market_purchases, max_final_market_sales,
              max_final_market_purchases)

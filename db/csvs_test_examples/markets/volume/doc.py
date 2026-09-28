@@ -17,7 +17,7 @@
 
 Each market group is mapped to a volume profile at each temporal resolution it
 is limited at. The profiles themselves live in the
-:code:`volume_profiles`, :code:`volume_hrz_profiles` and
+:code:`volume_tmp_profiles`, :code:`volume_hrz_profiles` and
 :code:`volume_prd_profiles` subdirectories, keyed by market group.
 
 """
