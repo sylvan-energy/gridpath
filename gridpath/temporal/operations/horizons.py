@@ -381,16 +381,21 @@ def add_model_components(
     )
 
     def hrz_period_init(mod, bt, hrz):
-        if (
-            mod.period[mod.first_hrz_tmp[bt, hrz]]
-            == mod.period[mod.first_hrz_tmp[bt, hrz]]
+        """
+        The period of a horizon is the period of its first timepoint. Warn
+        when a user-defined horizon spans periods; the built-in subproblem
+        horizons span all periods in the subproblem by design.
+        """
+        first_tmp_period = mod.period[mod.first_hrz_tmp[bt, hrz]]
+        if (bt, hrz) in mod.BLN_TYPE_HRZS_USER_DEFINED and any(
+            mod.period[tmp] != first_tmp_period
+            for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
         ):
-            return mod.period[mod.first_hrz_tmp[bt, hrz]]
-        else:
             warnings.warn(f"""Horizon found that spans periods. Is this intended? Check 
                 timepoints for balancing type {bt}, horizon {hrz}. Some 
                 functionality sets the horizon period to the period of the 
                 first timepoint of the horizon.""")
+        return first_tmp_period
 
     m.hrz_period = Param(m.BLN_TYPE_HRZS, within=m.PERIODS, initialize=hrz_period_init)
 
