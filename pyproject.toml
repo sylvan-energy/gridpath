@@ -203,3 +203,8 @@ namespaces = false
 
 [tool.setuptools.dynamic]
 version = { attr = "version.__version__" }
+
+[tool.black]
+# Match requires-python so a newer Black does not format for a Python the
+# package does not support
+target-version = ["py311", "py312", "py313", "py314"]
