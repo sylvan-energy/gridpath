@@ -1125,9 +1125,14 @@ CREATE TABLE inputs_market_groups
 
 -- Market volume limits
 -- Each market group gets a volume profile at each temporal resolution it is
--- limited at; a resolution left unset means the group has no limit there.
+-- limited at; a resolution left unset means the group has no profile there.
 -- The iteration flags say whether the group's limits vary by weather and by
 -- hydro iteration.
+-- The default_* columns are the group's flat limits, applied in every
+-- timepoint (or period), stage and iteration, so a limit that does not vary
+-- needs no profile at all. A profile's rows override them column by column:
+-- an explicit row first, then the profile's wildcard row, then these. A
+-- horizon-level limit needs a balancing type and so has no flat form.
 DROP TABLE IF EXISTS subscenarios_market_volume;
 CREATE TABLE subscenarios_market_volume
 (
@@ -1139,13 +1144,20 @@ CREATE TABLE subscenarios_market_volume
 DROP TABLE IF EXISTS inputs_market_volume;
 CREATE TABLE inputs_market_volume
 (
-    market_volume_scenario_id             INTEGER,
-    market_group                          TEXT,
-    market_volume_tmp_profile_scenario_id     INTEGER,
-    market_volume_hrz_profile_scenario_id INTEGER,
-    market_volume_prd_profile_scenario_id INTEGER,
-    varies_by_weather_iteration           INTEGER,
-    varies_by_hydro_iteration             INTEGER,
+    market_volume_scenario_id                              INTEGER,
+    market_group                                           TEXT,
+    market_volume_tmp_profile_scenario_id                  INTEGER,
+    market_volume_hrz_profile_scenario_id                  INTEGER,
+    market_volume_prd_profile_scenario_id                  INTEGER,
+    varies_by_weather_iteration                            INTEGER,
+    varies_by_hydro_iteration                              INTEGER,
+    default_max_market_sales                               FLOAT,
+    default_max_market_purchases                           FLOAT,
+    default_max_final_market_sales                         FLOAT,
+    default_max_final_market_purchases                     FLOAT,
+    default_max_market_sales_in_prd                        FLOAT,
+    default_max_market_purchases_in_prd                    FLOAT,
+    default_max_market_sales_in_prd_include_storage_losses INTEGER, -- Based on 'stor' operational type
     PRIMARY KEY (market_volume_scenario_id, market_group),
     FOREIGN KEY (market_volume_scenario_id) REFERENCES
         subscenarios_market_volume (market_volume_scenario_id),

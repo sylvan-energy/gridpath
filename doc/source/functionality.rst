@@ -652,9 +652,9 @@ is implicitly a group of its own, so limiting a single market takes no group
 definition, while a group of all of them is a system-wide limit and a group of
 some of them limits a region's transactions. Groups may overlap. A limit is
 imposed on the group's position in a timepoint, over a horizon of any balancing
-type in the scenario's temporal structure, or over a period. A limit that is the
-same across timepoints, horizons or periods can be entered once as a default
-rather than repeated.
+type in the scenario's temporal structure, or over a period. A limit that does
+not vary can be entered once, as a flat limit on the group or as a default row of
+its profile, rather than repeated.
 
 Policy
 ======

@@ -2545,6 +2545,35 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_two_market_group_limit"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_flat_volume(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_flat_volume" example.
+
+        The Market_Hub limits are a flat limit on the group's row in the
+        volume subscenario plus a profile listing only the timepoints that
+        differ from it, with no wildcard row; that resolves to the limits
+        "test_markets" spells out per timepoint, so the two share an
+        objective. The byte-identity of the resolved limits is checked in
+        test_market_volume_defaults_resolve_to_explicit_limits.
+        :return:
+        """
+        scenario_name = "test_markets_w_flat_volume"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_flat_prd_total_limits(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_flat_prd_total_limits" example.
+
+        The All_Markets period limit is a flat limit on the group's row with
+        no period profile at all, so it shares an objective with
+        "test_markets_w_prd_total_limits".
+        :return:
+        """
+        scenario_name = "test_markets_w_flat_prd_total_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_market_group_position_is_the_sum_over_its_markets(self):
         """
         A market group's position must be the sum of the positions of the
@@ -2609,9 +2638,10 @@ class TestExamples(unittest.TestCase):
 
     def test_market_volume_defaults_resolve_to_explicit_limits(self):
         """
-        The wildcard row of the "test_markets_w_default_volume" market
-        volume profile must resolve to exactly the limits that
-        "test_markets" spells out per timepoint, so the two scenarios'
+        The wildcard row of the "test_markets_w_default_volume" profile and
+        the flat limit plus exceptions-only profile of
+        "test_markets_w_flat_volume" must both resolve to exactly the limits
+        that "test_markets" spells out per timepoint, so the three scenarios'
         market_volume_tmp.tab files must be byte-identical. Compare the
         resolved limits rather than the objectives, which a coincidence
         could match.
@@ -2623,7 +2653,11 @@ class TestExamples(unittest.TestCase):
         """
         limits = {}
         with tempfile.TemporaryDirectory() as temp_dir:
-            for scenario_name in ["test_markets", "test_markets_w_default_volume"]:
+            for scenario_name in [
+                "test_markets",
+                "test_markets_w_default_volume",
+                "test_markets_w_flat_volume",
+            ]:
                 get_scenario_inputs.main(
                     [
                         "--database",
@@ -2647,6 +2681,7 @@ class TestExamples(unittest.TestCase):
         self.assertEqual(
             limits["test_markets"], limits["test_markets_w_default_volume"]
         )
+        self.assertEqual(limits["test_markets"], limits["test_markets_w_flat_volume"])
 
     def test_example_test_new_build_storage_losses_limit(self):
         """

@@ -16,9 +16,11 @@
 +-------------------------------+-----------------------------------------------+
 
 Each market group is mapped to a volume profile at each temporal resolution it
-is limited at. The profiles themselves live in the
-:code:`volume_tmp_profiles`, :code:`volume_hrz_profiles` and
-:code:`volume_prd_profiles` subdirectories, keyed by market group.
+is limited at, and may carry flat timepoint- and period-level limits (the
+:code:`default_*` columns) that need no profile. The profiles themselves live
+in the :code:`volume_tmp_profiles`, :code:`volume_hrz_profiles` and
+:code:`volume_prd_profiles` subdirectories, keyed by market group; their rows
+override the flat limits column by column.
 
 """
 

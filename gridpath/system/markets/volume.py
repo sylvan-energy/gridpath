@@ -73,22 +73,31 @@ limits whichever of them a given scenario models, and a group left with none
 of them contributes no constraints. This is the same scoping that lets one
 market volume subscenario serve scenarios with different market sets.
 
-**Default (wildcard) rows.** Every limit table accepts a wildcard row that
-supplies the default for the rest of the table, so a limit that is the same
-in every timepoint, horizon or period need only be entered once. The wildcard
-row is the one whose temporal index is 0: ``timepoint = 0`` in the
-timepoint-level table, ``horizon = 0`` in the horizon-level table (a separate
-default per balancing type) and ``period = 0`` in the period-level table.
+**Flat limits and default rows.** A limit that does not vary need not be
+written out per timepoint or period. Two shortcuts exist, and they stack.
 
-Resolution is per column: an explicit row wins over the wildcard row, and the
-wildcard row wins over the default of infinity. A cell left NULL in an
-explicit row falls through to the wildcard row, so a row that overrides one
-limit need not repeat the others. To leave a single timepoint unlimited when
-a finite default is in force, give it an explicitly large value.
+The group's row in the market volume subscenario carries flat timepoint- and
+period-level limits (the ``default_*`` columns), applied in every timepoint
+or period, stage and iteration, so a flat limit needs no profile at all. A
+horizon-level limit needs a balancing type and so has no flat form.
 
-The wildcard rows are resolved when the model inputs are written, so the
-scenario's input files carry the resolved limits and the model itself never
-sees a wildcard.
+Every limit profile also accepts a wildcard row that supplies the default for
+the rest of the profile: the row whose temporal index is 0, i.e.
+``timepoint = 0``, ``horizon = 0`` (a separate default per balancing type) or
+``period = 0``. Unlike the flat limit it is keyed by stage and iteration, so
+it can default differently in each.
+
+Resolution is per column and falls through in this order: an explicit row,
+then the profile's wildcard row, then the group's flat limit, then infinity.
+A cell left NULL at one layer falls through to the next, so a row that
+overrides one limit need not repeat the others, and a flat limit combines
+naturally with a profile that lists only the exceptions. To leave a single
+timepoint unlimited when a finite default is in force, give it an explicitly
+large value.
+
+The layers are resolved when the model inputs are written, so the scenario's
+input files carry the resolved limits and the model itself never sees a
+default.
 """
 
 import csv
@@ -474,10 +483,12 @@ def limits_with_defaults_sql(
     default_match_columns,
     wildcard_column,
     extra_select="",
+    flat_values=None,
 ):
     """
     Build the SQL that resolves a limits table against a scenario's temporal
-    index, applying the table's wildcard (default) rows.
+    index, applying the table's wildcard (default) rows and the group's flat
+    limits.
 
     :param index_subquery: SQL selecting the scenario's temporal index (e.g.
         its timepoints), i.e. the rows the limits are resolved for
@@ -494,19 +505,35 @@ def limits_with_defaults_sql(
     :param wildcard_column: the temporal column whose value of 0 marks the
         wildcard row
     :param extra_select: literal columns to emit before the index columns
+    :param flat_values: the group's flat limits, a value (or None) per entry
+        of *value_columns*; the lowest layer of the fall-through, applied to
+        every index entry
     :return: the SQL string
 
-    An explicit row wins over the wildcard row and the wildcard row wins over
-    the limit's model default of infinity. The COALESCE is per column, so a
-    NULL cell in an explicit row falls through to the wildcard row.
+    An explicit row wins over the wildcard row, the wildcard row wins over
+    the flat limit, and the flat limit wins over the model default of
+    infinity. The COALESCE is per column, so a NULL cell in an explicit row
+    falls through to the wildcard row and a NULL there to the flat limit.
 
-    Index entries with neither an explicit nor a wildcard row are dropped, so
+    Index entries with neither an explicit nor a wildcard row are dropped,
+    unless the group has a flat limit, in which case every entry gets one; so
     a group with no limits at this resolution contributes no rows and a
     scenario with no limits at all writes no file.
     """
+    if flat_values is None:
+        flat_values = {}
     select_index = ", ".join(f"idx.{c} AS {c}" for c in index_columns)
     select_values = ", ".join(
-        f"COALESCE(explicit.{c}, wildcard.{c}) AS {c}" for c in value_columns
+        f"COALESCE(explicit.{c}, wildcard.{c}, {sql_literal(flat_values.get(c))})"
+        f" AS {c}"
+        for c in value_columns
+    )
+    has_flat_limit = any(v is not None for v in flat_values.values())
+    gate = (
+        "1 = 1"
+        if has_flat_limit
+        else f"explicit.{wildcard_column} IS NOT NULL "
+        f"OR wildcard.{wildcard_column} IS NOT NULL"
     )
     explicit_join = " AND ".join(f"idx.{c} = explicit.{c}" for c in match_columns)
     wildcard_join = (
@@ -526,9 +553,15 @@ def limits_with_defaults_sql(
             {data_subquery.format(wildcard_filter=f"{wildcard_column} = 0")}
         ) AS wildcard
             ON {wildcard_join}
-        WHERE explicit.{wildcard_column} IS NOT NULL
-        OR wildcard.{wildcard_column} IS NOT NULL
+        WHERE {gate}
         """
+
+
+def sql_literal(value):
+    """
+    *value* as a SQL literal: NULL for None, else the number itself.
+    """
+    return "NULL" if value is None else repr(value)
 
 
 def no_rows_sql(columns):
@@ -601,7 +634,14 @@ def get_inputs_from_database(
         market_volume_hrz_profile_scenario_id,
         market_volume_prd_profile_scenario_id,
         varies_by_weather_iteration,
-        varies_by_hydro_iteration
+        varies_by_hydro_iteration,
+        default_max_market_sales,
+        default_max_market_purchases,
+        default_max_final_market_sales,
+        default_max_final_market_purchases,
+        default_max_market_sales_in_prd,
+        default_max_market_purchases_in_prd,
+        default_max_market_sales_in_prd_include_storage_losses
         FROM inputs_market_volume
         WHERE market_volume_scenario_id = {subscenarios.MARKET_VOLUME_SCENARIO_ID}
         -- Limit groups that have at least one of the scenario's markets
@@ -691,8 +731,27 @@ def get_inputs_from_database(
         prd_profile_id,
         varies_by_weather_iteration,
         varies_by_hydro_iteration,
+        *flat_limits,
     ) in group_list:
         union_str = "UNION" if n < n_groups else ""
+
+        # The group's flat limits, keyed by the profile column they default;
+        # the horizon level has none, as a horizon limit needs a balancing
+        # type
+        flat_values = dict(
+            zip(
+                [
+                    "max_market_sales",
+                    "max_market_purchases",
+                    "max_final_market_sales",
+                    "max_final_market_purchases",
+                    "max_market_sales_in_prd",
+                    "max_market_purchases_in_prd",
+                    "max_market_sales_in_prd_include_storage_losses",
+                ],
+                flat_limits,
+            )
+        )
 
         weather_iteration_to_use = (
             weather_iteration if varies_by_weather_iteration else 0
@@ -736,6 +795,9 @@ def get_inputs_from_database(
                     default_match_columns=resolution["default_match_columns"],
                     wildcard_column=resolution["wildcard_column"],
                     extra_select=f"'{market_group}' AS market_group, ",
+                    flat_values={
+                        c: flat_values.get(c) for c in resolution["value_columns"]
+                    },
                 )
                 + union_str
             )
@@ -931,6 +993,26 @@ def validate_inputs(
                     f"{table}: {n_negative} row(s) have a negative "
                     f"{column}; market volume limits must be non-negative."
                 )
+    for column in [
+        "default_max_market_sales",
+        "default_max_market_purchases",
+        "default_max_final_market_sales",
+        "default_max_final_market_purchases",
+        "default_max_market_sales_in_prd",
+        "default_max_market_purchases_in_prd",
+    ]:
+        (n_negative,) = c.execute(f"""
+            SELECT COUNT(*)
+            FROM inputs_market_volume
+            WHERE market_volume_scenario_id =
+            {subscenarios.MARKET_VOLUME_SCENARIO_ID}
+            AND {column} < 0
+            """).fetchone()
+        if n_negative:
+            errors.append(
+                f"inputs_market_volume: {n_negative} row(s) have a negative "
+                f"{column}; market volume limits must be non-negative."
+            )
 
     write_validation_to_database(
         conn=conn,

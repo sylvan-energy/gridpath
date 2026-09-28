@@ -19,8 +19,9 @@ temporal structure, including the wildcard (default) rows.
 Covers what an example scenario cannot easily express: the implicit
 singleton group every market gets, a wildcard row on its own, a wildcard row
 overridden for one index, a NULL cell in an explicit row falling through to
-the wildcard row, a group that narrows to none of the scenario's markets, and
-a group limited at one resolution only.
+the wildcard row, the group's flat limit as the layer beneath both, a group
+that narrows to none of the scenario's markets, and a group limited at one
+resolution only.
 """
 
 import os.path
@@ -147,10 +148,12 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def limit_group(self, group, tmp=None, hrz=None, prd=None):
+    def limit_group(self, group, tmp=None, hrz=None, prd=None, **flat):
         """
         Give *group* a volume profile, at the resolutions whose profile ID is
-        passed. Creates the profile subscenario rows the limits hang off.
+        passed, and the flat limits in *flat* (keyed by the profile column
+        they default). Creates the profile subscenario rows the limits hang
+        off.
         """
         c = self.conn.cursor()
         for profile_id, table, column in [
@@ -176,15 +179,27 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
                     f"VALUES (?, ?, 'test')",
                     (group, profile_id),
                 )
+        flat_columns = [
+            "max_market_sales",
+            "max_market_purchases",
+            "max_final_market_sales",
+            "max_final_market_purchases",
+            "max_market_sales_in_prd",
+            "max_market_purchases_in_prd",
+            "max_market_sales_in_prd_include_storage_losses",
+        ]
+        assert set(flat) <= set(flat_columns), flat
         c.execute(
-            """INSERT INTO inputs_market_volume
+            f"""INSERT INTO inputs_market_volume
             (market_volume_scenario_id, market_group,
              market_volume_tmp_profile_scenario_id,
              market_volume_hrz_profile_scenario_id,
              market_volume_prd_profile_scenario_id,
-             varies_by_weather_iteration, varies_by_hydro_iteration)
-            VALUES (?, ?, ?, ?, ?, 0, 0)""",
-            (MARKET_VOLUME_SCENARIO_ID, group, tmp, hrz, prd),
+             varies_by_weather_iteration, varies_by_hydro_iteration,
+             {", ".join("default_" + col for col in flat_columns)})
+            VALUES (?, ?, ?, ?, ?, 0, 0, {", ".join("?" * len(flat_columns))})""",
+            (MARKET_VOLUME_SCENARIO_ID, group, tmp, hrz, prd)
+            + tuple(flat.get(col) for col in flat_columns),
         )
         self.conn.commit()
 
@@ -376,6 +391,81 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         )
         self.assertListEqual([], hrz_limits)
         self.assertListEqual([("All_Hubs", PERIOD, 5000, None, None)], prd_limits)
+
+    def test_flat_limit_needs_no_profile(self):
+        """
+        A flat limit on the group's row applies in every timepoint (or
+        period) with no profile at all.
+        """
+        self.limit_group(
+            "All_Hubs", max_market_purchases=5, max_market_purchases_in_prd=5000
+        )
+        _, tmp_limits, hrz_limits, prd_limits = self.resolve()
+        self.assertListEqual(
+            [
+                ("All_Hubs", 1, None, 5, None, None),
+                ("All_Hubs", 2, None, 5, None, None),
+            ],
+            tmp_limits,
+        )
+        self.assertListEqual([], hrz_limits)
+        self.assertListEqual([("All_Hubs", PERIOD, None, 5000, None)], prd_limits)
+
+    def test_layers_fall_through_explicit_wildcard_flat(self):
+        """
+        Per column, an explicit row wins over the profile's wildcard row,
+        which wins over the group's flat limit: flat purchases 5, a wildcard
+        setting only sales 10, and an explicit row for timepoint 2 setting
+        only purchases 8.
+        """
+        self.limit_group("All_Hubs", tmp=1, max_market_purchases=5)
+        self.insert_tmp_limits(
+            "All_Hubs", 1, [(0, 10, None, None, None), (2, None, 8, None, None)]
+        )
+        _, tmp_limits, _, _ = self.resolve()
+        self.assertListEqual(
+            [
+                ("All_Hubs", 1, 10, 5, None, None),
+                ("All_Hubs", 2, 10, 8, None, None),
+            ],
+            tmp_limits,
+        )
+
+    def test_flat_limit_with_a_profile_of_exceptions_only(self):
+        """
+        The natural way to write "5 except in timepoint 2": a flat limit and
+        a profile listing only the exception, with no wildcard row.
+        """
+        self.limit_group("All_Hubs", tmp=1, max_market_purchases=5)
+        self.insert_tmp_limits("All_Hubs", 1, [(2, None, 8, None, None)])
+        _, tmp_limits, _, _ = self.resolve()
+        self.assertListEqual(
+            [
+                ("All_Hubs", 1, None, 5, None, None),
+                ("All_Hubs", 2, None, 8, None, None),
+            ],
+            tmp_limits,
+        )
+
+    def test_flat_limit_is_scoped_to_its_resolution(self):
+        """
+        A flat timepoint limit does not make the group appear at the period
+        level, and vice versa.
+        """
+        self.limit_group("All_Hubs", max_market_sales=3)
+        _, tmp_limits, hrz_limits, prd_limits = self.resolve()
+        self.assertEqual(2, len(tmp_limits))
+        self.assertListEqual([], hrz_limits)
+        self.assertListEqual([], prd_limits)
+
+    def test_negative_flat_limit_is_flagged(self):
+        """
+        Flat limits are validated like the profile rows.
+        """
+        self.limit_group("All_Hubs", max_market_purchases=-1)
+        errors = self.validate()
+        self.assertEqual(1, len(errors), msg=errors)
+        self.assertIn("default_max_market_purchases", errors[0])
 
     def test_no_limits_resolve_to_no_rows(self):
         """
