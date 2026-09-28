@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 
 from gridpath import (
     get_scenario_inputs,
@@ -2451,6 +2452,28 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_generic_policy_recs"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def validate_and_test_example_expecting_year_horizon_span_warning(
+        self, scenario_name
+    ):
+        """
+        Run an example whose temporal setup has month-long periods and a
+        single 'year' horizon across them. The horizon spans periods by
+        design, so expect the warning about it and re-raise any others.
+        """
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+        span_warnings = [
+            w for w in caught if "Horizon found that spans periods" in str(w.message)
+        ]
+        self.assertTrue(span_warnings)
+        for w in span_warnings:
+            self.assertIn("balancing type year, horizon 2030", str(w.message))
+        for w in caught:
+            if w not in span_warnings:
+                warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+
     def test_example_generic_policy_sod_test(self):
         """
         Check validation and objective function value of
@@ -2458,7 +2481,9 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "generic_policy_sod_test"
-        self.validate_and_test_example_generic(scenario_name=scenario_name)
+        self.validate_and_test_example_expecting_year_horizon_span_warning(
+            scenario_name=scenario_name
+        )
 
     def test_example_generic_policy_sod_test_w_annual_rps(self):
         """
@@ -2467,7 +2492,9 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "generic_policy_sod_test_w_annual_rps"
-        self.validate_and_test_example_generic(scenario_name=scenario_name)
+        self.validate_and_test_example_expecting_year_horizon_span_warning(
+            scenario_name=scenario_name
+        )
 
     def test_example_test_markets_w_tmp_total_limits(self):
         """
