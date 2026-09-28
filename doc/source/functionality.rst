@@ -456,6 +456,10 @@ Must-Run Generation (*gen_must_run*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_must_run
 
+Strike-Price Generation (*gen_simple_strike_price*)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. automodule:: gridpath.project.operations.operational_types.gen_simple_strike_price
+
 Always-On Generation (*gen_always_on*)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_always_on
@@ -643,7 +647,14 @@ Markets
 
 GridPath can allow a resource or a set of resources to participate in markets with
 pre-specified price streams, assuming resources are price-takers and subject to
-market volume limits.
+market volume limits. A volume limit applies to a group of markets: every market
+is implicitly a group of its own, so limiting a single market takes no group
+definition, while a group of all of them is a system-wide limit and a group of
+some of them limits a region's transactions. Groups may overlap. A limit is
+imposed on the group's position in a timepoint, over a horizon of any balancing
+type in the scenario's temporal structure, or over a period. A limit that does
+not vary can be entered once, as a flat limit on the group or as a default row of
+its profile, rather than repeated.
 
 Policy
 ======

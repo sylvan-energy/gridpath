@@ -18,7 +18,10 @@ is built up under "average" system conditions and then drawn down during
 "stress" conditions, e.g. multi-day or seasonal storage.
 
 The type distinguishes between two kinds of horizons (of the project's
-balancing type), designated via the :code:`stor_stress_hrz_type` input:
+balancing type), designated via the optional :code:`stor_stress_hrz_type`
+column of the temporal horizon inputs (:code:`inputs_temporal_horizons`, i.e.
+:code:`horizon_params.csv`); horizons without a designation are
+average-condition horizons:
 
 * **Average-condition horizons**: the project can only charge (discharging
   is not allowed) and the state of charge is not tracked timepoint to
@@ -76,7 +79,6 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_param_value,
     subset_init_by_set_membership,
 )
-from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_PERIOD_DF
 from gridpath.project.common_functions import (
@@ -87,7 +89,6 @@ from gridpath.project.common_functions import (
 from gridpath.project.operations.operational_types.common_functions import (
     load_optype_model_data,
     validate_opchars,
-    write_tab_file_model_inputs,
 )
 
 
@@ -177,7 +178,7 @@ def add_model_components(
     +-------------------------------------------------------------------------+
     | Optional Input Params                                                   |
     +=========================================================================+
-    | | :code:`stor_stress_hrz_type`                                             |
+    | | :code:`stor_stress_hrz_type`                                          |
     | | *Defined over*: :code:`BLN_TYPE_HRZS`                                 |
     | | *Within*: :code:`["average", "stress"]`                               |
     | | *Default*: :code:`"average"`                                          |
@@ -626,7 +627,7 @@ def stress_hrz_energy_tracking_rule(mod, s, tmp):
                 f"stress horizon in period {prd} but no average-condition "
                 f"horizon in that period, so the starting state of charge "
                 f"for the stress horizon is undefined. Check the "
-                f"stor_stress_hrz_type inputs."
+                f"stor_stress_hrz_type column of the temporal horizon inputs."
             )
         return (
             mod.StorStressHrz_Starting_Energy_in_Storage_MWh[s, tmp]
@@ -893,111 +894,6 @@ def export_results(
     update_results_df(getattr(d, PROJECT_PERIOD_DF), results_df)
 
 
-def get_model_inputs_from_database(
-    scenario_id,
-    subscenarios,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    conn,
-):
-    """
-    :param subscenarios: SubScenarios object with all subscenario info
-    :param subproblem:
-    :param stage:
-    :param conn: database connection
-    :return: cursor object with query results
-
-    Get the horizon type designations ("average"/"stress") for the horizons
-    in the current subproblem and stage. Horizon types can be specified for
-    user-defined horizons (built-in horizons are not in
-    inputs_temporal_horizon_timepoints and default to "average").
-    """
-
-    (
-        db_weather_iteration,
-        db_hydro_iteration,
-        db_availability_iteration,
-        db_subproblem,
-        db_stage,
-    ) = directories_to_db_values(
-        weather_iteration, hydro_iteration, availability_iteration, subproblem, stage
-    )
-
-    # If the subscenario ID is not set for this scenario,
-    # subscenarios.STOR_STRESS_HRZ_TYPE_SCENARIO_ID is the string "NULL" and
-    # the query returns no rows (all horizons then default to "average")
-    c = conn.cursor()
-    hrz_types = c.execute(
-        f"""SELECT balancing_type_horizon, horizon, stor_stress_hrz_type
-        FROM inputs_project_stor_stress_hrz_types
-        WHERE stor_stress_hrz_type_scenario_id =
-        {subscenarios.STOR_STRESS_HRZ_TYPE_SCENARIO_ID}
-        -- Only horizons in the current subproblem and stage, as other
-        -- horizons are not valid indices of the model's horizon set
-        AND (balancing_type_horizon, horizon) IN (
-            SELECT DISTINCT balancing_type_horizon, horizon
-            FROM inputs_temporal_horizon_timepoints
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            AND subproblem_id = {db_subproblem}
-            AND stage_id = {db_stage}
-        )
-        ORDER BY balancing_type_horizon, horizon;"""
-    )
-
-    return hrz_types
-
-
-def write_model_inputs(
-    scenario_directory,
-    scenario_id,
-    subscenarios,
-    weather_iteration,
-    hydro_iteration,
-    availability_iteration,
-    subproblem,
-    stage,
-    conn,
-):
-    """
-    Get inputs from database and write out the model input
-    stor_stress_hrz_horizon_types.tab file (skipped if there are no horizon type
-    inputs for this scenario).
-    :param scenario_directory: string, the scenario directory
-    :param subscenarios: SubScenarios object with all subscenario info
-    :param subproblem:
-    :param stage:
-    :param conn: database connection
-    :return:
-    """
-
-    data = get_model_inputs_from_database(
-        scenario_id,
-        subscenarios,
-        weather_iteration,
-        hydro_iteration,
-        availability_iteration,
-        subproblem,
-        stage,
-        conn,
-    )
-
-    fname = "stor_stress_hrz_horizon_types.tab"
-
-    write_tab_file_model_inputs(
-        scenario_directory,
-        weather_iteration,
-        hydro_iteration,
-        availability_iteration,
-        subproblem,
-        stage,
-        fname,
-        data,
-    )
-
-
 def load_model_data(
     mod,
     d,
@@ -1030,9 +926,11 @@ def load_model_data(
         op_type="stor_stress_hrz",
     )
 
-    # Horizon types; optional file -- horizons not in it (or all horizons if
-    # the file doesn't exist) default to "average"
-    hrz_type_filename = os.path.join(
+    # Horizon types ride in the user-defined horizons file written by the
+    # horizons module; the column is "." for horizons without a designation,
+    # which (like horizons not in the file at all, e.g. the built-in ones)
+    # default to "average"
+    hrz_filename = os.path.join(
         scenario_directory,
         weather_iteration,
         hydro_iteration,
@@ -1040,11 +938,11 @@ def load_model_data(
         subproblem,
         stage,
         "inputs",
-        "stor_stress_hrz_horizon_types.tab",
+        "horizons_user_defined.tab",
     )
-    if os.path.exists(hrz_type_filename):
+    if os.path.exists(hrz_filename):
         data_portal.load(
-            filename=hrz_type_filename,
+            filename=hrz_filename,
             select=("balancing_type_horizon", "horizon", "stor_stress_hrz_type"),
             param=mod.stor_stress_hrz_type,
         )

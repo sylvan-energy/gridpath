@@ -1,0 +1,5 @@
+market_group	timepoint	max_market_sales	max_market_purchases	max_final_market_sales	max_final_market_purchases
+Market_Hub	20200301	10.0	5.0	.	.
+Market_Hub	20200302	5.0	10.0	.	.
+Market_Hub2	20200301	10.0	5.0	.	.
+Market_Hub2	20200302	5.0	10.0	.	.

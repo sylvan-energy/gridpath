@@ -1,4 +1,4 @@
-balancing_type_horizon,horizon,boundary
-day,1,circular
-half_day,1,circular
-half_day,2,circular
+balancing_type_horizon,horizon,boundary,stor_stress_hrz_type
+day,1,circular,
+half_day,1,circular,
+half_day,2,circular,

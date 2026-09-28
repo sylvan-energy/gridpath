@@ -1,2 +1,2 @@
-horizon	balancing_type_horizon	boundary
-2	day	circular
+horizon	balancing_type_horizon	boundary	stor_stress_hrz_type
+2	day	circular	.

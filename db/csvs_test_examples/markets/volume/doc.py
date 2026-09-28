@@ -1,18 +1,26 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC. All rights reserved.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 
 """
 
 **Relevant tables:**
 
-+-------------------------------+-------------------------------------------+
-|:code:`scenarios` table column |:code:`market_scenario_id`             |
-+-------------------------------+-------------------------------------------+
-|:code:`scenario` table feature |:code:`of_markets`                         |
-+-------------------------------+-------------------------------------------+
-|:code:`subscenario_` table     |:code:`subscenarios_geography_markets` |
-+-------------------------------+-------------------------------------------+
-|:code:`input_` tables          |:code:`inputs_geography_markets`       |
-+-------------------------------+-------------------------------------------+
++-------------------------------+-----------------------------------------------+
+|:code:`scenarios` table column |:code:`market_volume_scenario_id`              |
++-------------------------------+-----------------------------------------------+
+|:code:`scenario` table feature |:code:`of_markets`                             |
++-------------------------------+-----------------------------------------------+
+|:code:`subscenario_` table     |:code:`subscenarios_market_volume`             |
++-------------------------------+-----------------------------------------------+
+|:code:`input_` tables          |:code:`inputs_market_volume`                   |
++-------------------------------+-----------------------------------------------+
+
+Each market group is mapped to a volume profile at each temporal resolution it
+is limited at, and may carry flat timepoint- and period-level limits (the
+:code:`default_*` columns) that need no profile. The profiles themselves live
+in the :code:`volume_tmp_profiles`, :code:`volume_hrz_profiles` and
+:code:`volume_prd_profiles` subdirectories, keyed by market group; their rows
+override the flat limits column by column.
 
 """
 

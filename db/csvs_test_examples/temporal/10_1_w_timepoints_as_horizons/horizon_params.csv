@@ -1,4 +1,4 @@
-balancing_type_horizon,horizon,boundary
-day,202001,circular
-timepoint,20200101,circular
-timepoint,20200102,circular
+balancing_type_horizon,horizon,boundary,stor_stress_hrz_type
+day,202001,circular,
+timepoint,20200101,circular,
+timepoint,20200102,circular,

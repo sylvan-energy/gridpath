@@ -31,6 +31,8 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.investment.periods",
     "temporal.operations.horizons",
     "geography.load_zones",
+    "geography.markets",
+    "system.markets.prices",
     "geography.carbon_tax_zones",
     "system.policy.carbon_tax.carbon_tax",
     "geography.water_network",
@@ -141,6 +143,7 @@ class TestCarbonTaxEmissions(unittest.TestCase):
                 "Disp_No_Commit",
                 "Clunky_Old_Gen",
                 "Clunky_Old_Gen2",
+                "Gen_Strike_Price",
             ]
         )
         actual_carbon_tax_projects = sorted([p for p in instance.CARBON_TAX_PRJS])
@@ -164,6 +167,7 @@ class TestCarbonTaxEmissions(unittest.TestCase):
                     "Disp_No_Commit": "Carbon_Tax_Zone1",
                     "Clunky_Old_Gen": "Carbon_Tax_Zone1",
                     "Clunky_Old_Gen2": "Carbon_Tax_Zone1",
+                    "Gen_Strike_Price": "Carbon_Tax_Zone1",
                 }.items()
             )
         )
@@ -193,6 +197,7 @@ class TestCarbonTaxEmissions(unittest.TestCase):
                             "Disp_No_Commit",
                             "Clunky_Old_Gen",
                             "Clunky_Old_Gen2",
+                            "Gen_Strike_Price",
                         ]
                     ),
                     "Carbon_Tax_Zone2": sorted(["Gas_CCGT_z2", "Coal_z2", "Gas_CT_z2"]),
@@ -254,6 +259,8 @@ class TestCarbonTaxEmissions(unittest.TestCase):
                     ("Disp_No_Commit", "Gas", 2030): 5,
                     ("Clunky_Old_Gen", "Solid", 2030): 3,
                     ("Clunky_Old_Gen2", "Solid", 2030): 3,
+                    ("Gen_Strike_Price", "Gas", 2020): 0.01,
+                    ("Gen_Strike_Price", "Gas", 2030): 0.005,
                 }.items()
             )
         )
@@ -272,6 +279,8 @@ class TestCarbonTaxEmissions(unittest.TestCase):
             [
                 ("Clunky_Old_Gen", 2020),
                 ("Clunky_Old_Gen", 2030),
+                ("Gen_Strike_Price", 2020),
+                ("Gen_Strike_Price", 2030),
                 ("Clunky_Old_Gen2", 2030),
                 ("Clunky_Old_Gen2", 2020),
                 ("Coal", 2020),
@@ -336,6 +345,8 @@ class TestCarbonTaxEmissions(unittest.TestCase):
                     ("Disp_No_Commit", 2030): 8,
                     ("Clunky_Old_Gen", 2030): 842.33333,
                     ("Clunky_Old_Gen2", 2030): 842.33333,
+                    ("Gen_Strike_Price", 2020): 1.1,
+                    ("Gen_Strike_Price", 2030): 1.1,
                 }.items()
             )
         )

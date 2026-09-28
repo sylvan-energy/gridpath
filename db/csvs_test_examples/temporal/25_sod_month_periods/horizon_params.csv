@@ -1,6 +1,6 @@
-balancing_type_horizon,horizon,boundary
-day,203011,circular
-day,203012,circular
-day,203021,circular
-day,203022,circular
-year,2030,linear
+balancing_type_horizon,horizon,boundary,stor_stress_hrz_type
+day,203011,circular,
+day,203012,circular,
+day,203021,circular,
+day,203022,circular,
+year,2030,linear,

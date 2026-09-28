@@ -58,7 +58,7 @@ def build_test_instance(with_dual_suffix):
 
 def write_lp_and_get_symbol_map(instance, directory):
     smap_id = run_scenario.write_problem_file(
-        instance=instance, prob_sol_files_directory=directory
+        instance=instance, prob_sol_files_directory=directory, quiet=True
     )
 
     return instance.solutions.symbol_map[smap_id]

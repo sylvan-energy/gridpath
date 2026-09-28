@@ -17,8 +17,11 @@ from collections import OrderedDict
 from importlib import import_module
 import os.path
 import pandas as pd
+import shutil
 import sys
+import tempfile
 import unittest
+import warnings
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 
@@ -471,6 +474,76 @@ class TestHorizons(unittest.TestCase):
             actual_next_tmp_ordered,
             msg="Data for param next_tmp do not match " "expected.",
         )
+
+    def _create_instance_and_record_span_warnings(self, test_data_dir):
+        """
+        Create an instance from the given test data directory and return it
+        along with any warnings about horizons spanning periods
+        """
+        m, data = add_components_and_load_data(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=test_data_dir,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            instance = m.create_instance(data)
+        span_warnings = [
+            w for w in caught if "Horizon found that spans periods" in str(w.message)
+        ]
+        return instance, span_warnings
+
+    def test_hrz_period(self):
+        """
+        Horizons get the period of their first timepoint; the built-in
+        subproblem horizons span both test periods without warning
+        """
+        instance, span_warnings = self._create_instance_and_record_span_warnings(
+            TEST_DATA_DIRECTORY
+        )
+
+        self.assertEqual(span_warnings, [])
+        self.assertEqual(instance.hrz_period["day", 202001], 2020)
+        self.assertEqual(instance.hrz_period["subproblem_circular", 1], 2020)
+        self.assertEqual(instance.hrz_period["subproblem_period_circular", 2030], 2030)
+
+    def test_hrz_period_warns_on_user_defined_horizon_spanning_periods(self):
+        """
+        A user-defined horizon whose timepoints belong to more than one period
+        triggers a warning and is assigned the period of its first timepoint
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_data_dir = os.path.join(tmp_dir, "test_data")
+            shutil.copytree(
+                os.path.join(TEST_DATA_DIRECTORY, "inputs"),
+                os.path.join(test_data_dir, "inputs"),
+            )
+            tmps_file = os.path.join(test_data_dir, "inputs", "timepoints.tab")
+            tmps_df = pd.read_csv(tmps_file, sep="\t", dtype=str, keep_default_na=False)
+            # Move the last timepoint of day horizon 202001 into period 2030
+            tmps_df.loc[tmps_df["timepoint"] == "20200124", "period"] = "2030"
+            tmps_df.to_csv(tmps_file, sep="\t", index=False)
+
+            instance, span_warnings = self._create_instance_and_record_span_warnings(
+                test_data_dir
+            )
+
+        # The moved timepoint belongs to both the day and the year horizon
+        warned_horizons = sorted(
+            hrz
+            for hrz in ["day, horizon 202001", "year, horizon 2020"]
+            for w in span_warnings
+            if hrz in str(w.message)
+        )
+        self.assertEqual(len(span_warnings), 2)
+        self.assertEqual(warned_horizons, ["day, horizon 202001", "year, horizon 2020"])
+        self.assertEqual(instance.hrz_period["day", 202001], 2020)
+        self.assertEqual(instance.hrz_period["year", 2020], 2020)
 
 
 if __name__ == "__main__":

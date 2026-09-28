@@ -1,0 +1,8 @@
+project,specified,new_build,capacity_type
+Coal,,,gen_spec
+Gas_CCGT,,,gen_spec
+Gas_CT,,,gen_spec
+Nuclear,,,gen_spec
+Wind,,,gen_spec
+Gas_Strike_Price,,,gen_spec
+Gas_Strike_Price_Tie,,,gen_spec

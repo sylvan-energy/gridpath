@@ -407,6 +407,12 @@ CREATE TABLE inputs_temporal_horizons
     balancing_type_horizon VARCHAR(32) NOT NULL,
     horizon                INTEGER     NOT NULL,
     boundary               VARCHAR(16) NOT NULL,
+    -- Horizon designation for projects of the stor_stress_hrz operational
+    -- type: 'average' (average-condition horizon, the default when NULL) or
+    -- 'stress'; ignored by all other operational types
+    stor_stress_hrz_type   VARCHAR(16) CHECK (
+        stor_stress_hrz_type IN ('average', 'stress')
+        ),
     PRIMARY KEY (temporal_scenario_id, balancing_type_horizon, horizon),
     FOREIGN KEY (temporal_scenario_id) REFERENCES subscenarios_temporal
         (temporal_scenario_id),
@@ -1085,6 +1091,48 @@ CREATE TABLE inputs_market_price_profiles
                  hydro_iteration, stage_id, timepoint)
 );
 
+-- Market groups
+-- A limit on market transactions applies to a group of markets: a group of
+-- all the scenario's markets is a system-wide limit and anything in between
+-- (e.g. all the hubs of one region) is expressible too. Groups may overlap.
+-- Every market is implicitly a group of its own, named after it, so only
+-- groups of more than one market are listed here and a scenario needing none
+-- can leave market_group_scenario_id unset. A group may not be named after a
+-- market unless it contains that market alone.
+-- A group is narrowed to the markets of the scenario's market_scenario_id,
+-- so one group definition serves scenarios with different market sets; a
+-- group left with none of them contributes no constraints.
+-- Group names may not contain a dash, as the input CSV file names are
+-- <market_group>-<id>-<name>.csv
+DROP TABLE IF EXISTS subscenarios_market_groups;
+CREATE TABLE subscenarios_market_groups
+(
+    market_group_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                     VARCHAR(32),
+    description              VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_market_groups;
+CREATE TABLE inputs_market_groups
+(
+    market_group_scenario_id INTEGER,
+    market_group             VARCHAR(32),
+    market                   VARCHAR(32),
+    PRIMARY KEY (market_group_scenario_id, market_group, market),
+    FOREIGN KEY (market_group_scenario_id) REFERENCES
+        subscenarios_market_groups (market_group_scenario_id)
+);
+
+-- Market volume limits
+-- Each market group gets a volume profile at each temporal resolution it is
+-- limited at; a resolution left unset means the group has no profile there.
+-- The iteration flags say whether the group's limits vary by weather and by
+-- hydro iteration.
+-- The default_* columns are the group's flat limits, applied in every
+-- timepoint (or period), stage and iteration, so a limit that does not vary
+-- needs no profile at all. A profile's rows override them column by column:
+-- an explicit row first, then the profile's wildcard row, then these. A
+-- horizon-level limit needs a balancing type and so has no flat form.
 DROP TABLE IF EXISTS subscenarios_market_volume;
 CREATE TABLE subscenarios_market_volume
 (
@@ -1096,33 +1144,54 @@ CREATE TABLE subscenarios_market_volume
 DROP TABLE IF EXISTS inputs_market_volume;
 CREATE TABLE inputs_market_volume
 (
-    market_volume_scenario_id         INTEGER,
-    market                            TEXT,
-    market_volume_profile_scenario_id INTEGER,
-    varies_by_weather_iteration       INTEGER,
-    varies_by_hydro_iteration         INTEGER,
-    PRIMARY KEY (market_volume_scenario_id, market,
-                 market_volume_profile_scenario_id),
+    market_volume_scenario_id                              INTEGER,
+    market_group                                           TEXT,
+    market_volume_tmp_profile_scenario_id                  INTEGER,
+    market_volume_hrz_profile_scenario_id                  INTEGER,
+    market_volume_prd_profile_scenario_id                  INTEGER,
+    varies_by_weather_iteration                            INTEGER,
+    varies_by_hydro_iteration                              INTEGER,
+    default_max_market_sales                               FLOAT,
+    default_max_market_purchases                           FLOAT,
+    default_max_final_market_sales                         FLOAT,
+    default_max_final_market_purchases                     FLOAT,
+    default_max_market_sales_in_prd                        FLOAT,
+    default_max_market_purchases_in_prd                    FLOAT,
+    default_max_market_sales_in_prd_include_storage_losses INTEGER, -- Based on 'stor' operational type
+    PRIMARY KEY (market_volume_scenario_id, market_group),
     FOREIGN KEY (market_volume_scenario_id) REFERENCES
-        subscenarios_market_volume (market_volume_scenario_id)
+        subscenarios_market_volume (market_volume_scenario_id),
+    FOREIGN KEY (market_group, market_volume_tmp_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_tmp_profiles
+            (market_group, market_volume_tmp_profile_scenario_id),
+    FOREIGN KEY (market_group, market_volume_hrz_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_hrz_profiles
+            (market_group, market_volume_hrz_profile_scenario_id),
+    FOREIGN KEY (market_group, market_volume_prd_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_prd_profiles
+            (market_group, market_volume_prd_profile_scenario_id)
 );
 
-
-DROP TABLE IF EXISTS subscenarios_market_volume_profiles;
-CREATE TABLE subscenarios_market_volume_profiles
+-- Timepoint-level limits, in MW, on the group's net position in the
+-- timepoint; the 'final' limits apply to the position including the
+-- transactions carried over from the previous stages
+-- A row with timepoint = 0 sets the default for every timepoint that has no
+-- explicit row (and for every NULL cell in an explicit row)
+DROP TABLE IF EXISTS subscenarios_market_volume_tmp_profiles;
+CREATE TABLE subscenarios_market_volume_tmp_profiles
 (
-    market                            TEXT,
-    market_volume_profile_scenario_id INTEGER,
+    market_group                      TEXT,
+    market_volume_tmp_profile_scenario_id INTEGER,
     name                              VARCHAR(32),
     description                       VARCHAR(128),
-    PRIMARY KEY (market, market_volume_profile_scenario_id)
+    PRIMARY KEY (market_group, market_volume_tmp_profile_scenario_id)
 );
 
-DROP TABLE IF EXISTS inputs_market_volume_profiles;
-CREATE TABLE inputs_market_volume_profiles
+DROP TABLE IF EXISTS inputs_market_volume_tmp_profiles;
+CREATE TABLE inputs_market_volume_tmp_profiles
 (
-    market                            VARCHAR(32),
-    market_volume_profile_scenario_id INTEGER,
+    market_group                      VARCHAR(32),
+    market_volume_tmp_profile_scenario_id INTEGER,
     weather_iteration                 INTEGER,
     hydro_iteration                   INTEGER,
     stage_id                          INTEGER,
@@ -1131,63 +1200,81 @@ CREATE TABLE inputs_market_volume_profiles
     max_market_purchases              FLOAT,
     max_final_market_sales            FLOAT,
     max_final_market_purchases        FLOAT,
-    PRIMARY KEY (market, market_volume_profile_scenario_id,
+    PRIMARY KEY (market_group, market_volume_tmp_profile_scenario_id,
                  weather_iteration, hydro_iteration, stage_id,
                  timepoint),
-    FOREIGN KEY (market, market_volume_profile_scenario_id) REFERENCES
-        subscenarios_market_volume_profiles
-            (market, market_volume_profile_scenario_id)
+    FOREIGN KEY (market_group, market_volume_tmp_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_tmp_profiles
+            (market_group, market_volume_tmp_profile_scenario_id)
 );
 
--- Total limits over all markets
--- By tmp
-DROP TABLE IF EXISTS subscenarios_market_volume_totals_in_tmp;
-CREATE TABLE subscenarios_market_volume_totals_in_tmp
+-- Horizon-level limits, in MWh, on the group's net position summed over the
+-- timepoints of the horizon
+-- A row with horizon = 0 sets the default for every horizon of the
+-- respective balancing type that has no explicit row (and for every NULL
+-- cell in an explicit row)
+DROP TABLE IF EXISTS subscenarios_market_volume_hrz_profiles;
+CREATE TABLE subscenarios_market_volume_hrz_profiles
 (
-    market_volume_total_in_tmp_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                                   VARCHAR(32),
-    description                            VARCHAR(128)
+    market_group                          TEXT,
+    market_volume_hrz_profile_scenario_id INTEGER,
+    name                                  VARCHAR(32),
+    description                           VARCHAR(128),
+    PRIMARY KEY (market_group, market_volume_hrz_profile_scenario_id)
 );
 
--- These are limits applied to the sum of participation all markets in
--- the respective timepoint
--- Totals in tmp are assumed to vary by weather iteration
-DROP TABLE IF EXISTS inputs_market_volume_totals_in_tmp;
-CREATE TABLE inputs_market_volume_totals_in_tmp
+DROP TABLE IF EXISTS inputs_market_volume_hrz_profiles;
+CREATE TABLE inputs_market_volume_hrz_profiles
 (
-    market_volume_total_in_tmp_scenario_id INTEGER,
-    weather_iteration                      INTEGER,
-    timepoint                              FLOAT,
-    max_total_net_market_purchases_in_tmp  FLOAT,
-    max_total_net_market_sales_in_tmp      FLOAT,
-    PRIMARY KEY (market_volume_total_in_tmp_scenario_id, weather_iteration,
-                 timepoint),
-    FOREIGN KEY (market_volume_total_in_tmp_scenario_id) REFERENCES
-        subscenarios_market_volume_totals_in_tmp (market_volume_total_in_tmp_scenario_id)
+    market_group                                  VARCHAR(32),
+    market_volume_hrz_profile_scenario_id         INTEGER,
+    weather_iteration                             INTEGER,
+    hydro_iteration                               INTEGER,
+    stage_id                                      INTEGER,
+    balancing_type_horizon                        VARCHAR(32),
+    horizon                                       INTEGER,
+    max_market_sales_in_hrz                       FLOAT,
+    max_market_purchases_in_hrz                   FLOAT,
+    max_market_sales_in_hrz_include_storage_losses INTEGER, -- Based on 'stor' operational type
+    PRIMARY KEY (market_group, market_volume_hrz_profile_scenario_id,
+                 weather_iteration, hydro_iteration, stage_id,
+                 balancing_type_horizon, horizon),
+    FOREIGN KEY (market_group, market_volume_hrz_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_hrz_profiles
+            (market_group, market_volume_hrz_profile_scenario_id)
 );
 
--- By prd
-DROP TABLE IF EXISTS subscenarios_market_volume_totals_in_prd;
-CREATE TABLE subscenarios_market_volume_totals_in_prd
+-- Period-level limits, in MWh, on the group's net position summed over the
+-- timepoints of the period
+-- A row with period = 0 sets the default for every period that has no
+-- explicit row (and for every NULL cell in an explicit row)
+DROP TABLE IF EXISTS subscenarios_market_volume_prd_profiles;
+CREATE TABLE subscenarios_market_volume_prd_profiles
 (
-    market_volume_total_in_prd_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                                   VARCHAR(32),
-    description                            VARCHAR(128)
+    market_group                          TEXT,
+    market_volume_prd_profile_scenario_id INTEGER,
+    name                                  VARCHAR(32),
+    description                           VARCHAR(128),
+    PRIMARY KEY (market_group, market_volume_prd_profile_scenario_id)
 );
 
--- These are limits applied to the sum of participation all markets in
--- the respective timepoint
-DROP TABLE IF EXISTS inputs_market_volume_totals_in_prd;
-CREATE TABLE inputs_market_volume_totals_in_prd
+DROP TABLE IF EXISTS inputs_market_volume_prd_profiles;
+CREATE TABLE inputs_market_volume_prd_profiles
 (
-    market_volume_total_in_prd_scenario_id                   INTEGER,
-    period                                                   FLOAT,
-    max_total_net_market_purchases_in_prd                    FLOAT,
-    max_total_net_market_sales_in_prd                        FLOAT,
-    max_total_net_market_sales_in_prd_include_storage_losses INTEGER, -- Based on 'stor' operational type
-    PRIMARY KEY (market_volume_total_in_prd_scenario_id, period),
-    FOREIGN KEY (market_volume_total_in_prd_scenario_id) REFERENCES
-        subscenarios_market_volume_totals_in_prd (market_volume_total_in_prd_scenario_id)
+    market_group                                   VARCHAR(32),
+    market_volume_prd_profile_scenario_id          INTEGER,
+    weather_iteration                              INTEGER,
+    hydro_iteration                                INTEGER,
+    stage_id                                       INTEGER,
+    period                                         INTEGER,
+    max_market_sales_in_prd                        FLOAT,
+    max_market_purchases_in_prd                    FLOAT,
+    max_market_sales_in_prd_include_storage_losses INTEGER, -- Based on 'stor' operational type
+    PRIMARY KEY (market_group, market_volume_prd_profile_scenario_id,
+                 weather_iteration, hydro_iteration, stage_id, period),
+    FOREIGN KEY (market_group, market_volume_prd_profile_scenario_id) REFERENCES
+        subscenarios_market_volume_prd_profiles
+            (market_group, market_volume_prd_profile_scenario_id)
 );
 
 -- Fuel balancing areas
@@ -2209,6 +2296,8 @@ CREATE TABLE inputs_project_operational_chars
     upward_reserves_to_soc_depletion                      FLOAT,
     reserves_setpoint_duration_hours                      FLOAT,   -- hours the new setpoint must be sustainable if reserves are called; default: timepoint duration
     energy_budget_balancing_type                          VARCHAR(32),  -- balancing type of the horizons over which energy budgets (e.g. hydro) apply; default in model: balancing_type_project
+    market                                                VARCHAR(32),  -- market whose price the marginal cost is compared to (gen_simple_strike_price)
+    dispatch_at_equal_cost                                INTEGER,      -- generate when the marginal cost equals the market price (gen_simple_strike_price); default in model: 0
     PRIMARY KEY (project_operational_chars_scenario_id, project),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),
@@ -3101,30 +3190,6 @@ CREATE TABLE inputs_project_stor_exog_state_of_charge_iterations
     varies_by_weather_iteration           INTEGER,
     varies_by_hydro_iteration             INTEGER,
     PRIMARY KEY (project, stor_exog_state_of_charge_scenario_id)
-);
-
--- Stress-horizon storage (stor_stress_hrz) horizon types: designates each horizon as an
--- "average" (average-condition) or "stress" horizon; horizons not in the
--- inputs default to "average"
-DROP TABLE IF EXISTS subscenarios_project_stor_stress_hrz_types;
-CREATE TABLE subscenarios_project_stor_stress_hrz_types
-(
-    stor_stress_hrz_type_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                          VARCHAR(32),
-    description                   VARCHAR(128)
-);
-
-DROP TABLE IF EXISTS inputs_project_stor_stress_hrz_types;
-CREATE TABLE inputs_project_stor_stress_hrz_types
-(
-    stor_stress_hrz_type_scenario_id INTEGER,
-    balancing_type_horizon        VARCHAR(32),
-    horizon                       INTEGER,
-    stor_stress_hrz_type             VARCHAR(16),
-    PRIMARY KEY (stor_stress_hrz_type_scenario_id, balancing_type_horizon,
-                 horizon),
-    FOREIGN KEY (stor_stress_hrz_type_scenario_id) REFERENCES
-        subscenarios_project_stor_stress_hrz_types (stor_stress_hrz_type_scenario_id)
 );
 
 -- Cap factor limits
@@ -6160,7 +6225,6 @@ CREATE TABLE scenarios
     water_network_scenario_id                                   INTEGER,
     project_portfolio_scenario_id                               INTEGER,
     project_operational_chars_scenario_id                       INTEGER,
-    stor_stress_hrz_type_scenario_id                               INTEGER,
     project_availability_scenario_id                            INTEGER,
     fuel_scenario_id                                            INTEGER,
     project_load_zone_scenario_id                               INTEGER,
@@ -6247,9 +6311,8 @@ CREATE TABLE scenarios
     local_capacity_requirement_scenario_id                      INTEGER,
     elcc_surface_scenario_id                                    INTEGER,
     market_price_scenario_id                                    INTEGER,
+    market_group_scenario_id                                    INTEGER,
     market_volume_scenario_id                                   INTEGER,
-    market_volume_total_in_tmp_scenario_id                      INTEGER,
-    market_volume_total_in_prd_scenario_id                      INTEGER,
     water_node_reservoir_scenario_id                            INTEGER,
     water_flow_scenario_id                                      INTEGER,
     water_inflow_tmp_scenario_id                                    INTEGER,
@@ -6326,8 +6389,6 @@ CREATE TABLE scenarios
         subscenarios_project_portfolios (project_portfolio_scenario_id),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),
-    FOREIGN KEY (stor_stress_hrz_type_scenario_id) REFERENCES
-        subscenarios_project_stor_stress_hrz_types (stor_stress_hrz_type_scenario_id),
     FOREIGN KEY (project_availability_scenario_id) REFERENCES
         subscenarios_project_availability (project_availability_scenario_id),
     FOREIGN KEY (fuel_scenario_id) REFERENCES
@@ -6552,14 +6613,10 @@ CREATE TABLE scenarios
             (local_capacity_requirement_scenario_id),
     FOREIGN KEY (market_price_scenario_id) REFERENCES
         subscenarios_market_prices (market_price_scenario_id),
+    FOREIGN KEY (market_group_scenario_id) REFERENCES
+        subscenarios_market_groups (market_group_scenario_id),
     FOREIGN KEY (market_volume_scenario_id) REFERENCES
         subscenarios_market_volume (market_volume_scenario_id),
-    FOREIGN KEY (market_volume_total_in_tmp_scenario_id) REFERENCES
-        subscenarios_market_volume_totals_in_tmp
-            (market_volume_total_in_tmp_scenario_id),
-    FOREIGN KEY (market_volume_total_in_prd_scenario_id) REFERENCES
-        subscenarios_market_volume_totals_in_prd
-            (market_volume_total_in_prd_scenario_id),
     FOREIGN KEY (water_node_reservoir_scenario_id) REFERENCES
         subscenarios_system_water_node_reservoirs (water_node_reservoir_scenario_id),
     FOREIGN KEY (water_flow_scenario_id) REFERENCES
@@ -6794,6 +6851,9 @@ CREATE TABLE results_project_timepoint
     produce_fuel_fuelunitperhour                    FLOAT,
     release_fuel_fuelunitperhour                    FLOAT,
     fuel_prod_power_consumption_powerunit           FLOAT,
+    strike_price_marginal_cost_per_mwh              FLOAT,
+    strike_price_market_price_per_mwh               FLOAT,
+    strike_price_online                             FLOAT,
     variable_om_cost                                FLOAT,
     fuel_cost                                       FLOAT,
     startup_cost                                    FLOAT,
@@ -7703,6 +7763,87 @@ CREATE TABLE results_system_market_summary
     PRIMARY KEY (scenario_id, load_zone, market, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id, period, month)
+);
+
+-- Market volume limits by market group, the quantity they constrain, and
+-- the duals of the constraints enforcing them (a limit left at its default
+-- of infinity is not enforced and so has no dual)
+DROP TABLE IF EXISTS results_system_market_volume_tmp;
+CREATE TABLE results_system_market_volume_tmp
+(
+    scenario_id                                    INTEGER,
+    weather_iteration                              INTEGER,
+    hydro_iteration                                INTEGER,
+    availability_iteration                         INTEGER,
+    subproblem_id                                  INTEGER,
+    stage_id                                       INTEGER,
+    market_group                                   VARCHAR(32),
+    timepoint                                      INTEGER,
+    period                                         INTEGER,
+    net_market_purchased_power_mw                  FLOAT,
+    final_net_market_purchased_power_mw            FLOAT,
+    max_market_purchases                           FLOAT,
+    max_market_sales                               FLOAT,
+    max_final_market_purchases                     FLOAT,
+    max_final_market_sales                         FLOAT,
+    max_market_purchases_dual                      FLOAT,
+    max_market_sales_dual                          FLOAT,
+    max_final_market_purchases_dual                FLOAT,
+    max_final_market_sales_dual                    FLOAT,
+    max_market_purchases_marginal_cost             FLOAT,
+    max_market_sales_marginal_cost                 FLOAT,
+    max_final_market_purchases_marginal_cost       FLOAT,
+    max_final_market_sales_marginal_cost           FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 market_group, timepoint)
+);
+
+DROP TABLE IF EXISTS results_system_market_volume_hrz;
+CREATE TABLE results_system_market_volume_hrz
+(
+    scenario_id                                    INTEGER,
+    weather_iteration                              INTEGER,
+    hydro_iteration                                INTEGER,
+    availability_iteration                         INTEGER,
+    subproblem_id                                  INTEGER,
+    stage_id                                       INTEGER,
+    market_group                                   VARCHAR(32),
+    balancing_type_horizon                         VARCHAR(32),
+    horizon                                        INTEGER,
+    net_market_purchased_power_mwh                 FLOAT,
+    max_market_purchases_in_hrz                    FLOAT,
+    max_market_sales_in_hrz                        FLOAT,
+    max_market_purchases_in_hrz_dual               FLOAT,
+    max_market_sales_in_hrz_dual                   FLOAT,
+    max_market_purchases_in_hrz_marginal_cost      FLOAT,
+    max_market_sales_in_hrz_marginal_cost          FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 market_group, balancing_type_horizon, horizon)
+);
+
+DROP TABLE IF EXISTS results_system_market_volume_prd;
+CREATE TABLE results_system_market_volume_prd
+(
+    scenario_id                                    INTEGER,
+    weather_iteration                              INTEGER,
+    hydro_iteration                                INTEGER,
+    availability_iteration                         INTEGER,
+    subproblem_id                                  INTEGER,
+    stage_id                                       INTEGER,
+    market_group                                   VARCHAR(32),
+    period                                         INTEGER,
+    net_market_purchased_power_mwh                 FLOAT,
+    max_market_purchases_in_prd                    FLOAT,
+    max_market_sales_in_prd                        FLOAT,
+    max_market_purchases_in_prd_dual               FLOAT,
+    max_market_sales_in_prd_dual                   FLOAT,
+    max_market_purchases_in_prd_marginal_cost      FLOAT,
+    max_market_sales_in_prd_marginal_cost          FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 market_group, period)
 );
 
 DROP TABLE IF EXISTS results_system_lf_reserves_up;
@@ -8757,10 +8898,6 @@ SELECT scenario_id,
         WHERE project_operational_chars_scenario_id =
               scenarios.project_operational_chars_scenario_id)                       AS project_operating_chars,
        (SELECT name
-        FROM subscenarios_project_stor_stress_hrz_types
-        WHERE stor_stress_hrz_type_scenario_id =
-              scenarios.stor_stress_hrz_type_scenario_id)                               AS stor_stress_hrz_types,
-       (SELECT name
         FROM subscenarios_project_availability
         WHERE project_availability_scenario_id =
               scenarios.project_availability_scenario_id)                            AS project_availability,
@@ -9099,17 +9236,13 @@ SELECT scenario_id,
         WHERE market_price_scenario_id =
               scenarios.market_price_scenario_id)                                    AS market_prices,
        (SELECT name
+        FROM subscenarios_market_groups
+        WHERE market_group_scenario_id =
+              scenarios.market_group_scenario_id)                                    AS market_groups,
+       (SELECT name
         FROM subscenarios_market_volume
         WHERE market_volume_scenario_id =
               scenarios.market_volume_scenario_id)                                   AS market_volume,
-       (SELECT name
-        FROM subscenarios_market_volume_totals_in_tmp
-        WHERE market_volume_total_in_tmp_scenario_id =
-              scenarios.market_volume_total_in_tmp_scenario_id)                      AS market_volume_totals_in_tmp,
-       (SELECT name
-        FROM subscenarios_market_volume_totals_in_prd
-        WHERE market_volume_total_in_prd_scenario_id =
-              scenarios.market_volume_total_in_prd_scenario_id)                      AS market_volume_totals_in_prd,
        (SELECT name
         FROM subscenarios_system_water_node_reservoirs
         WHERE water_node_reservoir_scenario_id =

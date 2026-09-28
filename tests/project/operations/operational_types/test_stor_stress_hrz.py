@@ -147,8 +147,9 @@ class TestStorStressHrz(unittest.TestCase):
         }
         self.assertDictEqual(expected_storage_efficiency, actual_storage_efficiency)
 
-        # Param: stor_stress_hrz_type ("stress" where specified in
-        # stor_stress_hrz_horizon_types.tab, the "average" default elsewhere)
+        # Param: stor_stress_hrz_type ("stress" where specified in the
+        # stor_stress_hrz_type column of horizons_user_defined.tab, the
+        # "average" default elsewhere)
         expected_hrz_type = {
             ("day", 202001): "average",
             ("day", 202002): "stress",
@@ -258,21 +259,11 @@ class TestStorStressHrz(unittest.TestCase):
             idx = next(
                 i for i, r in enumerate(rows) if r[0] == "202002" and r[1] == "day"
             )
-            rows.insert(idx + 1, ["202003", "day", "linear"])
+            # Designate the new horizon as a stress horizon too (202002
+            # already is in the shared test data)
+            rows.insert(idx + 1, ["202003", "day", "linear", "stress"])
             with open(hrz_file, "w", newline="") as f:
                 csv.writer(f, delimiter="\t", lineterminator="\n").writerows(rows)
-
-            # Designate both as stress horizons
-            hrz_type_file = os.path.join(
-                inputs_dir, "stor_stress_hrz_horizon_types.tab"
-            )
-            with open(hrz_type_file, "w", newline="") as f:
-                writer = csv.writer(f, delimiter="\t", lineterminator="\n")
-                writer.writerow(
-                    ["balancing_type_horizon", "horizon", "stor_stress_hrz_type"]
-                )
-                writer.writerow(["day", "202002", "stress"])
-                writer.writerow(["day", "202003", "stress"])
 
             m, data = add_components_and_load_data(
                 prereq_modules=IMPORTED_PREREQ_MODULES,

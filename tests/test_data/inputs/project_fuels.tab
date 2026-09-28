@@ -18,3 +18,4 @@ Clunky_Old_Gen2	Coal	0	1
 Nuclear_Flexible	Uranium	0	1
 Gas_CCGT	Blend_Fuel	0	1
 DAC	DAC_Proxy_Fuel	0	1
+Gen_Strike_Price	Gas	0	1

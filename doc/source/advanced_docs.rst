@@ -220,6 +220,10 @@ gridpath.project.capacity.operational_types.gen_must_run
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_must_run.add_model_components
 
+gridpath.project.capacity.operational_types.gen_simple_strike_price
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. automodule:: gridpath.project.operations.operational_types.gen_simple_strike_price.add_model_components
+
 gridpath.project.capacity.operational_types.gen_always_on
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. automodule:: gridpath.project.operations.operational_types.gen_always_on.add_model_components
@@ -488,8 +492,13 @@ Markets
 
 GridPath can model market participation of a project or a set of projects. A price
 stream is required and projects are assumed to be price-takers. The market volume can
-be constrained. In multi-stage modeling, the transactions from the previous stages
-can be fixed in the following stages.
+be constrained for a single market or for any user-defined group of them, by
+timepoint, by horizon or by period; see the
+:code:`gridpath.system.markets.volume` module below for the limits available, for
+the implicit group every market gets, for how a group is narrowed to the markets a
+scenario models, and for the two ways to enter a limit once instead of repeating
+it. In multi-stage modeling,
+the transactions from the previous stages can be fixed in the following stages.
 
 gridpath.system.markets.prices
 -------------------------------------
