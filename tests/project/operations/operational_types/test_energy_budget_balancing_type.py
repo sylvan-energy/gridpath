@@ -467,7 +467,9 @@ class TestEnergyBudgetBalancingTypeConstructionGuard(unittest.TestCase):
         m = AbstractModel()
         m.PROJECTS = Set(initialize=["Hydro"])
         m.BLN_TYPES = Set(initialize=["day", "year"])
-        m.balancing_type_project = Param(m.PROJECTS, initialize={"Hydro": "day"})
+        m.balancing_type_project = Param(
+            m.PROJECTS, within=m.BLN_TYPES, initialize={"Hydro": "day"}
+        )
 
         def declare_param():
             m.budget_bt = Param(m.PROJECTS, within=m.BLN_TYPES)

@@ -89,7 +89,9 @@ class TestCreateDatabase(unittest.TestCase):
             conn.close()
 
             with mock.patch("builtins.input", side_effect=AssertionError("prompted")):
-                create_database.main(["--database", db_path, "--omit_data", "--yes"])
+                create_database.main(
+                    ["--database", db_path, "--omit_data", "--yes", "--quiet"]
+                )
 
             conn = sqlite3.connect(db_path)
             tables = {

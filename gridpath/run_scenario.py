@@ -483,10 +483,12 @@ def run_optimization_for_subproblem_stage(
                     instance=instance,
                     prob_sol_files_directory=prob_sol_files_directory,
                     symbolic_solver_labels=parsed_arguments.symbolic,
+                    quiet=parsed_arguments.quiet,
                 )
                 symbol_map = instance.solutions.symbol_map[smap_id]
 
-                print("Building symbol map for solution loading...")
+                if not parsed_arguments.quiet:
+                    print("Building symbol map for solution loading...")
                 symbol_map_start = time.time()
                 # Constraint symbols are only needed to load duals, so skip
                 # them if the instance has no dual suffix (--skip_duals)
@@ -499,14 +501,14 @@ def run_optimization_for_subproblem_stage(
                     os.path.join(prob_sol_files_directory, "symbol_map.pickle"), "wb"
                 ) as f_out:
                     dill.dump(symbol_cuid_pairs, f_out)
-                print(
-                    "...symbol map with {:,} symbols written in {:,.0f} "
-                    "seconds".format(
-                        len(symbol_cuid_pairs), time.time() - symbol_map_start
+                if not parsed_arguments.quiet:
+                    print(
+                        "...symbol map with {:,} symbols written in {:,.0f} "
+                        "seconds".format(
+                            len(symbol_cuid_pairs), time.time() - symbol_map_start
+                        )
                     )
-                )
-
-                print("Problem file written to {}".format(prob_sol_files_directory))
+                    print("Problem file written to {}".format(prob_sol_files_directory))
                 sys.exit()
             else:
                 solved_instance, results = solve_problem(
@@ -2213,6 +2215,7 @@ def write_problem_file(
     prob_sol_files_directory,
     problem_format="lp",
     symbolic_solver_labels=False,
+    quiet=False,
 ):
     """
 
@@ -2222,6 +2225,7 @@ def write_problem_file(
     :param symbolic_solver_labels: boolean, whether to name the problem
         file's variables and constraints after the Pyomo components they
         come from instead of using generic labels (e.g. x1, c_e_x1_)
+    :param quiet: boolean, whether to suppress printed output
     :return:
 
     """
@@ -2238,7 +2242,8 @@ def write_problem_file(
     # formats["gms"] = ProblemFormat.gams
     # formats["gams"] = ProblemFormat.gams
 
-    print("Writing {} problem file...".format(problem_format.upper()))
+    if not quiet:
+        print("Writing {} problem file...".format(problem_format.upper()))
     filename, smap_id = instance.write(
         os.path.join(
             prob_sol_files_directory, "problem_file.{}".format(problem_format)
