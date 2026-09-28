@@ -1,0 +1,3 @@
+market_group	period	max_market_sales_in_prd	max_market_purchases_in_prd	max_market_sales_in_prd_include_storage_losses
+All_Hubs	2020	7000	8000	1
+Market_Hub_1	2030	.	9000	.
