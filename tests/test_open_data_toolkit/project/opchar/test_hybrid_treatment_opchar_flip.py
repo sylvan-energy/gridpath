@@ -107,6 +107,9 @@ class TestHybridTreatmentOpcharFlip(unittest.TestCase):
                 "Interconnect1",
                 "--hybrid_treatment",
                 hybrid_treatment,
+                # No net-metering data in the fixture: silence that loud
+                # warning
+                "--include_net_metered",
                 "--quiet",
             ]
         )

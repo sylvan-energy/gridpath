@@ -98,6 +98,9 @@ def parse_arguments(arguments):
         "for confirmation. For non-interactive use; the prompt otherwise "
         "hangs or raises EOFError when there is no stdin.",
     )
+    parser.add_argument(
+        "--quiet", default=False, action="store_true", help="Don't print output."
+    )
 
     # Parse arguments
     parsed_arguments = parser.parse_known_args(args=arguments)[0]
@@ -333,7 +336,8 @@ def main(args=None):
                 )
             if response == "y" or response == "yes":
                 os.remove(db_path)
-                print(f"Deleted existing database: {os.path.abspath(db_path)}")
+                if not parsed_args.quiet:
+                    print(f"Deleted existing database: {os.path.abspath(db_path)}")
             else:
                 print("Database creation cancelled.")
                 sys.exit()
