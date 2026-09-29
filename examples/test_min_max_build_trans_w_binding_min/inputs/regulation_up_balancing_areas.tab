@@ -1,0 +1,3 @@
+balancing_area	allow_violation	violation_penalty_per_mw	reserve_to_energy_adjustment
+Zone1	1	99999999.0	.
+Zone2	1	99999999.0	.
