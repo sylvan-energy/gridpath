@@ -29,8 +29,9 @@ from gridpath.auxiliary.validations import (
 )
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
 from gridpath.common_functions import (
+    constraint_dual,
     create_results_df,
-    duals_wrapper,
+    none_dual_type_error_wrapper,
     update_results_df,
 )
 from gridpath.project import PROJECT_PERIOD_DF
@@ -705,99 +706,61 @@ def export_results(
     :return:
     """
 
-    results_columns = [
-        "min_build_power_dual",
-        "max_build_power_dual",
-        "min_total_power_dual",
-        "max_total_power_dual",
-        "min_build_stor_energy_dual",
-        "max_build_stor_energy_dual",
-        "min_total_stor_energy_dual",
-        "max_total_stor_energy_dual",
-        "min_build_energy_dual",
-        "max_build_energy_dual",
-        "min_total_energy_dual",
-        "max_total_energy_dual",
+    # For each limit: the results column for the limit (the input column
+    # name), its model param, the prefix of its dual and marginal cost
+    # columns, its constraint, and the unit of its marginal cost
+    limits = [
+        ("min_new_build_power", "min_new_build_power",
+         "min_build_power", m.Min_Build_Power_Constraint, "mw"),
+        ("max_new_build_power", "max_new_build_power",
+         "max_build_power", m.Max_Build_Power_Constraint, "mw"),
+        ("min_capacity_power", "min_capacity_power",
+         "min_total_power", m.Min_Power_Constraint, "mw"),
+        ("max_capacity_power", "max_capacity_power",
+         "max_total_power", m.Max_Power_Constraint, "mw"),
+        ("min_new_build_stor_energy", "min_new_build_stor_energy",
+         "min_build_stor_energy", m.Min_Build_Stor_Energy_Constraint, "mwh"),
+        ("max_new_build_stor_energy", "max_new_build_stor_energy",
+         "max_build_stor_energy", m.Max_Build_Stor_Energy_Constraint, "mwh"),
+        ("min_capacity_stor_energy", "min_capacity_stor_energy",
+         "min_total_stor_energy", m.Min_Stor_Energy_Constraint, "mwh"),
+        ("max_capacity_stor_energy", "max_capacity_stor_energy",
+         "max_total_stor_energy", m.Max_Stor_Energy_Constraint, "mwh"),
+        ("min_new_procured_energy", "min_new_procured_energy",
+         "min_build_energy", m.Min_Build_Energy_Constraint, "mwh"),
+        ("max_new_procured_energy", "max_new_procured_energy",
+         "max_build_energy", m.Max_Build_Energy_Constraint, "mwh"),
+        ("min_total_procured_energy", "min_total_energy",
+         "min_total_energy", m.Min_Energy_Constraint, "mwh"),
+        ("max_total_procured_energy", "max_total_energy",
+         "max_total_energy", m.Max_Energy_Constraint, "mwh"),
+    ]  # fmt: skip
+    # Only limits specified in the inputs; the rest are reported as empty
+    # rather than as the param default (0 or infinity)
+    specified_limits = [
+        dict(getattr(m, param).sparse_items()) for (_, param, _, _, _) in limits
     ]
-    data = [
-        [
-            prj,
-            prd,
-            (
-                duals_wrapper(m, getattr(m, "Min_Build_Power_Constraint")[prj, prd])
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Min_Build_Power_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Max_Build_Power_Constraint")[prj, prd])
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Max_Build_Power_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Min_Power_Constraint")[prj, prd])
-                if (prj, prd) in [idx for idx in getattr(m, "Min_Power_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Max_Power_Constraint")[prj, prd])
-                if (prj, prd) in [idx for idx in getattr(m, "Max_Power_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(
-                    m, getattr(m, "Min_Build_Stor_Energy_Constraint")[prj, prd]
-                )
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Min_Build_Stor_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(
-                    m, getattr(m, "Max_Build_Stor_Energy_Constraint")[prj, prd]
-                )
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Max_Build_Stor_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Min_Stor_Energy_Constraint")[prj, prd])
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Min_Stor_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Max_Stor_Energy_Constraint")[prj, prd])
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Max_Stor_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Min_Build_Energy_Constraint")[prj, prd])
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Min_Build_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Max_Build_Energy_Constraint")[prj, prd])
-                if (prj, prd)
-                in [idx for idx in getattr(m, "Max_Build_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Min_Energy_Constraint")[prj, prd])
-                if (prj, prd) in [idx for idx in getattr(m, "Min_Energy_Constraint")]
-                else None
-            ),
-            (
-                duals_wrapper(m, getattr(m, "Max_Energy_Constraint")[prj, prd])
-                if (prj, prd) in [idx for idx in getattr(m, "Max_Energy_Constraint")]
-                else None
-            ),
+
+    results_columns = (
+        [column for (column, _, _, _, _) in limits]
+        + [f"{prefix}_dual" for (_, _, prefix, _, _) in limits]
+        + [f"{prefix}_marginal_cost_per_{unit}" for (_, _, prefix, _, unit) in limits]
+    )
+    data = []
+    for prj, prd in m.PRJ_OPR_PRDS:
+        duals = [
+            constraint_dual(m, constraint, (prj, prd))
+            for (_, _, _, constraint, _) in limits
         ]
-        for (prj, prd) in m.PRJ_OPR_PRDS
-    ]
+        data.append(
+            [prj, prd]
+            + [specified.get((prj, prd)) for specified in specified_limits]
+            + duals
+            + [
+                none_dual_type_error_wrapper(dual, m.period_objective_coefficient[prd])
+                for dual in duals
+            ]
+        )
     results_df = create_results_df(
         index_columns=["project", "period"],
         results_columns=results_columns,

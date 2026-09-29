@@ -684,11 +684,15 @@ def add_to_tx_period_results(
 
     results_columns = [
         "new_build_capacity_mw",
+        "min_cumulative_new_build_mw",
+        "max_cumulative_new_build_mw",
         "min_cum_build_dual",
         "max_cum_build_dual",
         "min_cum_build_marginal_cost_per_mw",
         "max_cum_build_marginal_cost_per_mw",
     ]
+    min_limits = dict(m.tx_new_lin_min_cumulative_new_build_mw.sparse_items())
+    max_limits = dict(m.tx_new_lin_max_cumulative_new_build_mw.sparse_items())
     data = []
     for tx, prd in m.TX_NEW_LIN_VNTS:
         min_dual = constraint_dual(m, m.TxNewLin_Min_Cum_Build_Constraint, (tx, prd))
@@ -698,6 +702,8 @@ def add_to_tx_period_results(
                 tx,
                 prd,
                 value(m.TxNewLin_Build_MW[tx, prd]),
+                min_limits.get((tx, prd)),
+                max_limits.get((tx, prd)),
                 min_dual,
                 max_dual,
                 none_dual_type_error_wrapper(
