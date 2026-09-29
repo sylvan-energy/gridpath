@@ -148,7 +148,7 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def limit_group(self, group, tmp=None, hrz=None, prd=None, **flat):
+    def limit_group(self, group, tmp=None, hrz=None, prd=None, basis="net", **flat):
         """
         Give *group* a volume profile, at the resolutions whose profile ID is
         passed, and the flat limits in *flat* (keyed by the profile column
@@ -175,7 +175,7 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         ]:
             if profile_id is not None:
                 c.execute(
-                    f"INSERT INTO {table} (market_group, {column}, name) "
+                    f"INSERT OR IGNORE INTO {table} (market_group, {column}, name) "
                     f"VALUES (?, ?, 'test')",
                     (group, profile_id),
                 )
@@ -191,14 +191,14 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         assert set(flat) <= set(flat_columns), flat
         c.execute(
             f"""INSERT INTO inputs_market_volume
-            (market_volume_scenario_id, market_group,
+            (market_volume_scenario_id, market_group, basis,
              market_volume_tmp_profile_scenario_id,
              market_volume_hrz_profile_scenario_id,
              market_volume_prd_profile_scenario_id,
              varies_by_weather_iteration, varies_by_hydro_iteration,
              {", ".join("default_" + col for col in flat_columns)})
-            VALUES (?, ?, ?, ?, ?, 0, 0, {", ".join("?" * len(flat_columns))})""",
-            (MARKET_VOLUME_SCENARIO_ID, group, tmp, hrz, prd)
+            VALUES (?, ?, ?, ?, ?, ?, 0, 0, {", ".join("?" * len(flat_columns))})""",
+            (MARKET_VOLUME_SCENARIO_ID, group, basis, tmp, hrz, prd)
             + tuple(flat.get(col) for col in flat_columns),
         )
         self.conn.commit()
@@ -290,8 +290,8 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, _, _ = self.resolve()
         self.assertListEqual(
             [
-                ("Market_Hub_1", 1, 10, 5, None, None),
-                ("Market_Hub_1", 2, 10, 5, None, None),
+                ("Market_Hub_1", "net", 1, 10, 5, None, None),
+                ("Market_Hub_1", "net", 2, 10, 5, None, None),
             ],
             tmp_limits,
         )
@@ -317,8 +317,8 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, _, _ = self.resolve()
         self.assertListEqual(
             [
-                ("All_Hubs", 1, 10, 5, None, None),
-                ("All_Hubs", 2, 10, 5, None, None),
+                ("All_Hubs", "net", 1, 10, 5, None, None),
+                ("All_Hubs", "net", 2, 10, 5, None, None),
             ],
             tmp_limits,
         )
@@ -336,7 +336,10 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         )
         _, tmp_limits, _, _ = self.resolve()
         self.assertListEqual(
-            [("All_Hubs", 1, 10, 5, None, 99), ("All_Hubs", 2, 10, 7, None, 99)],
+            [
+                ("All_Hubs", "net", 1, 10, 5, None, 99),
+                ("All_Hubs", "net", 2, 10, 7, None, 99),
+            ],
             tmp_limits,
         )
 
@@ -351,11 +354,15 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         )
         _, _, hrz_limits, _ = self.resolve()
         # Only 'day' 202001 is in this subproblem and stage
-        self.assertListEqual([("All_Hubs", "day", 202001, 100, 200, 1)], hrz_limits)
+        self.assertListEqual(
+            [("All_Hubs", "net", "day", 202001, 100, 200, 1)], hrz_limits
+        )
 
         self.insert_hrz_limits("All_Hubs", 1, [("day", 202001, None, 250, None)])
         _, _, hrz_limits, _ = self.resolve()
-        self.assertListEqual([("All_Hubs", "day", 202001, 100, 250, 1)], hrz_limits)
+        self.assertListEqual(
+            [("All_Hubs", "net", "day", 202001, 100, 250, 1)], hrz_limits
+        )
 
     def test_a_group_may_be_limited_at_one_resolution_only(self):
         """
@@ -367,7 +374,7 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, hrz_limits, prd_limits = self.resolve()
         self.assertListEqual([], tmp_limits)
         self.assertListEqual([], hrz_limits)
-        self.assertListEqual([("All_Hubs", PERIOD, 5000, 6000, 1)], prd_limits)
+        self.assertListEqual([("All_Hubs", "net", PERIOD, 5000, 6000, 1)], prd_limits)
 
     def test_groups_are_resolved_independently(self):
         """
@@ -383,14 +390,16 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, hrz_limits, prd_limits = self.resolve()
         self.assertListEqual(
             [
-                ("All_Hubs", 1, 10, 5, None, None),
-                ("All_Hubs", 2, 10, 5, None, None),
-                ("Market_Hub_1", 1, 3, 4, None, None),
+                ("All_Hubs", "net", 1, 10, 5, None, None),
+                ("All_Hubs", "net", 2, 10, 5, None, None),
+                ("Market_Hub_1", "net", 1, 3, 4, None, None),
             ],
             tmp_limits,
         )
         self.assertListEqual([], hrz_limits)
-        self.assertListEqual([("All_Hubs", PERIOD, 5000, None, None)], prd_limits)
+        self.assertListEqual(
+            [("All_Hubs", "net", PERIOD, 5000, None, None)], prd_limits
+        )
 
     def test_flat_limit_needs_no_profile(self):
         """
@@ -403,13 +412,15 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, hrz_limits, prd_limits = self.resolve()
         self.assertListEqual(
             [
-                ("All_Hubs", 1, None, 5, None, None),
-                ("All_Hubs", 2, None, 5, None, None),
+                ("All_Hubs", "net", 1, None, 5, None, None),
+                ("All_Hubs", "net", 2, None, 5, None, None),
             ],
             tmp_limits,
         )
         self.assertListEqual([], hrz_limits)
-        self.assertListEqual([("All_Hubs", PERIOD, None, 5000, None)], prd_limits)
+        self.assertListEqual(
+            [("All_Hubs", "net", PERIOD, None, 5000, None)], prd_limits
+        )
 
     def test_layers_fall_through_explicit_wildcard_flat(self):
         """
@@ -425,8 +436,8 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, _, _ = self.resolve()
         self.assertListEqual(
             [
-                ("All_Hubs", 1, 10, 5, None, None),
-                ("All_Hubs", 2, 10, 8, None, None),
+                ("All_Hubs", "net", 1, 10, 5, None, None),
+                ("All_Hubs", "net", 2, 10, 8, None, None),
             ],
             tmp_limits,
         )
@@ -441,8 +452,8 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         _, tmp_limits, _, _ = self.resolve()
         self.assertListEqual(
             [
-                ("All_Hubs", 1, None, 5, None, None),
-                ("All_Hubs", 2, None, 8, None, None),
+                ("All_Hubs", "net", 1, None, 5, None, None),
+                ("All_Hubs", "net", 2, None, 8, None, None),
             ],
             tmp_limits,
         )
@@ -466,6 +477,33 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         errors = self.validate()
         self.assertEqual(1, len(errors), msg=errors)
         self.assertIn("default_max_market_purchases", errors[0])
+
+    def test_a_group_may_carry_a_net_and_a_gross_row(self):
+        """
+        A group's net and gross rows resolve independently, each with its own
+        profile and flat limits, into rows keyed by their basis.
+        """
+        self.limit_group("All_Hubs", tmp=1, basis="net")
+        self.insert_tmp_limits("All_Hubs", 1, [(0, 10, 5, None, None)])
+        self.limit_group("All_Hubs", basis="gross", max_market_sales=3)
+        _, tmp_limits, _, _ = self.resolve()
+        self.assertListEqual(
+            [
+                ("All_Hubs", "gross", 1, 3, None, None, None),
+                ("All_Hubs", "gross", 2, 3, None, None, None),
+                ("All_Hubs", "net", 1, 10, 5, None, None),
+                ("All_Hubs", "net", 2, 10, 5, None, None),
+            ],
+            tmp_limits,
+        )
+
+    def test_a_basis_other_than_net_or_gross_is_rejected(self):
+        """
+        The basis is checked by the database, so a typo fails on insert
+        rather than silently producing a limit of neither kind.
+        """
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.limit_group("All_Hubs", basis="both", max_market_sales=3)
 
     def test_no_limits_resolve_to_no_rows(self):
         """

@@ -495,9 +495,9 @@ stream is required and projects are assumed to be price-takers. The market volum
 be constrained for a single market or for any user-defined group of them, by
 timepoint, by horizon or by period; see the
 :code:`gridpath.system.markets.volume` module below for the limits available, for
-the implicit group every market gets, for how a group is narrowed to the markets a
-scenario models, and for the two ways to enter a limit once instead of repeating
-it. In multi-stage modeling,
+the implicit group every market gets, for net versus gross limits, for how a group
+is narrowed to the markets a scenario models, and for the two ways to enter a limit
+once instead of repeating it. In multi-stage modeling,
 the transactions from the previous stages can be fixed in the following stages.
 
 gridpath.system.markets.prices

@@ -1133,6 +1133,12 @@ CREATE TABLE inputs_market_groups
 -- needs no profile at all. A profile's rows override them column by column:
 -- an explicit row first, then the profile's wildcard row, then these. A
 -- horizon-level limit needs a balancing type and so has no flat form.
+-- The basis says what a row's limits apply to: 'net' caps the group's net
+-- position, so a purchase in one of its markets offsets a sale in another;
+-- 'gross' caps the group's total sales and total purchases separately, each
+-- market's sales and purchases counted without offsetting. A group may carry
+-- a row of each basis, with their own profiles and flat limits. For a group
+-- of one market the two are the same.
 DROP TABLE IF EXISTS subscenarios_market_volume;
 CREATE TABLE subscenarios_market_volume
 (
@@ -1146,6 +1152,8 @@ CREATE TABLE inputs_market_volume
 (
     market_volume_scenario_id                              INTEGER,
     market_group                                           TEXT,
+    basis                                                  VARCHAR(8) NOT NULL
+        CHECK (basis IN ('net', 'gross')),
     market_volume_tmp_profile_scenario_id                  INTEGER,
     market_volume_hrz_profile_scenario_id                  INTEGER,
     market_volume_prd_profile_scenario_id                  INTEGER,
@@ -1158,7 +1166,7 @@ CREATE TABLE inputs_market_volume
     default_max_market_sales_in_prd                        FLOAT,
     default_max_market_purchases_in_prd                    FLOAT,
     default_max_market_sales_in_prd_include_storage_losses INTEGER, -- Based on 'stor' operational type
-    PRIMARY KEY (market_volume_scenario_id, market_group),
+    PRIMARY KEY (market_volume_scenario_id, market_group, basis),
     FOREIGN KEY (market_volume_scenario_id) REFERENCES
         subscenarios_market_volume (market_volume_scenario_id),
     FOREIGN KEY (market_group, market_volume_tmp_profile_scenario_id) REFERENCES
@@ -7778,10 +7786,15 @@ CREATE TABLE results_system_market_volume_tmp
     subproblem_id                                  INTEGER,
     stage_id                                       INTEGER,
     market_group                                   VARCHAR(32),
+    basis                                          VARCHAR(8),
     timepoint                                      INTEGER,
     period                                         INTEGER,
     net_market_purchased_power_mw                  FLOAT,
     final_net_market_purchased_power_mw            FLOAT,
+    gross_market_sales_mw                          FLOAT,
+    gross_market_purchases_mw                      FLOAT,
+    final_gross_market_sales_mw                    FLOAT,
+    final_gross_market_purchases_mw                FLOAT,
     max_market_purchases                           FLOAT,
     max_market_sales                               FLOAT,
     max_final_market_purchases                     FLOAT,
@@ -7796,7 +7809,7 @@ CREATE TABLE results_system_market_volume_tmp
     max_final_market_sales_marginal_cost           FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
-                 market_group, timepoint)
+                 market_group, basis, timepoint)
 );
 
 DROP TABLE IF EXISTS results_system_market_volume_hrz;
@@ -7809,9 +7822,12 @@ CREATE TABLE results_system_market_volume_hrz
     subproblem_id                                  INTEGER,
     stage_id                                       INTEGER,
     market_group                                   VARCHAR(32),
+    basis                                          VARCHAR(8),
     balancing_type_horizon                         VARCHAR(32),
     horizon                                        INTEGER,
     net_market_purchased_power_mwh                 FLOAT,
+    gross_market_sales_mwh                         FLOAT,
+    gross_market_purchases_mwh                     FLOAT,
     max_market_purchases_in_hrz                    FLOAT,
     max_market_sales_in_hrz                        FLOAT,
     max_market_purchases_in_hrz_dual               FLOAT,
@@ -7820,7 +7836,7 @@ CREATE TABLE results_system_market_volume_hrz
     max_market_sales_in_hrz_marginal_cost          FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
-                 market_group, balancing_type_horizon, horizon)
+                 market_group, basis, balancing_type_horizon, horizon)
 );
 
 DROP TABLE IF EXISTS results_system_market_volume_prd;
@@ -7833,8 +7849,11 @@ CREATE TABLE results_system_market_volume_prd
     subproblem_id                                  INTEGER,
     stage_id                                       INTEGER,
     market_group                                   VARCHAR(32),
+    basis                                          VARCHAR(8),
     period                                         INTEGER,
     net_market_purchased_power_mwh                 FLOAT,
+    gross_market_sales_mwh                         FLOAT,
+    gross_market_purchases_mwh                     FLOAT,
     max_market_purchases_in_prd                    FLOAT,
     max_market_sales_in_prd                        FLOAT,
     max_market_purchases_in_prd_dual               FLOAT,
@@ -7843,7 +7862,7 @@ CREATE TABLE results_system_market_volume_prd
     max_market_sales_in_prd_marginal_cost          FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
-                 market_group, period)
+                 market_group, basis, period)
 );
 
 DROP TABLE IF EXISTS results_system_lf_reserves_up;
