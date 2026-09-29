@@ -7401,6 +7401,8 @@ CREATE TABLE results_transmission_period
     capacity_cost_wo_spinup_or_lookahead FLOAT,
     min_cum_build_dual                   FLOAT,
     max_cum_build_dual                   FLOAT,
+    min_cum_build_marginal_cost_per_mw   FLOAT,
+    max_cum_build_marginal_cost_per_mw   FLOAT,
     PRIMARY KEY (scenario_id, transmission_line, period, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id)

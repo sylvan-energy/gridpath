@@ -59,7 +59,11 @@ from gridpath.auxiliary.validations import (
     validate_row_monotonicity,
     validate_column_monotonicity,
 )
-from gridpath.common_functions import create_results_df, constraint_dual
+from gridpath.common_functions import (
+    create_results_df,
+    constraint_dual,
+    none_dual_type_error_wrapper,
+)
 from gridpath.project.capacity.capacity_types.common_methods import (
     relevant_periods_by_project_vintage,
     project_relevant_periods,
@@ -463,7 +467,7 @@ def min_cum_build_rule(mod, g, p):
 
     Must build a certain amount of transmission capacity by period p.
     """
-    if mod.tx_new_lin_min_cumulative_new_build_mw == 0:
+    if mod.tx_new_lin_min_cumulative_new_build_mw[g, p] == 0:
         return Constraint.Skip
     else:
         return (
@@ -682,17 +686,28 @@ def add_to_tx_period_results(
         "new_build_capacity_mw",
         "min_cum_build_dual",
         "max_cum_build_dual",
+        "min_cum_build_marginal_cost_per_mw",
+        "max_cum_build_marginal_cost_per_mw",
     ]
-    data = [
-        [
-            tx,
-            prd,
-            value(m.TxNewLin_Build_MW[tx, prd]),
-            constraint_dual(m, m.TxNewLin_Min_Cum_Build_Constraint, (tx, prd)),
-            constraint_dual(m, m.TxNewLin_Max_Cum_Build_Constraint, (tx, prd)),
-        ]
-        for (tx, prd) in m.TX_NEW_LIN_VNTS
-    ]
+    data = []
+    for tx, prd in m.TX_NEW_LIN_VNTS:
+        min_dual = constraint_dual(m, m.TxNewLin_Min_Cum_Build_Constraint, (tx, prd))
+        max_dual = constraint_dual(m, m.TxNewLin_Max_Cum_Build_Constraint, (tx, prd))
+        data.append(
+            [
+                tx,
+                prd,
+                value(m.TxNewLin_Build_MW[tx, prd]),
+                min_dual,
+                max_dual,
+                none_dual_type_error_wrapper(
+                    min_dual, m.period_objective_coefficient[prd]
+                ),
+                none_dual_type_error_wrapper(
+                    max_dual, m.period_objective_coefficient[prd]
+                ),
+            ]
+        )
     captype_df = create_results_df(
         index_columns=["tx_line", "period"],
         results_columns=results_columns,
