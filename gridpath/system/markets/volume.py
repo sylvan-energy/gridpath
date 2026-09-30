@@ -16,17 +16,31 @@
 """
 Limits on how much a scenario may transact in the markets it participates in.
 
-A limit applies to a **market group**, i.e. to the sum of the net positions
-of the markets the group contains. A group of one limits a single market, a
-group of all the scenario's markets is a system-wide limit, and a group of
+A limit applies to a **market group**. A group of one limits a single market,
+a group of all the scenario's markets is a system-wide limit, and a group of
 some of them, e.g. all the hubs of one region, is a limit on that region's
 transactions. Groups may overlap, so a market can be limited on its own and
 as part of a wider total at the same time.
 
-A group's net position in a timepoint is the sum, over the markets in the
-group and the load zones participating in each, of the net power purchased.
-The *final* position is the same quantity including the transactions carried
-over from the previous stages.
+A market's position in a timepoint is its net power purchased, summed over
+the load zones participating in it: its purchases when positive, its sales
+when negative. The *final* position is the same quantity including the
+transactions carried over from the previous stages.
+
+**Net and gross limits.** Each limit row has a *basis* saying what it caps:
+
+* ``net`` caps the group's net position, the sum of its markets' positions,
+  so a purchase in one market offsets a sale in another.
+* ``gross`` caps the group's total sales and total purchases separately,
+  each market counted without offsetting: the sales limit caps the sum of
+  the sales of the markets that are selling, whatever the others buy.
+
+For a group of one market the two are the same. A group may carry a row of
+each basis, each with its own profiles and flat limits, e.g. a gross cap on
+hourly sales and a net cap on annual exports. Gross limits split each of the
+group's markets' positions into non-negative sales and purchases variables
+bounded below by the position; capping their sum is exact and keeps the
+problem linear.
 
 Limits come at three temporal resolutions. The timepoint-level limits are in
 MW and apply to the position in the timepoint. The horizon- and period-level
@@ -51,10 +65,11 @@ structure (a day, a week, a month, ...).
 A limit that is not specified defaults to infinity, i.e. it is not enforced
 and no constraint is built for it.
 
-The horizon- and period-level sales limits can optionally be relaxed by the
-energy the system's storage loses, for a limit meant to cap net exports
-rather than gross ones. The losses are those of the projects of the *stor*
-operational type and are system-wide, not group-specific.
+The horizon- and period-level sales limits can optionally count the energy
+the system's storage loses against the limit, i.e. cap sales plus storage
+losses rather than sales alone. The losses are those of the projects of the
+*stor* operational type, the energy they charge less the energy they
+discharge, and are system-wide, not group-specific.
 
 **Every market is a group of its own.** A market is implicitly a group
 containing just that market, named after it, so limiting a single market
@@ -110,6 +125,7 @@ from pyomo.environ import (
     NonNegativeReals,
     Param,
     Set,
+    Var,
     value,
 )
 
@@ -128,6 +144,13 @@ STORAGE_LOSS_OPERATIONAL_TYPE = "stor"
 
 # Cached on the model instance by lz_markets_in_group()
 LZ_MARKETS_BY_GROUP_CACHE = "_gridpath_lz_markets_by_market_group"
+LZ_MARKETS_BY_MARKET_CACHE = "_gridpath_lz_markets_by_market"
+
+# What a limit row applies to: the group's net position, or its total sales
+# and total purchases counted separately
+NET = "net"
+GROSS = "gross"
+LIMIT_BASES = [NET, GROSS]
 
 
 def add_model_components(
@@ -159,9 +182,15 @@ def add_model_components(
         ],
     )
 
-    # Limits by temporal resolution; each set holds only the group-index
-    # pairs a limit was specified for
-    m.MARKET_GROUP_TMPS_W_LIMIT = Set(dimen=2, within=m.MARKET_GROUPS * m.TMPS)
+    m.MARKET_VOLUME_LIMIT_BASES = Set(initialize=LIMIT_BASES)
+
+    # Limits by temporal resolution; each set holds only the group-basis-
+    # index combinations a limit was specified for. The basis is 'net' (the
+    # group's net position) or 'gross' (its total sales and total purchases,
+    # counted separately)
+    m.MARKET_GROUP_TMPS_W_LIMIT = Set(
+        dimen=3, within=m.MARKET_GROUPS * m.MARKET_VOLUME_LIMIT_BASES * m.TMPS
+    )
     m.max_market_sales = Param(
         m.MARKET_GROUP_TMPS_W_LIMIT, within=NonNegativeReals, default=Infinity
     )
@@ -176,7 +205,7 @@ def add_model_components(
     )
 
     m.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT = Set(
-        dimen=3, within=m.MARKET_GROUPS * m.BLN_TYPE_HRZS
+        dimen=4, within=m.MARKET_GROUPS * m.MARKET_VOLUME_LIMIT_BASES * m.BLN_TYPE_HRZS
     )
     m.max_market_sales_in_hrz = Param(
         m.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT, within=NonNegativeReals, default=Infinity
@@ -189,7 +218,9 @@ def add_model_components(
         m.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT, within=Boolean, default=0
     )
 
-    m.MARKET_GROUP_PRDS_W_LIMIT = Set(dimen=2, within=m.MARKET_GROUPS * m.PERIODS)
+    m.MARKET_GROUP_PRDS_W_LIMIT = Set(
+        dimen=3, within=m.MARKET_GROUPS * m.MARKET_VOLUME_LIMIT_BASES * m.PERIODS
+    )
     m.max_market_sales_in_prd = Param(
         m.MARKET_GROUP_PRDS_W_LIMIT, within=NonNegativeReals, default=Infinity
     )
@@ -201,15 +232,68 @@ def add_model_components(
         m.MARKET_GROUP_PRDS_W_LIMIT, within=Boolean, default=0
     )
 
-    # The groups a limit was specified for at any resolution; the position
-    # expressions are built for these only, so a scenario that defines groups
-    # but limits none of them builds nothing
+    # The groups a limit was specified for at any resolution and basis; the
+    # net position expressions are built for these only, so a scenario that
+    # defines groups but limits none of them builds nothing
     m.MARKET_GROUPS_W_LIMITS = Set(
         within=m.MARKET_GROUPS,
         initialize=lambda mod: sorted(
-            set(grp for (grp, tmp) in mod.MARKET_GROUP_TMPS_W_LIMIT)
-            | set(grp for (grp, bt, hrz) in mod.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT)
-            | set(grp for (grp, prd) in mod.MARKET_GROUP_PRDS_W_LIMIT)
+            set(grp for (grp, basis, tmp) in mod.MARKET_GROUP_TMPS_W_LIMIT)
+            | set(
+                grp for (grp, basis, bt, hrz) in mod.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT
+            )
+            | set(grp for (grp, basis, prd) in mod.MARKET_GROUP_PRDS_W_LIMIT)
+        ),
+    )
+
+    # The group-timepoints a timepoint-level limit of either basis applies
+    # to; the final position is needed there only
+    m.MARKET_GROUP_TMPS_W_ANY_LIMIT = Set(
+        dimen=2,
+        within=m.MARKET_GROUPS * m.TMPS,
+        initialize=lambda mod: sorted(
+            set((grp, tmp) for (grp, basis, tmp) in mod.MARKET_GROUP_TMPS_W_LIMIT)
+        ),
+    )
+
+    # Gross limits need each market's position split into its sales and its
+    # purchases. Build the split only for the market-timepoints a gross limit
+    # covers, in one pass over the gross limit rows
+    def gross_market_tmps_init(mod):
+        market_tmps = set()
+        for grp, basis, tmp in mod.MARKET_GROUP_TMPS_W_LIMIT:
+            if basis == GROSS:
+                market_tmps |= set(
+                    (mrkt, tmp) for mrkt in mod.MARKETS_BY_MARKET_GROUP[grp]
+                )
+        for grp, basis, bt, hrz in mod.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT:
+            if basis == GROSS:
+                market_tmps |= set(
+                    (mrkt, tmp)
+                    for mrkt in mod.MARKETS_BY_MARKET_GROUP[grp]
+                    for tmp in mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
+                )
+        for grp, basis, prd in mod.MARKET_GROUP_PRDS_W_LIMIT:
+            if basis == GROSS:
+                market_tmps |= set(
+                    (mrkt, tmp)
+                    for mrkt in mod.MARKETS_BY_MARKET_GROUP[grp]
+                    for tmp in mod.TMPS_IN_PRD[prd]
+                )
+        return sorted(market_tmps)
+
+    m.GROSS_LIMIT_MARKET_TMPS = Set(dimen=2, initialize=gross_market_tmps_init)
+
+    # Only the timepoint-level limits apply to the final position
+    m.GROSS_FINAL_LIMIT_MARKET_TMPS = Set(
+        dimen=2,
+        initialize=lambda mod: sorted(
+            set(
+                (mrkt, tmp)
+                for (grp, basis, tmp) in mod.MARKET_GROUP_TMPS_W_LIMIT
+                if basis == GROSS
+                for mrkt in mod.MARKETS_BY_MARKET_GROUP[grp]
+            )
         ),
     )
 
@@ -243,54 +327,97 @@ def add_model_components(
             for (lz, mrkt) in lz_markets_in_group(mod, group)
         )
 
-    # Only the timepoint-level limits apply to the final position
     m.Group_Final_Net_Market_Purchased_Power = Expression(
-        m.MARKET_GROUP_TMPS_W_LIMIT, initialize=group_final_net_market_purchases_init
+        m.MARKET_GROUP_TMPS_W_ANY_LIMIT,
+        initialize=group_final_net_market_purchases_init,
     )
 
-    # Timepoint-level limits
-    def max_market_sales_rule(mod, group, tmp):
-        if mod.max_market_sales[group, tmp] == Infinity:
+    # A market's sales and purchases, each at least the market's net sales
+    # or net purchases and at least zero. A gross limit caps their sum over
+    # the group's markets; since that cap is convex, the variables can always
+    # sit at the positive parts of the net position, so the gross limit is
+    # exact and the problem stays linear. The variables themselves are not
+    # unique where no gross limit binds, so results report the positive parts
+    # of the net position rather than the variables.
+    m.Gross_Market_Sales = Var(m.GROSS_LIMIT_MARKET_TMPS, within=NonNegativeReals)
+    m.Gross_Market_Purchases = Var(m.GROSS_LIMIT_MARKET_TMPS, within=NonNegativeReals)
+
+    m.Gross_Market_Sales_Constraint = Constraint(
+        m.GROSS_LIMIT_MARKET_TMPS,
+        rule=lambda mod, mrkt, tmp: mod.Gross_Market_Sales[mrkt, tmp]
+        >= -market_net_position(mod, mrkt, tmp, final=False),
+    )
+    m.Gross_Market_Purchases_Constraint = Constraint(
+        m.GROSS_LIMIT_MARKET_TMPS,
+        rule=lambda mod, mrkt, tmp: mod.Gross_Market_Purchases[mrkt, tmp]
+        >= market_net_position(mod, mrkt, tmp, final=False),
+    )
+
+    m.Gross_Final_Market_Sales = Var(
+        m.GROSS_FINAL_LIMIT_MARKET_TMPS, within=NonNegativeReals
+    )
+    m.Gross_Final_Market_Purchases = Var(
+        m.GROSS_FINAL_LIMIT_MARKET_TMPS, within=NonNegativeReals
+    )
+
+    m.Gross_Final_Market_Sales_Constraint = Constraint(
+        m.GROSS_FINAL_LIMIT_MARKET_TMPS,
+        rule=lambda mod, mrkt, tmp: mod.Gross_Final_Market_Sales[mrkt, tmp]
+        >= -market_net_position(mod, mrkt, tmp, final=True),
+    )
+    m.Gross_Final_Market_Purchases_Constraint = Constraint(
+        m.GROSS_FINAL_LIMIT_MARKET_TMPS,
+        rule=lambda mod, mrkt, tmp: mod.Gross_Final_Market_Purchases[mrkt, tmp]
+        >= market_net_position(mod, mrkt, tmp, final=True),
+    )
+
+    # Timepoint-level limits. Each sales limit is written as "position >=
+    # -limit" and each purchases limit as "position <= limit", where the
+    # position is the net position on a net row and the negated total sales
+    # or the total purchases on a gross row; net rows keep exactly the
+    # constraints they had before gross limits existed.
+    def max_market_sales_rule(mod, group, basis, tmp):
+        if mod.max_market_sales[group, basis, tmp] == Infinity:
             return Constraint.Skip
         return (
-            mod.Group_Net_Market_Purchased_Power[group, tmp]
-            >= -mod.max_market_sales[group, tmp]
+            sales_position(mod, group, basis, tmp, final=False)
+            >= -mod.max_market_sales[group, basis, tmp]
         )
 
     m.Max_Market_Group_Sales_Constraint = Constraint(
         m.MARKET_GROUP_TMPS_W_LIMIT, rule=max_market_sales_rule
     )
 
-    def max_market_purchases_rule(mod, group, tmp):
-        if mod.max_market_purchases[group, tmp] == Infinity:
+    def max_market_purchases_rule(mod, group, basis, tmp):
+        if mod.max_market_purchases[group, basis, tmp] == Infinity:
             return Constraint.Skip
         return (
-            mod.Group_Net_Market_Purchased_Power[group, tmp]
-            <= mod.max_market_purchases[group, tmp]
+            purchases_position(mod, group, basis, tmp, final=False)
+            <= mod.max_market_purchases[group, basis, tmp]
         )
 
     m.Max_Market_Group_Purchases_Constraint = Constraint(
         m.MARKET_GROUP_TMPS_W_LIMIT, rule=max_market_purchases_rule
     )
 
-    def max_final_market_sales_rule(mod, group, tmp):
-        if mod.max_final_market_sales[group, tmp] == Infinity:
+    def max_final_market_sales_rule(mod, group, basis, tmp):
+        if mod.max_final_market_sales[group, basis, tmp] == Infinity:
             return Constraint.Skip
         return (
-            mod.Group_Final_Net_Market_Purchased_Power[group, tmp]
-            >= -mod.max_final_market_sales[group, tmp]
+            sales_position(mod, group, basis, tmp, final=True)
+            >= -mod.max_final_market_sales[group, basis, tmp]
         )
 
     m.Max_Market_Group_Final_Sales_Constraint = Constraint(
         m.MARKET_GROUP_TMPS_W_LIMIT, rule=max_final_market_sales_rule
     )
 
-    def max_final_market_purchases_rule(mod, group, tmp):
-        if mod.max_final_market_purchases[group, tmp] == Infinity:
+    def max_final_market_purchases_rule(mod, group, basis, tmp):
+        if mod.max_final_market_purchases[group, basis, tmp] == Infinity:
             return Constraint.Skip
         return (
-            mod.Group_Final_Net_Market_Purchased_Power[group, tmp]
-            <= mod.max_final_market_purchases[group, tmp]
+            purchases_position(mod, group, basis, tmp, final=True)
+            <= mod.max_final_market_purchases[group, basis, tmp]
         )
 
     m.Max_Market_Group_Final_Purchases_Constraint = Constraint(
@@ -298,16 +425,16 @@ def add_model_components(
     )
 
     # Horizon-level limits
-    def max_market_sales_in_hrz_rule(mod, group, bt, hrz):
-        if mod.max_market_sales_in_hrz[group, bt, hrz] == Infinity:
+    def max_market_sales_in_hrz_rule(mod, group, basis, bt, hrz):
+        if mod.max_market_sales_in_hrz[group, basis, bt, hrz] == Infinity:
             return Constraint.Skip
         tmps = mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
-        return group_net_market_purchases_in_tmps(
-            mod, group, tmps
+        return sales_position_in_tmps(
+            mod, group, basis, tmps
         ) >= -mod.max_market_sales_in_hrz[
-            group, bt, hrz
+            group, basis, bt, hrz
         ] + mod.max_market_sales_in_hrz_include_storage_losses[
-            group, bt, hrz
+            group, basis, bt, hrz
         ] * storage_losses_in_tmps(
             mod, tmps
         )
@@ -316,14 +443,14 @@ def add_model_components(
         m.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT, rule=max_market_sales_in_hrz_rule
     )
 
-    def max_market_purchases_in_hrz_rule(mod, group, bt, hrz):
-        if mod.max_market_purchases_in_hrz[group, bt, hrz] == Infinity:
+    def max_market_purchases_in_hrz_rule(mod, group, basis, bt, hrz):
+        if mod.max_market_purchases_in_hrz[group, basis, bt, hrz] == Infinity:
             return Constraint.Skip
         return (
-            group_net_market_purchases_in_tmps(
-                mod, group, mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
+            purchases_position_in_tmps(
+                mod, group, basis, mod.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
             )
-            <= mod.max_market_purchases_in_hrz[group, bt, hrz]
+            <= mod.max_market_purchases_in_hrz[group, basis, bt, hrz]
         )
 
     m.Max_Market_Group_Purchases_in_Hrz_Constraint = Constraint(
@@ -331,16 +458,16 @@ def add_model_components(
     )
 
     # Period-level limits
-    def max_market_sales_in_prd_rule(mod, group, prd):
-        if mod.max_market_sales_in_prd[group, prd] == Infinity:
+    def max_market_sales_in_prd_rule(mod, group, basis, prd):
+        if mod.max_market_sales_in_prd[group, basis, prd] == Infinity:
             return Constraint.Skip
         tmps = mod.TMPS_IN_PRD[prd]
-        return group_net_market_purchases_in_tmps(
-            mod, group, tmps
+        return sales_position_in_tmps(
+            mod, group, basis, tmps
         ) >= -mod.max_market_sales_in_prd[
-            group, prd
+            group, basis, prd
         ] + mod.max_market_sales_in_prd_include_storage_losses[
-            group, prd
+            group, basis, prd
         ] * storage_losses_in_tmps(
             mod, tmps
         )
@@ -349,17 +476,102 @@ def add_model_components(
         m.MARKET_GROUP_PRDS_W_LIMIT, rule=max_market_sales_in_prd_rule
     )
 
-    def max_market_purchases_in_prd_rule(mod, group, prd):
-        if mod.max_market_purchases_in_prd[group, prd] == Infinity:
+    def max_market_purchases_in_prd_rule(mod, group, basis, prd):
+        if mod.max_market_purchases_in_prd[group, basis, prd] == Infinity:
             return Constraint.Skip
         return (
-            group_net_market_purchases_in_tmps(mod, group, mod.TMPS_IN_PRD[prd])
-            <= mod.max_market_purchases_in_prd[group, prd]
+            purchases_position_in_tmps(mod, group, basis, mod.TMPS_IN_PRD[prd])
+            <= mod.max_market_purchases_in_prd[group, basis, prd]
         )
 
     m.Max_Market_Group_Purchases_in_Prd_Constraint = Constraint(
         m.MARKET_GROUP_PRDS_W_LIMIT, rule=max_market_purchases_in_prd_rule
     )
+
+
+def sales_position(mod, group, basis, tmp, final):
+    """
+    The quantity a timepoint-level sales limit bounds from below by minus
+    the limit: the group's net position on a net row, and its total sales,
+    negated, on a gross row.
+    """
+    if basis == NET:
+        return (
+            mod.Group_Final_Net_Market_Purchased_Power[group, tmp]
+            if final
+            else mod.Group_Net_Market_Purchased_Power[group, tmp]
+        )
+    sales = mod.Gross_Final_Market_Sales if final else mod.Gross_Market_Sales
+    return -sum(sales[mrkt, tmp] for mrkt in mod.MARKETS_BY_MARKET_GROUP[group])
+
+
+def purchases_position(mod, group, basis, tmp, final):
+    """
+    The quantity a timepoint-level purchases limit bounds from above: the
+    group's net position on a net row, and its total purchases on a gross
+    row.
+    """
+    if basis == NET:
+        return (
+            mod.Group_Final_Net_Market_Purchased_Power[group, tmp]
+            if final
+            else mod.Group_Net_Market_Purchased_Power[group, tmp]
+        )
+    purchases = (
+        mod.Gross_Final_Market_Purchases if final else mod.Gross_Market_Purchases
+    )
+    return sum(purchases[mrkt, tmp] for mrkt in mod.MARKETS_BY_MARKET_GROUP[group])
+
+
+def sales_position_in_tmps(mod, group, basis, tmps):
+    """
+    :func:`sales_position` as energy in MWh over the timepoints *tmps*.
+    """
+    return sum(
+        sales_position(mod, group, basis, tmp, final=False)
+        * mod.hrs_in_tmp[tmp]
+        * mod.tmp_weight[tmp]
+        for tmp in tmps
+    )
+
+
+def purchases_position_in_tmps(mod, group, basis, tmps):
+    """
+    :func:`purchases_position` as energy in MWh over the timepoints *tmps*.
+    """
+    return sum(
+        purchases_position(mod, group, basis, tmp, final=False)
+        * mod.hrs_in_tmp[tmp]
+        * mod.tmp_weight[tmp]
+        for tmp in tmps
+    )
+
+
+def market_net_position(mod, market, tmp, final):
+    """
+    A single market's net purchased power in the timepoint, summed over the
+    load zones participating in it; the final position if *final*.
+    """
+    power = (
+        mod.Final_Net_Market_Purchased_Power
+        if final
+        else mod.Net_Market_Purchased_Power
+    )
+    return sum(power[lz, mrkt, tmp] for (lz, mrkt) in lz_markets_in_market(mod, market))
+
+
+def lz_markets_in_market(mod, market):
+    """
+    The (load zone, market) pairs of *market*, built in one pass over
+    LZ_MARKETS the first time it is asked for.
+    """
+    cache = getattr(mod, LZ_MARKETS_BY_MARKET_CACHE, None)
+    if cache is None:
+        cache = {}
+        for lz, mrkt in mod.LZ_MARKETS:
+            cache.setdefault(mrkt, []).append((lz, mrkt))
+        setattr(mod, LZ_MARKETS_BY_MARKET_CACHE, cache)
+    return cache.get(market, [])
 
 
 def lz_markets_in_group(mod, group):
@@ -379,18 +591,6 @@ def lz_markets_in_group(mod, group):
         setattr(mod, LZ_MARKETS_BY_GROUP_CACHE, cache)
 
     return cache[group]
-
-
-def group_net_market_purchases_in_tmps(mod, group, tmps):
-    """
-    A market group's net purchased energy in MWh over the timepoints *tmps*.
-    """
-    return sum(
-        mod.Group_Net_Market_Purchased_Power[group, tmp]
-        * mod.hrs_in_tmp[tmp]
-        * mod.tmp_weight[tmp]
-        for tmp in tmps
-    )
 
 
 def storage_losses_in_tmps(mod, tmps):
@@ -630,6 +830,7 @@ def get_inputs_from_database(
     c = conn.cursor()
     group_list = c.execute(f"""
         SELECT market_group,
+        basis,
         market_volume_tmp_profile_scenario_id,
         market_volume_hrz_profile_scenario_id,
         market_volume_prd_profile_scenario_id,
@@ -719,13 +920,16 @@ def get_inputs_from_database(
         },
     ]
 
-    # Loop over the groups for each resolution's query, since their limits
-    # don't all vary by the same iteration types
+    # Loop over the group-basis rows for each resolution's query, since
+    # their limits don't all vary by the same iteration types; a group's net
+    # and gross rows are resolved independently, each with its own profiles
+    # and flat limits
     n_groups = len(group_list)
     queries = ["" for _ in resolutions]
     n = 1
     for (
         market_group,
+        basis,
         tmp_profile_id,
         hrz_profile_id,
         prd_profile_id,
@@ -794,7 +998,9 @@ def get_inputs_from_database(
                     match_columns=resolution["match_columns"],
                     default_match_columns=resolution["default_match_columns"],
                     wildcard_column=resolution["wildcard_column"],
-                    extra_select=f"'{market_group}' AS market_group, ",
+                    extra_select=(
+                        f"'{market_group}' AS market_group, '{basis}' AS basis, "
+                    ),
                     flat_values={
                         c: flat_values.get(c) for c in resolution["value_columns"]
                     },
@@ -807,7 +1013,9 @@ def get_inputs_from_database(
     limits = []
     for i, resolution in enumerate(resolutions):
         columns = (
-            ["market_group"] + resolution["index_columns"] + resolution["value_columns"]
+            ["market_group", "basis"]
+            + resolution["index_columns"]
+            + resolution["value_columns"]
         )
         # With no groups in the volume subscenario there is nothing to
         # resolve; run a query that returns no rows but still names the
@@ -1153,10 +1361,15 @@ def export_results(
             "system_market_volume_tmp.csv",
             [
                 "market_group",
+                "basis",
                 "timepoint",
                 "period",
                 "net_market_purchased_power_mw",
                 "final_net_market_purchased_power_mw",
+                "gross_market_sales_mw",
+                "gross_market_purchases_mw",
+                "final_gross_market_sales_mw",
+                "final_gross_market_purchases_mw",
                 "max_market_purchases",
                 "max_market_sales",
                 "max_final_market_purchases",
@@ -1172,9 +1385,10 @@ def export_results(
             ],
         )
         with f:
-            for group, tmp in sorted(m.MARKET_GROUP_TMPS_W_LIMIT):
+            for group, basis, tmp in sorted(m.MARKET_GROUP_TMPS_W_LIMIT):
+                idx = (group, basis, tmp)
                 duals = [
-                    constraint_dual(m, constraint, (group, tmp))
+                    constraint_dual(m, constraint, idx)
                     for constraint in [
                         m.Max_Market_Group_Purchases_Constraint,
                         m.Max_Market_Group_Sales_Constraint,
@@ -1183,17 +1397,26 @@ def export_results(
                     ]
                 ]
                 coefficient = m.tmp_objective_coefficient[tmp]
+                sales, purchases = realized_gross_position(m, group, tmp, final=False)
+                final_sales, final_purchases = realized_gross_position(
+                    m, group, tmp, final=True
+                )
                 writer.writerow(
                     [
                         group,
+                        basis,
                         tmp,
                         m.period[tmp],
                         value(m.Group_Net_Market_Purchased_Power[group, tmp]),
                         value(m.Group_Final_Net_Market_Purchased_Power[group, tmp]),
-                        m.max_market_purchases[group, tmp],
-                        m.max_market_sales[group, tmp],
-                        m.max_final_market_purchases[group, tmp],
-                        m.max_final_market_sales[group, tmp],
+                        sales,
+                        purchases,
+                        final_sales,
+                        final_purchases,
+                        m.max_market_purchases[idx],
+                        m.max_market_sales[idx],
+                        m.max_final_market_purchases[idx],
+                        m.max_final_market_sales[idx],
                     ]
                     + duals
                     + [
@@ -1207,9 +1430,12 @@ def export_results(
             "system_market_volume_hrz.csv",
             [
                 "market_group",
+                "basis",
                 "balancing_type_horizon",
                 "horizon",
                 "net_market_purchased_power_mwh",
+                "gross_market_sales_mwh",
+                "gross_market_purchases_mwh",
                 "max_market_purchases_in_hrz",
                 "max_market_sales_in_hrz",
                 "max_market_purchases_in_hrz_dual",
@@ -1219,9 +1445,10 @@ def export_results(
             ],
         )
         with f:
-            for group, bt, hrz in sorted(m.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT):
+            for group, basis, bt, hrz in sorted(m.MARKET_GROUP_BLN_TYPE_HRZS_W_LIMIT):
+                idx = (group, basis, bt, hrz)
                 duals = [
-                    constraint_dual(m, constraint, (group, bt, hrz))
+                    constraint_dual(m, constraint, idx)
                     for constraint in [
                         m.Max_Market_Group_Purchases_in_Hrz_Constraint,
                         m.Max_Market_Group_Sales_in_Hrz_Constraint,
@@ -1229,17 +1456,11 @@ def export_results(
                 ]
                 coefficient = m.hrz_objective_coefficient[bt, hrz]
                 writer.writerow(
-                    [
-                        group,
-                        bt,
-                        hrz,
-                        value(
-                            group_net_market_purchases_in_tmps(
-                                m, group, m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz]
-                            )
-                        ),
-                        m.max_market_purchases_in_hrz[group, bt, hrz],
-                        m.max_market_sales_in_hrz[group, bt, hrz],
+                    [group, basis, bt, hrz]
+                    + realized_energy(m, group, m.TMPS_BY_BLN_TYPE_HRZ[bt, hrz])
+                    + [
+                        m.max_market_purchases_in_hrz[idx],
+                        m.max_market_sales_in_hrz[idx],
                     ]
                     + duals
                     + [
@@ -1253,8 +1474,11 @@ def export_results(
             "system_market_volume_prd.csv",
             [
                 "market_group",
+                "basis",
                 "period",
                 "net_market_purchased_power_mwh",
+                "gross_market_sales_mwh",
+                "gross_market_purchases_mwh",
                 "max_market_purchases_in_prd",
                 "max_market_sales_in_prd",
                 "max_market_purchases_in_prd_dual",
@@ -1264,9 +1488,10 @@ def export_results(
             ],
         )
         with f:
-            for group, prd in sorted(m.MARKET_GROUP_PRDS_W_LIMIT):
+            for group, basis, prd in sorted(m.MARKET_GROUP_PRDS_W_LIMIT):
+                idx = (group, basis, prd)
                 duals = [
-                    constraint_dual(m, constraint, (group, prd))
+                    constraint_dual(m, constraint, idx)
                     for constraint in [
                         m.Max_Market_Group_Purchases_in_Prd_Constraint,
                         m.Max_Market_Group_Sales_in_Prd_Constraint,
@@ -1274,16 +1499,11 @@ def export_results(
                 ]
                 coefficient = m.period_objective_coefficient[prd]
                 writer.writerow(
-                    [
-                        group,
-                        prd,
-                        value(
-                            group_net_market_purchases_in_tmps(
-                                m, group, m.TMPS_IN_PRD[prd]
-                            )
-                        ),
-                        m.max_market_purchases_in_prd[group, prd],
-                        m.max_market_sales_in_prd[group, prd],
+                    [group, basis, prd]
+                    + realized_energy(m, group, m.TMPS_IN_PRD[prd])
+                    + [
+                        m.max_market_purchases_in_prd[idx],
+                        m.max_market_sales_in_prd[idx],
                     ]
                     + duals
                     + [
@@ -1291,6 +1511,40 @@ def export_results(
                         for dual in duals
                     ]
                 )
+
+
+def realized_gross_position(m, group, tmp, final):
+    """
+    A group's solved total sales and total purchases in the timepoint, in
+    MW: the positive parts of each of its markets' net positions, summed.
+    Computed from the net positions rather than read from the gross split
+    variables, which are exact where a gross limit binds but not unique
+    elsewhere, and which do not exist for a net-only group.
+    """
+    sales = 0.0
+    purchases = 0.0
+    for mrkt in m.MARKETS_BY_MARKET_GROUP[group]:
+        position = value(market_net_position(m, mrkt, tmp, final=final))
+        sales += max(0.0, -position)
+        purchases += max(0.0, position)
+    return sales, purchases
+
+
+def realized_energy(m, group, tmps):
+    """
+    A group's solved net purchases, total sales and total purchases over the
+    timepoints *tmps*, in MWh.
+    """
+    net = 0.0
+    sales = 0.0
+    purchases = 0.0
+    for tmp in tmps:
+        weight = m.hrs_in_tmp[tmp] * m.tmp_weight[tmp]
+        net += value(m.Group_Net_Market_Purchased_Power[group, tmp]) * weight
+        tmp_sales, tmp_purchases = realized_gross_position(m, group, tmp, final=False)
+        sales += tmp_sales * weight
+        purchases += tmp_purchases * weight
+    return [net, sales, purchases]
 
 
 def import_results_into_database(
