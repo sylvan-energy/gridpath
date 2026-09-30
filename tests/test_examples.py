@@ -1569,6 +1569,46 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_min_max_build_trans"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_min_max_build_trans_w_binding_min(self):
+        """
+        Check validation and objective function value of
+        "test_min_max_build_trans_w_binding_min" example, and that the
+        minimum cumulative build forces capacity beyond the 31.5 MW built
+        without it
+
+        Forcing the extra capacity moves the objective by less than the
+        objective tolerance in this penalty-regime example, so check the
+        build, limits and dual in the results directly.
+        :return:
+        """
+        scenario_name = "test_min_max_build_trans_w_binding_min"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+        df = pd.read_csv(
+            os.path.join(
+                EXAMPLES_DIRECTORY, scenario_name, "results", "transmission_period.csv"
+            )
+        )
+        df = df[df["transmission_line"] == "Tx_new"].set_index("period")
+
+        # 2020: the minimum binds and the unspecified maximum is empty
+        self.assertAlmostEqual(df.loc[2020, "new_build_capacity_mw"], 40, places=6)
+        self.assertEqual(df.loc[2020, "min_cumulative_new_build_mw"], 40)
+        self.assertTrue(pd.isna(df.loc[2020, "max_cumulative_new_build_mw"]))
+        self.assertNotAlmostEqual(df.loc[2020, "min_cum_build_dual"], 0, places=6)
+        # The period objective coefficient is 10 (discount factor of 1 times
+        # 10 years)
+        self.assertAlmostEqual(
+            df.loc[2020, "min_cum_build_marginal_cost_per_mw"],
+            df.loc[2020, "min_cum_build_dual"] / 10,
+            places=6,
+        )
+
+        # 2030: the maximum does not bind and the unspecified minimum is empty
+        self.assertEqual(df.loc[2030, "max_cumulative_new_build_mw"], 50)
+        self.assertTrue(pd.isna(df.loc[2030, "min_cumulative_new_build_mw"]))
+        self.assertTrue(pd.isna(df.loc[2030, "min_cum_build_dual"]))
+
     def test_example_2periods_new_build_2zones_transmission_Tx1halfavail(self):
         """
         Check validation and objective function value of
