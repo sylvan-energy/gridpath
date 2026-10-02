@@ -1442,6 +1442,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_tx_simple_net_prd_imports"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_new_solar_carbon_cap_2zones_tx_both_zones_capped(self):
+        """
+        "test_new_solar_carbon_cap_2zones_tx" with both load zones capped and
+        the line assigned to both zones: negative flow is an import into
+        Zone1, positive flow an import into Zone2. Both caps bind; Zone1's
+        imports count toward Zone1 and show as exports of Zone2.
+        :return:
+        """
+        scenario_name = "test_new_solar_carbon_cap_2zones_tx_both_zones_capped"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_tx_simple_carbon_tax_imports(self):
         """
         "test_tx_simple" with a carbon tax that also applies to the
