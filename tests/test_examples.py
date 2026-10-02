@@ -1431,6 +1431,115 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_tx_simple_tmp_emissions"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_tx_simple_net_prd_imports(self):
+        """
+        "test_tx_simple" with the carbon cap zone on the net_prd
+        import-emissions basis and an export credit on the lines. The lines
+        never export from the zone, so the objective is that of
+        "test_tx_simple": net and gross accounting coincide without exports.
+        :return:
+        """
+        scenario_name = "test_tx_simple_net_prd_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_carbon_tax_imports(self):
+        """
+        "test_tx_simple" with a carbon tax that also applies to the
+        transmission imports; the 300 tons imported under the binding cap
+        cost 300 x $30 more than in "test_tx_simple".
+        :return:
+        """
+        scenario_name = "test_tx_simple_carbon_tax_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports(self):
+        """
+        "test_markets" with a binding carbon cap that counts market purchases
+        at 0.5 tons/MWh on the gross basis.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports_net_prd(self):
+        """
+        "test_markets_w_carbon_cap_imports" on the net_prd basis with sales
+        credited at the purchase intensity: the system both buys and sells, so
+        the credits loosen the cap and the objective differs.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports_net_prd"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports_net_prd_no_export_credit(
+        self,
+    ):
+        """
+        "test_markets_w_carbon_cap_imports" on the net_prd basis with no
+        export credit, which is gross accounting through the net formulation;
+        the objective equals that of "test_markets_w_carbon_cap_imports".
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports_net_prd_no_export_credit"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports_hourly(self):
+        """
+        "test_markets_w_carbon_cap_imports" with the 0.5 tons/MWh split into
+        a flat 0.3 and an hourly 0.2; the objective equals that of
+        "test_markets_w_carbon_cap_imports".
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports_hourly"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_tax_imports(self):
+        """
+        "test_markets" with a carbon tax that also applies to market purchases
+        at 0.5 tons/MWh on the gross basis.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_tax_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_tax_imports_net_prd(self):
+        """
+        "test_markets_w_carbon_tax_imports" on the net_prd basis with sales
+        credited at the purchase intensity.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_tax_imports_net_prd"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_import_emissions_accounting_equivalences(self):
+        """
+        The expected objectives pin the accounting identities: net_prd with
+        no export credit and an hourly split of the same intensity both
+        reproduce gross accounting to the digit, and net_prd with an export
+        credit is cheaper than gross when the system also sells.
+        """
+        gross = self.df.loc["test_markets_w_carbon_cap_imports"]["expected_objective"]
+        self.assertEqual(
+            gross,
+            self.df.loc["test_markets_w_carbon_cap_imports_net_prd_no_export_credit"][
+                "expected_objective"
+            ],
+        )
+        self.assertEqual(
+            gross,
+            self.df.loc["test_markets_w_carbon_cap_imports_hourly"][
+                "expected_objective"
+            ],
+        )
+        self.assertGreater(
+            ast.literal_eval(
+                self.df.loc["test_markets_w_carbon_cap_imports_net_prd"][
+                    "expected_objective"
+                ]
+            )[("", "", "", 1)][1],
+            ast.literal_eval(gross)[("", "", "", 1)][1],
+        )
+
     def test_example_test_tx_simple_additive(self):
         """
         Check validation and objective function value of

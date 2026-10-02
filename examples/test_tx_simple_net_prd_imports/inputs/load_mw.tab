@@ -1,0 +1,7 @@
+load_zone	timepoint	load_component	load_mw
+Zone1	20200101	all	10.0
+Zone1	20200102	all	20.0
+Zone2	20200101	all	10.0
+Zone2	20200102	all	10.0
+Zone3	20200101	all	30.0
+Zone3	20200102	all	30.0

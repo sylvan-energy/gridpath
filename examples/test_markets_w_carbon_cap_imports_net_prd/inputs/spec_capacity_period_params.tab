@@ -1,0 +1,6 @@
+project	period	specified_capacity_mw	specified_energy_mwh	shaping_capacity_mw	hyb_gen_specified_capacity_mw	hyb_stor_specified_capacity_mw	specified_stor_capacity_mwh	fuel_production_capacity_fuelunitperhour	fuel_release_capacity_fuelunitperhour	fuel_storage_capacity_fuelunit	fixed_cost_per_mw_yr	fixed_cost_per_energy_mwh_yr	fixed_cost_per_shaping_mw_yr	hyb_gen_fixed_cost_per_mw_yr	hyb_stor_fixed_cost_per_mw_yr	fixed_cost_per_stor_mwh_yr	fuel_production_capacity_fixed_cost_per_fuelunitperhour_yr	fuel_release_capacity_fixed_cost_per_fuelunitperhour_yr	fuel_storage_capacity_fixed_cost_per_fuelunit_yr
+Coal	2020	6.0																	
+Gas_CCGT	2020	6.0																	
+Gas_CT	2020	6.0																	
+Nuclear	2020	6.0																	
+Wind	2020	2.0																	

@@ -1,0 +1,4 @@
+project	period	fuel_group	carbon_tax_allowance_tco2_per_mwh
+Coal	2020	Solid	.
+Gas_CCGT	2020	Gas	.
+Gas_CT	2020	Gas	.
