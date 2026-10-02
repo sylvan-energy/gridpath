@@ -706,17 +706,25 @@ operational type and fuel. The model aggregates all projects' contributions
 for each period and ensures that the total emissions stay below the cap in
 each *carbon cap zone* and *period*.
 
-GridPath can also optionally apply an emissions factor to energy imports
-into an emissions zone. For the purpose, the relevant transmission lines
-(i.e. transmission lines that connect the emissions zone to other zones)
-must be assigned an emissions zone and an emissions intensity per unit
-energy. These emissions are then added to the emissions cap constraint.
+GridPath can also optionally count the emissions of energy imported into an
+emissions zone, both over transmission lines and through market purchases.
+The relevant transmission lines (i.e. transmission lines that connect the
+emissions zone to other zones) and (load zone, market) pairs are assigned an
+emissions zone, an import intensity per unit energy and, optionally, an export
+intensity; a line or pair may be assigned to several zones, e.g. a line
+importing into the zone at one end and exporting from the zone at the other.
+How the imports count is set per zone by its *import-emissions basis*: on the
+``gross`` basis every imported MWh counts at the import intensity and exports
+earn nothing; on the ``net_prd`` basis exports earn a credit at the export
+intensity and the zone's net import emissions are floored at zero over each
+period. These emissions are then added to the emissions cap constraint.
 
 The emissions cap could be applied to carbon emissions or to other types of
 emissions.
 
 Alternatively, GridPath can model a cost on carbon emissions and optimize the amount
-of emissions.
+of emissions. The cost can likewise apply to the emissions of transmission
+imports and market purchases, with the same per-zone choice of basis.
 
 Fuel Use Limits
 ---------------

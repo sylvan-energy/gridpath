@@ -1,0 +1,4 @@
+transmission_line	period	specified_tx_min_mw	specified_tx_max_mw	fixed_cost_per_mw_yr
+Tx1	2020	-10.0	10.0	.
+Tx2	2020	-10.0	10.0	.
+Tx3	2020	-10.0	10.0	.

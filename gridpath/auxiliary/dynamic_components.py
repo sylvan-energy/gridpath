@@ -44,6 +44,19 @@ carbon_cap_balance_credit_components = "carbon_cap_balance_credit_components"
 
 carbon_tax_cost_components = "carbon_tax_cost_components"
 
+# Emissions imported over transmission lines and purchased from markets; each
+# source contributes a zone-period expression of its gross import emissions
+# and one of its signed (imports less export credits) emissions, which the
+# policy's import-emissions module combines per the zone's basis
+carbon_cap_import_emission_components = "carbon_cap_import_emission_components"
+carbon_cap_signed_import_emission_components = (
+    "carbon_cap_signed_import_emission_components"
+)
+carbon_tax_import_emission_components = "carbon_tax_import_emission_components"
+carbon_tax_signed_import_emission_components = (
+    "carbon_tax_signed_import_emission_components"
+)
+
 performance_standard_balance_emission_components = (
     "performance_standard_balance_emission_components"
 )
@@ -145,6 +158,12 @@ class DynamicComponents(object):
 
         # Carbon tax cost constraint
         setattr(self, carbon_tax_cost_components, list())
+
+        # Import emissions (transmission, markets) per policy
+        setattr(self, carbon_cap_import_emission_components, list())
+        setattr(self, carbon_cap_signed_import_emission_components, list())
+        setattr(self, carbon_tax_import_emission_components, list())
+        setattr(self, carbon_tax_signed_import_emission_components, list())
 
         # Performance standard constraint
         setattr(self, performance_standard_balance_emission_components, list())

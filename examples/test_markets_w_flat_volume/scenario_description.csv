@@ -149,6 +149,9 @@ elcc_surface_scenario_id,NULL
 market_price_scenario_id,1
 market_group_scenario_id,NULL
 market_volume_scenario_id,8
+market_carbon_cap_zone_scenario_id,NULL
+transmission_carbon_tax_zone_scenario_id,NULL
+market_carbon_tax_zone_scenario_id,NULL
 water_node_reservoir_scenario_id,NULL
 water_flow_scenario_id,NULL
 water_inflow_tmp_scenario_id,NULL

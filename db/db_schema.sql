@@ -782,6 +782,13 @@ CREATE TABLE inputs_geography_carbon_cap_zones
     carbon_cap_zone                VARCHAR(32),
     allow_violation                INTEGER DEFAULT 0, -- constraint is hard by default
     violation_penalty_per_emission FLOAT   DEFAULT 0,
+    -- How emissions imported over transmission lines and purchased from
+    -- markets count toward the zone: 'gross' counts every imported MWh and
+    -- credits nothing for exports; 'net_prd' credits exports at their export
+    -- intensity and floors the zone's net import emissions at zero over each
+    -- period. NULL means 'gross'.
+    import_emissions_basis         VARCHAR(8) DEFAULT 'gross'
+        CHECK (import_emissions_basis IN ('gross', 'net_prd')),
     PRIMARY KEY (carbon_cap_zone_scenario_id, carbon_cap_zone),
     FOREIGN KEY (carbon_cap_zone_scenario_id) REFERENCES
         subscenarios_geography_carbon_cap_zones (carbon_cap_zone_scenario_id)
@@ -803,6 +810,9 @@ CREATE TABLE inputs_geography_carbon_tax_zones
 (
     carbon_tax_zone_scenario_id INTEGER,
     carbon_tax_zone             VARCHAR(32),
+    -- See inputs_geography_carbon_cap_zones.import_emissions_basis
+    import_emissions_basis      VARCHAR(8) DEFAULT 'gross'
+        CHECK (import_emissions_basis IN ('gross', 'net_prd')),
     PRIMARY KEY (carbon_tax_zone_scenario_id, carbon_tax_zone),
     FOREIGN KEY (carbon_tax_zone_scenario_id) REFERENCES
         subscenarios_geography_carbon_tax_zones (carbon_tax_zone_scenario_id)
@@ -1283,6 +1293,122 @@ CREATE TABLE inputs_market_volume_prd_profiles
     FOREIGN KEY (market_group, market_volume_prd_profile_scenario_id) REFERENCES
         subscenarios_market_volume_prd_profiles
             (market_group, market_volume_prd_profile_scenario_id)
+);
+
+-- Market purchases counted toward a carbon cap zone
+-- Keyed by (load zone, market, zone): the same hub may count toward different
+-- zones depending on which load zone trades at it, and a (load zone, market)
+-- pair may count toward several zones. Purchases count at the import
+-- intensity; sales earn a credit at the export intensity only in zones with
+-- the 'net_prd' import-emissions basis (see inputs_geography_carbon_cap_zones);
+-- NULL export intensity means 0. The export intensity may not exceed the
+-- import intensity.
+DROP TABLE IF EXISTS subscenarios_market_carbon_cap_zones;
+CREATE TABLE subscenarios_market_carbon_cap_zones
+(
+    market_carbon_cap_zone_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                               VARCHAR(32),
+    description                        VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_market_carbon_cap_zones;
+CREATE TABLE inputs_market_carbon_cap_zones
+(
+    market_carbon_cap_zone_scenario_id INTEGER,
+    load_zone                          VARCHAR(32),
+    market                             VARCHAR(32),
+    carbon_cap_zone                    VARCHAR(32),
+    tmp_import_emissions_scenario_id   INTEGER, -- determines timepoint emissions scenario
+    co2_intensity_tons_per_mwh         FLOAT,
+    export_co2_intensity_tons_per_mwh  FLOAT,
+    PRIMARY KEY (market_carbon_cap_zone_scenario_id, load_zone, market,
+                 carbon_cap_zone),
+    FOREIGN KEY (market_carbon_cap_zone_scenario_id) REFERENCES
+        subscenarios_market_carbon_cap_zones (market_carbon_cap_zone_scenario_id)
+);
+
+-- Timepoint-varying intensity adders for a market, added to the flat
+-- intensities of every zone row of the market that references the profile
+DROP TABLE IF EXISTS subscenarios_market_carbon_cap_timepoint_emissions;
+CREATE TABLE subscenarios_market_carbon_cap_timepoint_emissions
+(
+    market                           VARCHAR(32),
+    tmp_import_emissions_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (market, tmp_import_emissions_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_market_carbon_cap_timepoint_emissions;
+CREATE TABLE inputs_market_carbon_cap_timepoint_emissions
+(
+    market                                   VARCHAR(32),
+    tmp_import_emissions_scenario_id         INTEGER,
+    timepoint                                INTEGER,
+    co2_intensity_tons_per_mwh_hourly        FLOAT,
+    export_co2_intensity_tons_per_mwh_hourly FLOAT,
+    PRIMARY KEY (market, tmp_import_emissions_scenario_id, timepoint),
+    FOREIGN KEY (market, tmp_import_emissions_scenario_id) REFERENCES
+        subscenarios_market_carbon_cap_timepoint_emissions
+            (market, tmp_import_emissions_scenario_id)
+);
+
+-- Market purchases counted toward a carbon tax zone
+-- Keyed by (load zone, market, zone): the same hub may count toward different
+-- zones depending on which load zone trades at it, and a (load zone, market)
+-- pair may count toward several zones. Purchases count at the import
+-- intensity; sales earn a credit at the export intensity only in zones with
+-- the 'net_prd' import-emissions basis (see inputs_geography_carbon_tax_zones);
+-- NULL export intensity means 0. The export intensity may not exceed the
+-- import intensity.
+DROP TABLE IF EXISTS subscenarios_market_carbon_tax_zones;
+CREATE TABLE subscenarios_market_carbon_tax_zones
+(
+    market_carbon_tax_zone_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                               VARCHAR(32),
+    description                        VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_market_carbon_tax_zones;
+CREATE TABLE inputs_market_carbon_tax_zones
+(
+    market_carbon_tax_zone_scenario_id INTEGER,
+    load_zone                          VARCHAR(32),
+    market                             VARCHAR(32),
+    carbon_tax_zone                    VARCHAR(32),
+    tmp_import_emissions_scenario_id   INTEGER, -- determines timepoint emissions scenario
+    co2_intensity_tons_per_mwh         FLOAT,
+    export_co2_intensity_tons_per_mwh  FLOAT,
+    PRIMARY KEY (market_carbon_tax_zone_scenario_id, load_zone, market,
+                 carbon_tax_zone),
+    FOREIGN KEY (market_carbon_tax_zone_scenario_id) REFERENCES
+        subscenarios_market_carbon_tax_zones (market_carbon_tax_zone_scenario_id)
+);
+
+-- Timepoint-varying intensity adders for a market, added to the flat
+-- intensities of every zone row of the market that references the profile
+DROP TABLE IF EXISTS subscenarios_market_carbon_tax_timepoint_emissions;
+CREATE TABLE subscenarios_market_carbon_tax_timepoint_emissions
+(
+    market                           VARCHAR(32),
+    tmp_import_emissions_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (market, tmp_import_emissions_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_market_carbon_tax_timepoint_emissions;
+CREATE TABLE inputs_market_carbon_tax_timepoint_emissions
+(
+    market                                   VARCHAR(32),
+    tmp_import_emissions_scenario_id         INTEGER,
+    timepoint                                INTEGER,
+    co2_intensity_tons_per_mwh_hourly        FLOAT,
+    export_co2_intensity_tons_per_mwh_hourly FLOAT,
+    PRIMARY KEY (market, tmp_import_emissions_scenario_id, timepoint),
+    FOREIGN KEY (market, tmp_import_emissions_scenario_id) REFERENCES
+        subscenarios_market_carbon_tax_timepoint_emissions
+            (market, tmp_import_emissions_scenario_id)
 );
 
 -- Fuel balancing areas
@@ -4622,9 +4748,17 @@ CREATE TABLE inputs_transmission_load_zones
         subscenarios_transmission_load_zones (transmission_load_zone_scenario_id)
 );
 
--- Carbon cap zones
--- This is needed if the carbon cap module is enabled and we want to track
--- emission imports
+-- Carbon Cap zones
+-- This is needed if the carbon cap module is enabled and we
+-- want to track emission imports. A line may appear in several zones, e.g.
+-- importing into the zone at one end and exporting from the zone at the other
+-- end, each row with its own import direction and intensities.
+-- The 'import_direction' says which flow direction is an import into the
+-- zone: 'positive' or 'negative' line flow.
+-- Imports count at the import intensity. Exports earn a credit at the export
+-- intensity only in zones with the 'net_prd' import-emissions basis (see
+-- inputs_geography_carbon_cap_zones); NULL export intensity means 0. The
+-- export intensity may not exceed the import intensity.
 DROP TABLE IF EXISTS subscenarios_transmission_carbon_cap_zones;
 CREATE TABLE subscenarios_transmission_carbon_cap_zones
 (
@@ -4642,13 +4776,16 @@ CREATE TABLE inputs_transmission_carbon_cap_zones
     import_direction                         VARCHAR(8),
     tmp_import_emissions_scenario_id         INTEGER, -- determines timepoint emissions scenario
     tx_co2_intensity_tons_per_mwh            FLOAT,
-    PRIMARY KEY (transmission_carbon_cap_zone_scenario_id, transmission_line),
+    tx_export_co2_intensity_tons_per_mwh     FLOAT,
+    PRIMARY KEY (transmission_carbon_cap_zone_scenario_id, transmission_line,
+                 carbon_cap_zone),
     FOREIGN KEY (transmission_carbon_cap_zone_scenario_id) REFERENCES
         subscenarios_transmission_carbon_cap_zones
             (transmission_carbon_cap_zone_scenario_id)
-
 );
 
+-- Timepoint-varying intensity adders for a line, added to the flat
+-- intensities of every zone row of the line that references the profile
 DROP TABLE IF EXISTS subscenarios_transmission_carbon_cap_timepoint_emissions;
 CREATE TABLE subscenarios_transmission_carbon_cap_timepoint_emissions
 (
@@ -4662,14 +4799,78 @@ CREATE TABLE subscenarios_transmission_carbon_cap_timepoint_emissions
 DROP TABLE IF EXISTS inputs_transmission_carbon_cap_timepoint_emissions;
 CREATE TABLE inputs_transmission_carbon_cap_timepoint_emissions
 (
-    transmission_line                    VARCHAR(64),
-    tmp_import_emissions_scenario_id     INTEGER,
-    timepoint                            INTEGER,
-    tx_co2_intensity_tons_per_mwh_hourly FLOAT,
+    transmission_line                           VARCHAR(64),
+    tmp_import_emissions_scenario_id            INTEGER,
+    timepoint                                   INTEGER,
+    tx_co2_intensity_tons_per_mwh_hourly        FLOAT,
+    tx_export_co2_intensity_tons_per_mwh_hourly FLOAT,
     PRIMARY KEY (transmission_line, tmp_import_emissions_scenario_id,
                  timepoint),
     FOREIGN KEY (transmission_line, tmp_import_emissions_scenario_id) REFERENCES
         subscenarios_transmission_carbon_cap_timepoint_emissions
+            (transmission_line, tmp_import_emissions_scenario_id)
+);
+
+-- Carbon Tax zones
+-- This is needed if the carbon tax module is enabled and we
+-- want to track emission imports. A line may appear in several zones, e.g.
+-- importing into the zone at one end and exporting from the zone at the other
+-- end, each row with its own import direction and intensities.
+-- The 'import_direction' says which flow direction is an import into the
+-- zone: 'positive' or 'negative' line flow.
+-- Imports count at the import intensity. Exports earn a credit at the export
+-- intensity only in zones with the 'net_prd' import-emissions basis (see
+-- inputs_geography_carbon_tax_zones); NULL export intensity means 0. The
+-- export intensity may not exceed the import intensity.
+DROP TABLE IF EXISTS subscenarios_transmission_carbon_tax_zones;
+CREATE TABLE subscenarios_transmission_carbon_tax_zones
+(
+    transmission_carbon_tax_zone_scenario_id INTEGER PRIMARY KEY,
+    name                                     VARCHAR(32),
+    description                              VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_carbon_tax_zones;
+CREATE TABLE inputs_transmission_carbon_tax_zones
+(
+    transmission_carbon_tax_zone_scenario_id INTEGER,
+    transmission_line                        VARCHAR(64),
+    carbon_tax_zone                          VARCHAR(32),
+    import_direction                         VARCHAR(8),
+    tmp_import_emissions_scenario_id         INTEGER, -- determines timepoint emissions scenario
+    tx_co2_intensity_tons_per_mwh            FLOAT,
+    tx_export_co2_intensity_tons_per_mwh     FLOAT,
+    PRIMARY KEY (transmission_carbon_tax_zone_scenario_id, transmission_line,
+                 carbon_tax_zone),
+    FOREIGN KEY (transmission_carbon_tax_zone_scenario_id) REFERENCES
+        subscenarios_transmission_carbon_tax_zones
+            (transmission_carbon_tax_zone_scenario_id)
+);
+
+-- Timepoint-varying intensity adders for a line, added to the flat
+-- intensities of every zone row of the line that references the profile
+DROP TABLE IF EXISTS subscenarios_transmission_carbon_tax_timepoint_emissions;
+CREATE TABLE subscenarios_transmission_carbon_tax_timepoint_emissions
+(
+    transmission_line                VARCHAR(64),
+    tmp_import_emissions_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (transmission_line, tmp_import_emissions_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_carbon_tax_timepoint_emissions;
+CREATE TABLE inputs_transmission_carbon_tax_timepoint_emissions
+(
+    transmission_line                           VARCHAR(64),
+    tmp_import_emissions_scenario_id            INTEGER,
+    timepoint                                   INTEGER,
+    tx_co2_intensity_tons_per_mwh_hourly        FLOAT,
+    tx_export_co2_intensity_tons_per_mwh_hourly FLOAT,
+    PRIMARY KEY (transmission_line, tmp_import_emissions_scenario_id,
+                 timepoint),
+    FOREIGN KEY (transmission_line, tmp_import_emissions_scenario_id) REFERENCES
+        subscenarios_transmission_carbon_tax_timepoint_emissions
             (transmission_line, tmp_import_emissions_scenario_id)
 );
 
@@ -6321,6 +6522,9 @@ CREATE TABLE scenarios
     market_price_scenario_id                                    INTEGER,
     market_group_scenario_id                                    INTEGER,
     market_volume_scenario_id                                   INTEGER,
+    market_carbon_cap_zone_scenario_id                          INTEGER,
+    transmission_carbon_tax_zone_scenario_id                    INTEGER,
+    market_carbon_tax_zone_scenario_id                          INTEGER,
     water_node_reservoir_scenario_id                            INTEGER,
     water_flow_scenario_id                                      INTEGER,
     water_inflow_tmp_scenario_id                                    INTEGER,
@@ -6625,6 +6829,13 @@ CREATE TABLE scenarios
         subscenarios_market_groups (market_group_scenario_id),
     FOREIGN KEY (market_volume_scenario_id) REFERENCES
         subscenarios_market_volume (market_volume_scenario_id),
+    FOREIGN KEY (market_carbon_cap_zone_scenario_id) REFERENCES
+        subscenarios_market_carbon_cap_zones (market_carbon_cap_zone_scenario_id),
+    FOREIGN KEY (transmission_carbon_tax_zone_scenario_id) REFERENCES
+        subscenarios_transmission_carbon_tax_zones
+            (transmission_carbon_tax_zone_scenario_id),
+    FOREIGN KEY (market_carbon_tax_zone_scenario_id) REFERENCES
+        subscenarios_market_carbon_tax_zones (market_carbon_tax_zone_scenario_id),
     FOREIGN KEY (water_node_reservoir_scenario_id) REFERENCES
         subscenarios_system_water_node_reservoirs (water_node_reservoir_scenario_id),
     FOREIGN KEY (water_flow_scenario_id) REFERENCES
@@ -7508,8 +7719,6 @@ CREATE TABLE results_transmission_timepoint
     transmission_target_zone                         VARCHAR(32),
     transmission_target_energy_positive_direction_mw FLOAT,
     transmission_target_energy_negative_direction_mw FLOAT,
-    carbon_emission_imports_tons                     FLOAT,
-    carbon_emission_imports_tons_degen               FLOAT,
     PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
                  availability_iteration, subproblem_id, stage_id,
                  transmission_line, timepoint)
@@ -8127,6 +8336,130 @@ CREATE TABLE results_system_inertia_reserves
                  subproblem_id, stage_id, timepoint)
 );
 
+-- Import emissions per line, carbon cap zone and
+-- timepoint. The '_degen' columns recompute from the solved flows; the model
+-- value may exceed them where nothing pushes the import variables down.
+DROP TABLE IF EXISTS results_transmission_carbon_cap_imports;
+CREATE TABLE results_transmission_carbon_cap_imports
+(
+    scenario_id                              INTEGER,
+    weather_iteration                        INTEGER,
+    hydro_iteration                          INTEGER,
+    availability_iteration                   INTEGER,
+    subproblem_id                            INTEGER,
+    stage_id                                 INTEGER,
+    transmission_line                        VARCHAR(64),
+    carbon_cap_zone                          VARCHAR(32),
+    timepoint                                INTEGER,
+    period                                   INTEGER,
+    timepoint_weight                         FLOAT,
+    number_of_hours_in_timepoint             FLOAT,
+    import_direction                         VARCHAR(8),
+    import_co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh        FLOAT,
+    import_mw                                FLOAT,
+    export_mw                                FLOAT,
+    import_emissions_tons                    FLOAT,
+    import_emissions_tons_degen              FLOAT,
+    export_credits_tons                      FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 transmission_line, carbon_cap_zone, timepoint)
+);
+
+-- Import emissions per line, carbon tax zone and
+-- timepoint. The '_degen' columns recompute from the solved flows; the model
+-- value may exceed them where nothing pushes the import variables down.
+DROP TABLE IF EXISTS results_transmission_carbon_tax_imports;
+CREATE TABLE results_transmission_carbon_tax_imports
+(
+    scenario_id                              INTEGER,
+    weather_iteration                        INTEGER,
+    hydro_iteration                          INTEGER,
+    availability_iteration                   INTEGER,
+    subproblem_id                            INTEGER,
+    stage_id                                 INTEGER,
+    transmission_line                        VARCHAR(64),
+    carbon_tax_zone                          VARCHAR(32),
+    timepoint                                INTEGER,
+    period                                   INTEGER,
+    timepoint_weight                         FLOAT,
+    number_of_hours_in_timepoint             FLOAT,
+    import_direction                         VARCHAR(8),
+    import_co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh        FLOAT,
+    import_mw                                FLOAT,
+    export_mw                                FLOAT,
+    import_emissions_tons                    FLOAT,
+    import_emissions_tons_degen              FLOAT,
+    export_credits_tons                      FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 transmission_line, carbon_tax_zone, timepoint)
+);
+
+-- Market import emissions per load zone, market, carbon cap
+-- zone and timepoint; positions are final positions (including previous
+-- stages). See results_transmission_carbon_cap_imports for the '_degen' columns.
+DROP TABLE IF EXISTS results_system_market_carbon_cap_imports;
+CREATE TABLE results_system_market_carbon_cap_imports
+(
+    scenario_id                              INTEGER,
+    weather_iteration                        INTEGER,
+    hydro_iteration                          INTEGER,
+    availability_iteration                   INTEGER,
+    subproblem_id                            INTEGER,
+    stage_id                                 INTEGER,
+    load_zone                                VARCHAR(32),
+    market                                   VARCHAR(32),
+    carbon_cap_zone                          VARCHAR(32),
+    timepoint                                INTEGER,
+    period                                   INTEGER,
+    timepoint_weight                         FLOAT,
+    number_of_hours_in_timepoint             FLOAT,
+    import_co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh        FLOAT,
+    purchase_mw                              FLOAT,
+    sale_mw                                  FLOAT,
+    import_emissions_tons                    FLOAT,
+    import_emissions_tons_degen              FLOAT,
+    export_credits_tons                      FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 load_zone, market, carbon_cap_zone, timepoint)
+);
+
+-- Market import emissions per load zone, market, carbon tax
+-- zone and timepoint; positions are final positions (including previous
+-- stages). See results_transmission_carbon_tax_imports for the '_degen' columns.
+DROP TABLE IF EXISTS results_system_market_carbon_tax_imports;
+CREATE TABLE results_system_market_carbon_tax_imports
+(
+    scenario_id                              INTEGER,
+    weather_iteration                        INTEGER,
+    hydro_iteration                          INTEGER,
+    availability_iteration                   INTEGER,
+    subproblem_id                            INTEGER,
+    stage_id                                 INTEGER,
+    load_zone                                VARCHAR(32),
+    market                                   VARCHAR(32),
+    carbon_tax_zone                          VARCHAR(32),
+    timepoint                                INTEGER,
+    period                                   INTEGER,
+    timepoint_weight                         FLOAT,
+    number_of_hours_in_timepoint             FLOAT,
+    import_co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh        FLOAT,
+    purchase_mw                              FLOAT,
+    sale_mw                                  FLOAT,
+    import_emissions_tons                    FLOAT,
+    import_emissions_tons_degen              FLOAT,
+    export_credits_tons                      FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 load_zone, market, carbon_tax_zone, timepoint)
+);
+
 -- Carbon emissions
 DROP TABLE IF EXISTS results_system_carbon_cap;
 CREATE TABLE results_system_carbon_cap
@@ -8152,6 +8485,13 @@ CREATE TABLE results_system_carbon_cap
     total_credits                         FLOAT,
     carbon_cap_overage                    FLOAT,
     import_emissions_degen                FLOAT,
+    export_credits                        FLOAT,
+    market_import_emissions               FLOAT,
+    market_import_emissions_degen         FLOAT,
+    market_export_credits                 FLOAT,
+    import_emissions_basis                VARCHAR(8),
+    total_import_emissions                FLOAT,
+    total_import_emissions_degen          FLOAT,
     total_emissions_degen                 FLOAT,
     dual                                  FLOAT,
     carbon_cap_marginal_cost_per_emission FLOAT,
@@ -8181,6 +8521,16 @@ CREATE TABLE results_system_carbon_tax
     carbon_tax_per_ton              FLOAT,
     total_carbon_emissions_tons     FLOAT,
     total_carbon_tax_allowance_tons FLOAT,
+    import_emissions                FLOAT,
+    import_emissions_degen          FLOAT,
+    export_credits                  FLOAT,
+    market_import_emissions         FLOAT,
+    market_import_emissions_degen   FLOAT,
+    market_export_credits           FLOAT,
+    import_emissions_basis          VARCHAR(8),
+    total_import_emissions          FLOAT,
+    total_import_emissions_degen    FLOAT,
+    total_import_carbon_tax_cost    FLOAT,
     total_carbon_tax_cost           FLOAT,
     dual                            FLOAT,
     PRIMARY KEY (scenario_id, carbon_tax_zone, weather_iteration,
@@ -9290,6 +9640,18 @@ SELECT scenario_id,
         FROM subscenarios_market_volume
         WHERE market_volume_scenario_id =
               scenarios.market_volume_scenario_id)                                   AS market_volume,
+       (SELECT name
+        FROM subscenarios_market_carbon_cap_zones
+        WHERE market_carbon_cap_zone_scenario_id =
+              scenarios.market_carbon_cap_zone_scenario_id)                          AS market_carbon_cap_zones,
+       (SELECT name
+        FROM subscenarios_transmission_carbon_tax_zones
+        WHERE transmission_carbon_tax_zone_scenario_id =
+              scenarios.transmission_carbon_tax_zone_scenario_id)                    AS transmission_carbon_tax_zones,
+       (SELECT name
+        FROM subscenarios_market_carbon_tax_zones
+        WHERE market_carbon_tax_zone_scenario_id =
+              scenarios.market_carbon_tax_zone_scenario_id)                          AS market_carbon_tax_zones,
        (SELECT name
         FROM subscenarios_system_water_node_reservoirs
         WHERE water_node_reservoir_scenario_id =
