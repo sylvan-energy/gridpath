@@ -19,18 +19,27 @@ projects or projects that will be built in the future and whose capital
 costs we want to ignore (in the objective function). A specified generator can
 be available at a specified capacity in all periods, or in some periods only,
 with no restriction on the order and combination of periods or the variation
-in capacity by period. A project is operational in exactly the periods for
-which it has a specified-capacity row with a capacity value: leaving a period
-out, or leaving every capacity column of its row blank, keeps the project
-out of the model in that period entirely (no variables or constraints are
-created for it), which is the way to model a project that retires or comes
-online within the study horizon, whereas a row with zero
-capacity keeps the project in the model, and in the results, at zero
-capacity, so all of the project's operational inputs for that period (e.g.
-variable profiles, hydro budgets, timepoint-varying costs) are still
-required. The choice between the two is the user's; input validation flags
-periods left out between periods with capacity, and projects with no capacity
-in any period of a subproblem, at low severity.
+in capacity by period. For a project in the portfolio, its specified-capacity
+row for a period determines whether it is in the model in that period:
+
+* **A capacity value, including zero**: the project is in the model in that
+  period at that capacity, appears in the results at that capacity, and all
+  of its operational inputs for the period (e.g. variable profiles, hydro
+  budgets, timepoint-varying costs) are required.
+* **A row with every capacity column blank**: the project is not in the
+  model in that period. No variables, constraints or results are created for
+  it and none of its operational inputs for the period are needed.
+* **No row**: the same as a blank row.
+
+Leaving a period out, or blank, is the way to model a project that retires
+or comes online within the study horizon; which of the three to use is the
+user's choice. Two validation checks apply. A project with no capacity in any
+period of the subscenario (no rows, or only blank rows) is a High-severity
+finding, as it is most likely a naming mismatch between the portfolio and
+the capacity inputs; a row with some of the capacity type's columns filled in
+and others blank is a High-severity missing input. A project with capacity in
+none of the subproblem's periods, or with a period left out between two
+periods with capacity, is reported at Low severity.
 
 The user may specify a fixed O&M cost for these generators, but this cost will
 be a fixed number in the objective function and will therefore not affect any
