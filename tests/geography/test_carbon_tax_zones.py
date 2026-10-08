@@ -103,6 +103,15 @@ class TestCarbonTaxZones(unittest.TestCase):
         actual_carbon_tax_zones = sorted([z for z in instance.CARBON_TAX_ZONES])
         self.assertListEqual(expected_carbon_tax_zones, actual_carbon_tax_zones)
 
+        # Param: import_emissions_basis
+        self.assertDictEqual(
+            {"Carbon_Tax_Zone1": "gross", "Carbon_Tax_Zone2": "net_prd"},
+            {
+                z: instance.carbon_tax_import_emissions_basis[z]
+                for z in instance.CARBON_TAX_ZONES
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

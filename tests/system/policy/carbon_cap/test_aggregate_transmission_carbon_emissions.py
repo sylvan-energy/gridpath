@@ -1,4 +1,4 @@
-# Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from collections import OrderedDict
 from importlib import import_module
 import os.path
 import sys
@@ -62,7 +60,7 @@ except ImportError:
     print("ERROR! Couldn't import module " + NAME_OF_MODULE_BEING_TESTED + " to test.")
 
 
-class TestTxAggregateCarbonEmissions(unittest.TestCase):
+class TestAggregateTxCarbonEmissions(unittest.TestCase):
     """ """
 
     def test_add_model_components(self):
@@ -113,6 +111,48 @@ class TestTxAggregateCarbonEmissions(unittest.TestCase):
             stage="",
         )
         instance = m.create_instance(data)
+
+        # The zone-period expressions exist for every zone-period with a cap
+        # and the signed one is zero (constant) in the gross zone
+        zone_periods = sorted(instance.CARBON_CAP_ZONE_PERIODS_WITH_CARBON_CAP)
+        self.assertListEqual(
+            zone_periods,
+            sorted(instance.Total_Tx_Carbon_Cap_Import_Emissions_Tons),
+        )
+        self.assertListEqual(
+            zone_periods,
+            sorted(instance.Total_Tx_Carbon_Cap_Signed_Import_Emissions_Tons),
+        )
+        for z, p in zone_periods:
+            signed = instance.Total_Tx_Carbon_Cap_Signed_Import_Emissions_Tons[z, p]
+            if z == "Carbon_Cap_Zone1":
+                self.assertTrue(signed.expr.is_constant())
+                self.assertEqual(0, signed.expr())
+            else:
+                self.assertFalse(signed.expr.is_constant())
+
+    def test_dynamic_components(self):
+        """
+        The expressions are registered with the carbon cap import lists
+        """
+        m, d = create_abstract_model(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=TEST_DATA_DIRECTORY,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        self.assertIn(
+            "Total_Tx_Carbon_Cap_Import_Emissions_Tons",
+            d.carbon_cap_import_emission_components,
+        )
+        self.assertIn(
+            "Total_Tx_Carbon_Cap_Signed_Import_Emissions_Tons",
+            d.carbon_cap_signed_import_emission_components,
+        )
 
 
 if __name__ == "__main__":
