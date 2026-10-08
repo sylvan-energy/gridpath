@@ -26,18 +26,17 @@ from pyomo.environ import Set, Param, NonNegativeReals
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.dynamic_components import capacity_type_operational_period_sets
 from gridpath.auxiliary.validations import (
-    get_projects,
     get_expected_dtypes,
     write_validation_to_database,
     validate_dtypes,
     validate_values,
-    validate_idxs,
     validate_missing_inputs,
 )
 from gridpath.project.capacity.capacity_types.common_methods import (
     spec_get_inputs_from_database,
     spec_write_tab_file,
     spec_determine_inputs,
+    validate_spec_capacity_coverage,
 )
 
 
@@ -369,13 +368,8 @@ def validate_inputs(
         conn,
     )
 
-    projects = get_projects(
-        conn, scenario_id, subscenarios, "capacity_type", "fuel_prod_spec"
-    )
-
-    # Convert input data into pandas DataFrame and extract data
+    # Convert input data into pandas DataFrame
     df = cursor_to_df(stor_spec_params)
-    spec_projects = df["project"].unique()
 
     # Get expected dtypes
     expected_dtypes = get_expected_dtypes(
@@ -421,22 +415,18 @@ def validate_inputs(
         errors=validate_values(df, valid_numeric_columns, min=0),
     )
 
-    # Ensure project capacity & fixed cost is specified in at least 1 period
-    msg = "Expected specified capacity for at least one period."
-    write_validation_to_database(
+    # Check the period coverage of the capacity rows
+    validate_spec_capacity_coverage(
         conn=conn,
         scenario_id=scenario_id,
+        subscenarios=subscenarios,
         weather_iteration=weather_iteration,
         hydro_iteration=hydro_iteration,
         availability_iteration=availability_iteration,
-        subproblem_id=subproblem,
-        stage_id=stage,
+        subproblem=subproblem,
+        stage=stage,
         gridpath_module=__name__,
-        db_table="inputs_project_specified_capacity",
-        severity="High",
-        errors=validate_idxs(
-            actual_idxs=spec_projects, req_idxs=projects, idx_label="project", msg=msg
-        ),
+        capacity_type="fuel_prod_spec",
     )
 
     # Check for missing values (vs. missing row entries above)

@@ -22,7 +22,11 @@ whose capital costs we want to ignore (in the objective function).
 
 It is not required to specify a capacity for all periods, i.e. a project can
 be operational in some periods but not in others with no restriction on the
-order and combination of periods. The user may specify a fixed O&M cost for
+order and combination of periods. A period with no row, or with a row whose
+capacity columns are all blank, keeps the project out of the model in that
+period entirely, whereas a row with zero capacity keeps it in the model at
+zero capacity; see *gen_spec* for the full description of the three cases
+and the validation checks. The user may specify a fixed O&M cost for
 specified-storage projects, but this cost will be a fixed number in the
 objective function and will therefore not affect any of the optimization
 decisions.
@@ -42,18 +46,17 @@ from pyomo.environ import Set, Param, NonNegativeReals
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.dynamic_components import capacity_type_operational_period_sets
 from gridpath.auxiliary.validations import (
-    get_projects,
     get_expected_dtypes,
     write_validation_to_database,
     validate_dtypes,
     validate_values,
-    validate_idxs,
     validate_missing_inputs,
 )
 from gridpath.project.capacity.capacity_types.common_methods import (
     spec_get_inputs_from_database,
     spec_write_tab_file,
     spec_determine_inputs,
+    validate_spec_capacity_coverage,
 )
 
 
@@ -344,13 +347,8 @@ def validate_inputs(
         conn,
     )
 
-    projects = get_projects(
-        conn, scenario_id, subscenarios, "capacity_type", "stor_spec"
-    )
-
-    # Convert input data into pandas DataFrame and extract data
+    # Convert input data into pandas DataFrame
     df = cursor_to_df(stor_spec_params)
-    spec_projects = df["project"].unique()
 
     # Get expected dtypes
     expected_dtypes = get_expected_dtypes(
@@ -396,22 +394,18 @@ def validate_inputs(
         errors=validate_values(df, valid_numeric_columns, min=0),
     )
 
-    # Ensure project capacity is specified in at least 1 period
-    msg = "Expected specified capacity for at least one period."
-    write_validation_to_database(
+    # Check the period coverage of the capacity rows
+    validate_spec_capacity_coverage(
         conn=conn,
         scenario_id=scenario_id,
+        subscenarios=subscenarios,
         weather_iteration=weather_iteration,
         hydro_iteration=hydro_iteration,
         availability_iteration=availability_iteration,
-        subproblem_id=subproblem,
-        stage_id=stage,
+        subproblem=subproblem,
+        stage=stage,
         gridpath_module=__name__,
-        db_table="inputs_project_specified_capacity",
-        severity="High",
-        errors=validate_idxs(
-            actual_idxs=spec_projects, req_idxs=projects, idx_label="project", msg=msg
-        ),
+        capacity_type="stor_spec",
     )
 
     # Check for missing values (vs. missing row entries above); a NULL

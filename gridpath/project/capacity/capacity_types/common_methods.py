@@ -21,7 +21,30 @@ import os.path
 import pandas as pd
 
 from db.common_functions import spin_on_database_lock
+from gridpath.auxiliary.validations import (
+    get_projects,
+    validate_idxs,
+    write_validation_to_database,
+)
 from gridpath.project.common_functions import get_column_row_value
+
+# The capacity columns of inputs_project_specified_capacity; a row with all
+# of them NULL carries no capacity of any kind and is treated as if it were
+# absent, i.e. the project is not operational in that period
+SPEC_CAPACITY_COLUMNS = [
+    "specified_capacity_mw",
+    "specified_energy_mwh",
+    "shaping_capacity_mw",
+    "hyb_gen_specified_capacity_mw",
+    "hyb_stor_specified_capacity_mw",
+    "specified_stor_capacity_mwh",
+    "fuel_production_capacity_fuelunitperhour",
+    "fuel_release_capacity_fuelunitperhour",
+    "fuel_storage_capacity_fuelunit",
+]
+SPEC_CAPACITY_PRESENT_SQL = "COALESCE({}) IS NOT NULL".format(
+    ", ".join(SPEC_CAPACITY_COLUMNS)
+)
 
 
 def relevant_periods_by_project_vintage(
@@ -193,7 +216,8 @@ def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type)
         fuel_release_capacity_fuelunitperhour,
         fuel_storage_capacity_fuelunit
         FROM inputs_project_specified_capacity
-        WHERE project_specified_capacity_scenario_id = {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}) as capacity
+        WHERE project_specified_capacity_scenario_id = {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}
+        AND {SPEC_CAPACITY_PRESENT_SQL}) as capacity
         USING (project, period)
         LEFT JOIN -- operational periods are based on capacity; fixed costs are optional
         (SELECT project, period,
@@ -219,6 +243,142 @@ def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type)
         ;""")
 
     return spec_project_params
+
+
+def validate_spec_capacity_coverage(
+    conn,
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    gridpath_module,
+    capacity_type,
+):
+    """
+    Check the period coverage of the specified-capacity rows of the
+    portfolio's projects of this capacity type and write the findings to the
+    validation table.
+
+    A project is operational in exactly the periods for which it has a row in
+    ``inputs_project_specified_capacity`` with at least one capacity column
+    filled in (a row with every capacity column NULL counts as absent).
+    Leaving periods out is the intended way to model a project that retires,
+    or comes online, within the study horizon, and a project may have no row
+    at all in the periods of a given subproblem, so that one
+    specified-capacity subscenario can serve runs over different horizons.
+    Only a project with no row in any period of the subscenario is an error
+    (High severity), as that is most likely a naming mismatch between the
+    portfolio and the capacity inputs.
+    Two Low-severity notes flag the cases worth a second look: a project
+    with capacity in none of this subproblem's periods, which will not be
+    in the model at all, and a project whose coverage of this subproblem's
+    periods has a gap between two covered periods.
+
+    :param conn: database connection
+    :param scenario_id:
+    :param subscenarios: SubScenarios object with all subscenario info
+    :param weather_iteration:
+    :param hydro_iteration:
+    :param availability_iteration:
+    :param subproblem:
+    :param stage:
+    :param gridpath_module: the name of the module running the validation
+    :param capacity_type: the capacity type whose projects to check
+    :return:
+    """
+    db_subproblem = subproblem if subproblem != "" else 1
+
+    projects = get_projects(
+        conn, scenario_id, subscenarios, "capacity_type", capacity_type
+    )
+
+    c = conn.cursor()
+    # Rows with no capacity of any kind count as absent, as in
+    # spec_get_inputs_from_database
+    capacity_periods_sql = f"""
+        SELECT project, period
+        FROM inputs_project_specified_capacity
+        WHERE project_specified_capacity_scenario_id =
+        {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}
+        AND {SPEC_CAPACITY_PRESENT_SQL}
+        ;"""
+    periods_by_project = dict()
+    for project, period in c.execute(capacity_periods_sql).fetchall():
+        periods_by_project.setdefault(project, set()).add(period)
+
+    # The same period scoping as spec_get_inputs_from_database
+    subproblem_periods_sql = f"""
+        SELECT DISTINCT period
+        FROM inputs_temporal
+        WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+        AND subproblem_id = {db_subproblem}
+        ORDER BY period
+        ;"""
+    subproblem_periods = [
+        period for (period,) in c.execute(subproblem_periods_sql).fetchall()
+    ]
+
+    def write(severity, errors):
+        write_validation_to_database(
+            conn=conn,
+            scenario_id=scenario_id,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem_id=subproblem,
+            stage_id=stage,
+            gridpath_module=gridpath_module,
+            db_table="inputs_project_specified_capacity",
+            severity=severity,
+            errors=errors,
+        )
+
+    # A project with no capacity row in any period is most likely a naming
+    # mismatch between the portfolio and the capacity inputs
+    write(
+        severity="High",
+        errors=validate_idxs(
+            actual_idxs=list(periods_by_project.keys()),
+            req_idxs=projects,
+            idx_label="project",
+            msg="Expected specified capacity in at least one period.",
+        ),
+    )
+
+    not_operational = list()
+    gaps = dict()
+    for project in sorted(projects):
+        if project not in periods_by_project:
+            continue
+        covered = [p for p in subproblem_periods if p in periods_by_project[project]]
+        if not covered:
+            not_operational.append(project)
+            continue
+        uncovered_between = [
+            p
+            for p in subproblem_periods
+            if covered[0] < p < covered[-1] and p not in periods_by_project[project]
+        ]
+        if uncovered_between:
+            gaps[project] = uncovered_between
+
+    errors = list()
+    if not_operational:
+        errors.append(
+            "No specified capacity in any period of this subproblem for "
+            "project: {}. These projects will not be operational (i.e., "
+            "they will not be in the model) in this subproblem.".format(not_operational)
+        )
+    if gaps:
+        errors.append(
+            "Non-contiguous specified capacity for project: {}. The periods "
+            "listed have no capacity row but fall between periods that do; "
+            "the project will not be operational in them.".format(gaps)
+        )
+    write(severity="Low", errors=errors)
 
 
 def spec_write_tab_file(
@@ -444,15 +604,10 @@ def spec_determine_inputs(
             spec_fuel_rel_fixed_cost_dict[(row[0], row[1])] = row[18]
             spec_fuel_stor_fixed_cost_dict[(row[0], row[1])] = row[19]
 
-    # Quick check that all relevant projects from projects.tab have capacity
-    # params specified
-    projects_w_params = [gp[0] for gp in project_period_list]
-    diff = list(set(project_list) - set(projects_w_params))
-
-    if diff:
-        raise ValueError(
-            "Missing capacity inputs for the following projects: {}".format(diff)
-        )
+    # A project with no rows here (none in the subproblem's periods, or only
+    # rows with every capacity column blank) is simply not operational in
+    # this subproblem, e.g. it retires before, or comes online after, the
+    # subproblem's periods; validate_spec_capacity_coverage reports it
 
     # For fixed costs, remove the NAs (set to "."); these default to zero in
     # the model formulation
