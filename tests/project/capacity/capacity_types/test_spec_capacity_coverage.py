@@ -22,6 +22,9 @@ alone, with some projects having capacity in only one of the two. Until
 October 2026 a project with no row in any period of the subproblem failed
 validation at High severity and raised at model load, which forced either
 zero-capacity rows (every project in every model) or a portfolio per horizon.
+A row with every capacity column blank, as a dense project-by-period grid
+naturally produces, counts as absent; a row with some but not all of a
+type's capacity columns filled in is still a missing-input error.
 """
 
 import os.path
@@ -32,7 +35,10 @@ import unittest
 
 import pandas as pd
 
-from gridpath.project.capacity.capacity_types import gen_spec
+from gridpath.project.capacity.capacity_types import gen_spec, stor_spec
+from gridpath.project.capacity.capacity_types.common_methods import (
+    spec_get_inputs_from_database,
+)
 from tests.common_functions import add_components_and_load_data
 from tests.project.capacity.capacity_types.test_gen_spec import (
     IMPORTED_PREREQ_MODULES,
@@ -52,12 +58,14 @@ PERIODS_BY_TEMPORAL_SCENARIO_AND_SUBPROBLEM = {
     3: {1: [2030, 2035, 2040]},
 }
 
-# Capacity rows by project; Gap skips 2035 between two periods with capacity
-CAPACITY_PERIODS = {
-    "Retiring": [2030],
-    "Coming_Online": [2035],
-    "Always": [2030, 2035, 2040],
-    "Gap": [2030, 2040],
+# Capacity (MW) by project and period; Gap skips 2035 between two periods
+# with capacity, and Blank has a 2035 row with no capacity in it
+CAPACITY_ROWS = {
+    "Retiring": {2030: 10},
+    "Coming_Online": {2035: 10},
+    "Always": {2030: 10, 2035: 10, 2040: 10},
+    "Gap": {2030: 10, 2040: 10},
+    "Blank": {2030: 10, 2035: None},
 }
 
 PORTFOLIO_SCENARIO_ID = 1
@@ -105,32 +113,27 @@ class TestSpecCapacityCoverageValidation(unittest.TestCase):
                     [(tsid, subproblem, p * 100 + 1, p) for p in prds],
                 )
 
-        self.add_projects(CAPACITY_PERIODS.keys())
-        c.executemany(
-            """INSERT INTO inputs_project_specified_capacity
-            (project_specified_capacity_scenario_id, project, period,
-             specified_capacity_mw)
-            VALUES (?, ?, ?, 10)""",
+        self.add_projects(CAPACITY_ROWS.keys())
+        self.add_capacity_rows(
             [
-                (SPEC_CAPACITY_SCENARIO_ID, prj, p)
-                for prj, prds in CAPACITY_PERIODS.items()
-                for p in prds
-            ],
+                (prj, p, mw)
+                for prj, rows in CAPACITY_ROWS.items()
+                for p, mw in rows.items()
+            ]
         )
-        self.conn.commit()
 
     def tearDown(self):
         self.conn.close()
 
-    def add_projects(self, projects):
+    def add_projects(self, projects, capacity_type="gen_spec"):
         c = self.conn.cursor()
         for prj in projects:
             c.execute(
                 """INSERT INTO inputs_project_portfolios
                 (project_portfolio_scenario_id, project, specified, new_build,
                  capacity_type)
-                VALUES (?, ?, 1, 0, 'gen_spec')""",
-                (PORTFOLIO_SCENARIO_ID, prj),
+                VALUES (?, ?, 1, 0, ?)""",
+                (PORTFOLIO_SCENARIO_ID, prj, capacity_type),
             )
             c.execute(
                 """INSERT INTO inputs_project_operational_chars
@@ -139,6 +142,24 @@ class TestSpecCapacityCoverageValidation(unittest.TestCase):
                 VALUES (?, ?, 'gen_simple')""",
                 (OPCHAR_SCENARIO_ID, prj),
             )
+        self.conn.commit()
+
+    def add_capacity_rows(self, rows):
+        """
+        Insert (project, period, specified_capacity_mw) rows, or
+        (project, period, specified_capacity_mw, specified_stor_capacity_mwh)
+        ones; None inserts NULL.
+        """
+        self.conn.cursor().executemany(
+            """INSERT INTO inputs_project_specified_capacity
+            (project_specified_capacity_scenario_id, project, period,
+             specified_capacity_mw, specified_stor_capacity_mwh)
+            VALUES (?, ?, ?, ?, ?)""",
+            [
+                (SPEC_CAPACITY_SCENARIO_ID,) + tuple(r) + (None,) * (4 - len(r))
+                for r in rows
+            ],
+        )
         self.conn.commit()
 
     def findings(self, temporal_scenario_id, subproblem):
@@ -166,10 +187,11 @@ class TestSpecCapacityCoverageValidation(unittest.TestCase):
         self.assertEqual(self.findings(temporal_scenario_id=2, subproblem=1), [])
 
     def test_a_project_with_no_capacity_in_the_subproblem_is_a_low_note(self):
-        # Gap has no 2035 row either, so it sits out the 2035 subproblem
+        # Gap has no 2035 row and Blank's 2035 row has no capacity, so both
+        # sit out the 2035 subproblem
         for subproblem, absent in [
             (1, "['Coming_Online']"),
-            (2, "['Gap', 'Retiring']"),
+            (2, "['Blank', 'Gap', 'Retiring']"),
         ]:
             with self.subTest(subproblem=subproblem):
                 findings = self.findings(temporal_scenario_id=1, subproblem=subproblem)
@@ -200,6 +222,46 @@ class TestSpecCapacityCoverageValidation(unittest.TestCase):
                 self.assertEqual(len(high), 1, findings)
                 self.assertIn("['Misnamed']", high[0])
                 self.assertIn("at least one period", high[0])
+
+    def test_a_blank_row_is_not_written_to_the_model_inputs(self):
+        rows = spec_get_inputs_from_database(
+            self.conn, SubScenarios(temporal_scenario_id=2), 1, "gen_spec"
+        ).fetchall()
+        blank_rows = [(r[0], r[1]) for r in rows if r[0] == "Blank"]
+        self.assertEqual(blank_rows, [("Blank", 2030)])
+
+    def test_a_project_with_only_blank_rows_is_an_error(self):
+        self.add_projects(["All_Blank"])
+        self.add_capacity_rows([("All_Blank", 2030, None), ("All_Blank", 2035, None)])
+        findings = self.findings(temporal_scenario_id=2, subproblem=1)
+        high = [d for s, d in findings if s == "High"]
+        self.assertEqual(len(high), 1, findings)
+        self.assertIn("['All_Blank']", high[0])
+
+    def test_a_partly_blank_row_is_still_a_missing_input(self):
+        # Storage needs both a power and an energy capacity; a row with one
+        # of them is incomplete, not absent
+        self.add_projects(["Partial"], capacity_type="stor_spec")
+        self.add_capacity_rows([("Partial", 2030, 10, None)])
+        c = self.conn.cursor()
+        c.execute("DELETE FROM status_validation")
+        stor_spec.validate_inputs(
+            scenario_id=1,
+            subscenarios=SubScenarios(temporal_scenario_id=2),
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem=1,
+            stage=1,
+            conn=self.conn,
+        )
+        findings = c.execute(
+            "SELECT severity, description FROM status_validation"
+        ).fetchall()
+        high = [d for s, d in findings if s == "High"]
+        self.assertEqual(len(high), 1, findings)
+        self.assertIn("Missing specified_stor_capacity_mwh", high[0])
+        self.assertIn("Partial", high[0])
 
 
 class TestSpecCapacityCoverageModelLoad(unittest.TestCase):

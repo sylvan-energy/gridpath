@@ -20,10 +20,11 @@ costs we want to ignore (in the objective function). A specified generator can
 be available at a specified capacity in all periods, or in some periods only,
 with no restriction on the order and combination of periods or the variation
 in capacity by period. A project is operational in exactly the periods for
-which it has a specified-capacity row: leaving a period out keeps the
-project out of the model in that period entirely (no variables or
-constraints are created for it), which is the way to model a project that
-retires or comes online within the study horizon, whereas a row with zero
+which it has a specified-capacity row with a capacity value: leaving a period
+out, or leaving every capacity column of its row blank, keeps the project
+out of the model in that period entirely (no variables or constraints are
+created for it), which is the way to model a project that retires or comes
+online within the study horizon, whereas a row with zero
 capacity keeps the project in the model, and in the results, at zero
 capacity, so all of the project's operational inputs for that period (e.g.
 variable profiles, hydro budgets, timepoint-varying costs) are still

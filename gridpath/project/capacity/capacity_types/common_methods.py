@@ -28,6 +28,24 @@ from gridpath.auxiliary.validations import (
 )
 from gridpath.project.common_functions import get_column_row_value
 
+# The capacity columns of inputs_project_specified_capacity; a row with all
+# of them NULL carries no capacity of any kind and is treated as if it were
+# absent, i.e. the project is not operational in that period
+SPEC_CAPACITY_COLUMNS = [
+    "specified_capacity_mw",
+    "specified_energy_mwh",
+    "shaping_capacity_mw",
+    "hyb_gen_specified_capacity_mw",
+    "hyb_stor_specified_capacity_mw",
+    "specified_stor_capacity_mwh",
+    "fuel_production_capacity_fuelunitperhour",
+    "fuel_release_capacity_fuelunitperhour",
+    "fuel_storage_capacity_fuelunit",
+]
+SPEC_CAPACITY_PRESENT_SQL = "COALESCE({}) IS NOT NULL".format(
+    ", ".join(SPEC_CAPACITY_COLUMNS)
+)
+
 
 def relevant_periods_by_project_vintage(
     future_trajectory_periods,
@@ -198,7 +216,8 @@ def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type)
         fuel_release_capacity_fuelunitperhour,
         fuel_storage_capacity_fuelunit
         FROM inputs_project_specified_capacity
-        WHERE project_specified_capacity_scenario_id = {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}) as capacity
+        WHERE project_specified_capacity_scenario_id = {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}
+        AND {SPEC_CAPACITY_PRESENT_SQL}) as capacity
         USING (project, period)
         LEFT JOIN -- operational periods are based on capacity; fixed costs are optional
         (SELECT project, period,
@@ -244,13 +263,15 @@ def validate_spec_capacity_coverage(
     validation table.
 
     A project is operational in exactly the periods for which it has a row in
-    ``inputs_project_specified_capacity``: leaving periods out is the
-    intended way to model a project that retires, or comes online, within
-    the study horizon, and a project may have no row at all in the periods
-    of a given subproblem, so that one specified-capacity subscenario can
-    serve runs over different horizons. Only a project with no row in any
-    period of the subscenario is an error (High severity), as that is most
-    likely a naming mismatch between the portfolio and the capacity inputs.
+    ``inputs_project_specified_capacity`` with at least one capacity column
+    filled in (a row with every capacity column NULL counts as absent).
+    Leaving periods out is the intended way to model a project that retires,
+    or comes online, within the study horizon, and a project may have no row
+    at all in the periods of a given subproblem, so that one
+    specified-capacity subscenario can serve runs over different horizons.
+    Only a project with no row in any period of the subscenario is an error
+    (High severity), as that is most likely a naming mismatch between the
+    portfolio and the capacity inputs.
     Two Low-severity notes flag the cases worth a second look: a project
     with capacity in none of this subproblem's periods, which will not be
     in the model at all, and a project whose coverage of this subproblem's
@@ -275,11 +296,14 @@ def validate_spec_capacity_coverage(
     )
 
     c = conn.cursor()
+    # Rows with no capacity of any kind count as absent, as in
+    # spec_get_inputs_from_database
     capacity_periods_sql = f"""
         SELECT project, period
         FROM inputs_project_specified_capacity
         WHERE project_specified_capacity_scenario_id =
         {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}
+        AND {SPEC_CAPACITY_PRESENT_SQL}
         ;"""
     periods_by_project = dict()
     for project, period in c.execute(capacity_periods_sql).fetchall():
@@ -580,9 +604,10 @@ def spec_determine_inputs(
             spec_fuel_rel_fixed_cost_dict[(row[0], row[1])] = row[18]
             spec_fuel_stor_fixed_cost_dict[(row[0], row[1])] = row[19]
 
-    # A project with no rows here is simply not operational in this
-    # subproblem (e.g. it retires before, or comes online after, the
-    # subproblem's periods); validate_spec_capacity_coverage reports it
+    # A project with no rows here (none in the subproblem's periods, or only
+    # rows with every capacity column blank) is simply not operational in
+    # this subproblem, e.g. it retires before, or comes online after, the
+    # subproblem's periods; validate_spec_capacity_coverage reports it
 
     # For fixed costs, remove the NAs (set to "."); these default to zero in
     # the model formulation
