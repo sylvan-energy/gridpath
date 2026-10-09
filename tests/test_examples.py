@@ -442,6 +442,22 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro_w_energy_budget_balancing_type"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_hydro_w_day_of_year_inputs(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_hydro_w_day_of_year_inputs" example: as
+        "2horizons_w_hydro" (same objective), with the days of month in the
+        temporal structure, and the Hydro project on the built-in
+        subproblem_period_day_circular balancing type (whose horizons
+        coincide with the 'day' horizons here) with its inputs given per day
+        of year: 1 January only as a day-of-year row, 1 February as a
+        day-of-year row (with a different value) that the explicit 20200201
+        row overrides.
+        :return:
+        """
+        scenario_name = "2horizons_w_hydro_w_day_of_year_inputs"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2horizons_w_hydro_w_month_of_year_inputs(self):
         """
         Check validation and objective function value of
@@ -2536,6 +2552,20 @@ class TestExamples(unittest.TestCase):
         """
 
         scenario_name = "test_w_bt_hrz_avl"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_test_w_bt_hrz_avl_w_day_of_year_rows(self):
+        """
+        Check validation and objective function value of
+        "test_w_bt_hrz_avl_w_day_of_year_rows" example: as
+        "test_w_bt_hrz_avl" (same objective), with the days of month in the
+        temporal structure, and Coal's balancing type - horizon derates on
+        the built-in day balancing types: the weather-dependent derate as a
+        day-of-year row, the independent derate as a day-of-year row (with a
+        different value) that the explicit 20200101 row overrides.
+        :return:
+        """
+        scenario_name = "test_w_bt_hrz_avl_w_day_of_year_rows"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_hydro_system_exog_elev_w_gen_ramp_limits(self):

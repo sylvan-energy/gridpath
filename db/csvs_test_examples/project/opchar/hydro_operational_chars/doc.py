@@ -32,7 +32,11 @@ On the built-in :code:`subproblem_period_month_circular` and
 row with :code:`horizon` 1-12 supplies that month in every period that has no
 row for its own horizon, so a pattern that repeats every year needs 12 rows,
 and years that differ need rows only for their own horizons (e.g.
-:code:`202405`). This applies to all horizon-indexed operating
+:code:`202405`). Likewise, on the built-in
+:code:`subproblem_period_day_circular` and :code:`subproblem_period_day_linear`
+balancing types (horizon = :code:`period * 10000 + month * 100 +
+day_of_month`), a day-of-year row with :code:`horizon` :code:`month * 100 +
+day_of_month` (101-1231) supplies that date in every period. This applies to all horizon-indexed operating
 characteristics (hydro operational characteristics, hydro budget allocation,
 energy horizon shaping, energy slice horizon shaping, and load component
 shift bounds), but not to projects that use a horizon map for the input,
@@ -45,7 +49,9 @@ error.
 
 See the :code:`2horizons_w_hydro_w_month_of_year_inputs` example, which
 gives Hydro's inputs per month of year (with one explicit row overriding
-month 2) and produces the same scenario as :code:`2horizons_w_hydro`.
+month 2) and produces the same scenario as :code:`2horizons_w_hydro`, and
+the :code:`2horizons_w_hydro_w_day_of_year_inputs` example, which does the
+same per day of year.
 
 """
 

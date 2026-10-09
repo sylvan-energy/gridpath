@@ -731,6 +731,47 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
             sorted(hrz_limits),
         )
 
+    def test_hrz_to_tmp_day_of_year_rows_apply_in_every_period(self):
+        """
+        On a built-in day balancing type, a day-of-year row (month * 100 +
+        day) supplies that date in every period, per column above the
+        wildcard row.
+        """
+        self.add_builtin_month_horizons()
+        day_bt = "subproblem_period_day_linear"
+        c = self.conn.cursor()
+        c.execute("UPDATE inputs_temporal SET day_of_month = 15")
+        c.execute("""INSERT INTO inputs_temporal_horizon_timepoints
+            SELECT temporal_scenario_id, subproblem_id, stage_id, timepoint,
+                'subproblem_period_day_linear',
+                period * 10000 + month * 100 + day_of_month
+            FROM inputs_temporal""")
+        c.execute("""INSERT INTO inputs_temporal_horizons
+            SELECT DISTINCT temporal_scenario_id, 'subproblem_period_day_linear',
+                period * 10000 + month * 100 + day_of_month, 'linear', NULL
+            FROM inputs_temporal""")
+        self.conn.commit()
+        self.limit_group("All_Hubs", hrz_to_tmp=1)
+        self.insert_hrz_to_tmp_limits(
+            "All_Hubs",
+            1,
+            [
+                (day_bt, 0, 50, 50, None, None),
+                (day_bt, 215, 105, None, None, None),
+            ],
+        )
+        hrz_to_tmp_limits = self.resolve()[4]
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", day_bt, 20200115, 50, 50, None, None),
+                ("All_Hubs", "net", day_bt, 20200215, 105, 50, None, None),
+                ("All_Hubs", "net", day_bt, 20300115, 50, 50, None, None),
+                ("All_Hubs", "net", day_bt, 20300215, 105, 50, None, None),
+            ],
+            sorted(hrz_to_tmp_limits),
+        )
+        self.assertListEqual([], self.validate())
+
     def test_month_of_year_rows_only_on_builtin_month_balancing_types(self):
         """
         On any other balancing type, horizon 1 is just a horizon: a row for
