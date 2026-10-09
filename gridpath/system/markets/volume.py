@@ -166,9 +166,13 @@ from gridpath.auxiliary.validations import (
     warn_on_unknown_balancing_types,
 )
 from gridpath.common_functions import constraint_dual, none_dual_type_error_wrapper
+from gridpath.auxiliary.month_of_year import (
+    bt_hrz_month_index_sql,
+    month_of_year_join_sql,
+    month_of_year_row_sql,
+)
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
-    MONTH_HORIZON_TYPES,
 )
 
 Infinity = float("inf")
@@ -889,7 +893,7 @@ def limits_with_defaults_sql(
         on the built-in month balancing types) between the explicit and the
         wildcard rows; the index must then have balancing_type_horizon and
         month_of_year columns (the horizon's month on the month balancing
-        types, else NULL), see bt_hrz_index_sql
+        types, else NULL), see gridpath.auxiliary.month_of_year
     :return: the SQL string
 
     An explicit row wins over the (month-of-year row over the) wildcard row,
@@ -919,16 +923,7 @@ def limits_with_defaults_sql(
         f"OR wildcard.{wildcard_column} IS NOT NULL"
         + (f" OR month_of_year.{wildcard_column} IS NOT NULL" if month_of_year else "")
     )
-    month_of_year_join = (
-        f"""
-        LEFT OUTER JOIN (
-            {data_subquery.format(wildcard_filter=MONTH_OF_YEAR_ROW_FILTER)}
-        ) AS month_of_year
-            ON idx.balancing_type_horizon = month_of_year.balancing_type_horizon
-            AND idx.month_of_year = month_of_year.horizon"""
-        if month_of_year
-        else ""
-    )
+    month_of_year_join = month_of_year_join_sql(data_subquery) if month_of_year else ""
     explicit_join = " AND ".join(f"idx.{c} = explicit.{c}" for c in match_columns)
     wildcard_join = (
         " AND ".join(f"idx.{c} = wildcard.{c}" for c in default_match_columns)
@@ -948,35 +943,6 @@ def limits_with_defaults_sql(
         ) AS wildcard
             ON {wildcard_join}{month_of_year_join}
         WHERE {gate}
-        """
-
-
-# Month-of-year rows: horizon 1-12 on the built-in month balancing types
-MONTH_OF_YEAR_ROW_FILTER = (
-    "balancing_type_horizon IN ("
-    + ", ".join(f"'{bt}'" for bt in MONTH_HORIZON_TYPES)
-    + ") AND horizon BETWEEN 1 AND 12"
-)
-
-
-def bt_hrz_index_sql(subscenarios, subproblem, stage):
-    """
-    The (balancing type, horizon)s of the subproblem and stage, with each
-    horizon's month (month_of_year) on the built-in month balancing types
-    (NULL on the others), for resolving month-of-year rows.
-    """
-    month_bts = ", ".join(f"'{bt}'" for bt in MONTH_HORIZON_TYPES)
-    return f"""
-        SELECT DISTINCT hts.balancing_type_horizon AS balancing_type_horizon,
-            hts.horizon AS horizon,
-            CASE WHEN hts.balancing_type_horizon IN ({month_bts})
-                THEN t.month END AS month_of_year
-        FROM inputs_temporal_horizon_timepoints AS hts
-        JOIN inputs_temporal AS t
-            USING (temporal_scenario_id, subproblem_id, stage_id, timepoint)
-        WHERE hts.temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-        AND hts.subproblem_id = {subproblem}
-        AND hts.stage_id = {stage}
         """
 
 
@@ -1134,7 +1100,9 @@ def get_inputs_from_database(
         {
             "table": "inputs_market_volume_hrz_profiles",
             "profile_id_column": "market_volume_hrz_profile_scenario_id",
-            "index_subquery": bt_hrz_index_sql(subscenarios, subproblem, stage),
+            "index_subquery": bt_hrz_month_index_sql(
+                subscenarios.TEMPORAL_SCENARIO_ID, subproblem, stage
+            ),
             "value_columns": [
                 "max_market_sales_in_hrz",
                 "max_market_purchases_in_hrz",
@@ -1170,7 +1138,9 @@ def get_inputs_from_database(
         {
             "table": "inputs_market_volume_hrz_to_tmp_profiles",
             "profile_id_column": "market_volume_hrz_to_tmp_profile_scenario_id",
-            "index_subquery": bt_hrz_index_sql(subscenarios, subproblem, stage),
+            "index_subquery": bt_hrz_month_index_sql(
+                subscenarios.TEMPORAL_SCENARIO_ID, subproblem, stage
+            ),
             "value_columns": TMP_LIMIT_COLUMNS,
             "index_columns": ["balancing_type_horizon", "horizon"],
             "match_columns": ["balancing_type_horizon", "horizon"],
@@ -1423,7 +1393,7 @@ def validate_inputs(
             FROM {bt_hrz_table}
             WHERE {profile_filter}
             AND horizon != 0
-            AND NOT ({MONTH_OF_YEAR_ROW_FILTER})
+            AND NOT ({month_of_year_row_sql()})
             AND balancing_type_horizon IN (
                 SELECT DISTINCT balancing_type_horizon
                 FROM inputs_temporal_horizons
