@@ -8091,6 +8091,45 @@ CREATE TABLE results_system_market_volume_tmp
                  market_group, basis, timepoint)
 );
 
+DROP TABLE IF EXISTS results_system_market_volume_hrz_to_tmp;
+CREATE TABLE results_system_market_volume_hrz_to_tmp
+(
+    scenario_id                                    INTEGER,
+    weather_iteration                              INTEGER,
+    hydro_iteration                                INTEGER,
+    availability_iteration                         INTEGER,
+    subproblem_id                                  INTEGER,
+    stage_id                                       INTEGER,
+    market_group                                   VARCHAR(32),
+    basis                                          VARCHAR(8),
+    balancing_type_horizon                         VARCHAR(32),
+    horizon                                        INTEGER,
+    timepoint                                      INTEGER,
+    period                                         INTEGER,
+    net_market_purchased_power_mw                  FLOAT,
+    final_net_market_purchased_power_mw            FLOAT,
+    gross_market_sales_mw                          FLOAT,
+    gross_market_purchases_mw                      FLOAT,
+    final_gross_market_sales_mw                    FLOAT,
+    final_gross_market_purchases_mw                FLOAT,
+    max_market_purchases                           FLOAT,
+    max_market_sales                               FLOAT,
+    max_final_market_purchases                     FLOAT,
+    max_final_market_sales                         FLOAT,
+    max_market_purchases_dual                      FLOAT,
+    max_market_sales_dual                          FLOAT,
+    max_final_market_purchases_dual                FLOAT,
+    max_final_market_sales_dual                    FLOAT,
+    max_market_purchases_marginal_cost             FLOAT,
+    max_market_sales_marginal_cost                 FLOAT,
+    max_final_market_purchases_marginal_cost       FLOAT,
+    max_final_market_sales_marginal_cost           FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 market_group, basis, balancing_type_horizon, horizon,
+                 timepoint)
+);
+
 DROP TABLE IF EXISTS results_system_market_volume_hrz;
 CREATE TABLE results_system_market_volume_hrz
 (

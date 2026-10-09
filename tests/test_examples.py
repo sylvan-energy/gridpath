@@ -2675,6 +2675,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_hrz_to_tmp_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_hrz_to_tmp_and_looser_tmp_limits(self):
+        """
+        Check validation and objective function value of "test" example;
+        test_markets_w_hrz_to_tmp_limits with a looser timepoint-level limit
+        on All_Markets as well: every limit applies, so the
+        horizon-to-timepoint limit still binds and the objective is the same
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_to_tmp_and_looser_tmp_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_markets_w_prd_total_limits(self):
         """
         Check validation and objective function value of "test" example

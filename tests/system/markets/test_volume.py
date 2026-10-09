@@ -141,7 +141,7 @@ class TestMarketVolume(unittest.TestCase):
                 msg=group,
             )
 
-        # The three limit resolutions: the fixture file, the index columns
+        # The four limit resolutions: the fixture file, the index columns
         # the set is keyed on, and the params with their defaults
         resolutions = [
             (
@@ -175,6 +175,17 @@ class TestMarketVolume(unittest.TestCase):
                     ("max_market_sales_in_prd_include_storage_losses", 0),
                 ],
             ),
+            (
+                "market_volume_hrz_to_tmp.tab",
+                "MARKET_GROUP_BLN_TYPE_HRZS_W_HRZ_TO_TMP_LIMIT",
+                ["balancing_type_horizon", "horizon"],
+                [
+                    ("max_market_sales_hrz_to_tmp", float("inf")),
+                    ("max_market_purchases_hrz_to_tmp", float("inf")),
+                    ("max_final_market_sales_hrz_to_tmp", float("inf")),
+                    ("max_final_market_purchases_hrz_to_tmp", float("inf")),
+                ],
+            ),
         ]
 
         limited_groups = set()
@@ -192,10 +203,13 @@ class TestMarketVolume(unittest.TestCase):
             limited_groups |= set(df["market_group"])
 
             for param_name, default in params:
+                # The horizon-to-timepoint file names its columns after the
+                # timepoint-level limits
+                column = param_name.removesuffix("_hrz_to_tmp")
                 # The '.' placeholders make the limit columns object dtype;
                 # coerce so an unspecified limit reads as NaN and maps to
                 # the model's default
-                limits = pd.to_numeric(df[param_name], errors="coerce")
+                limits = pd.to_numeric(df[column], errors="coerce")
                 expected = OrderedDict(
                     sorted(
                         {
@@ -283,16 +297,76 @@ class TestMarketVolume(unittest.TestCase):
                 & (horizon_tmps_df["horizon"] == 202001)
             ]["timepoint"]
         )
-        gross_tmps = {20200101, 20200102} | day_202001_tmps
+        # and, horizon-to-timepoint, over the 'day' horizon 202002
+        day_202002_tmps = set(
+            horizon_tmps_df[
+                (horizon_tmps_df["balancing_type_horizon"] == "day")
+                & (horizon_tmps_df["horizon"] == 202002)
+            ]["timepoint"]
+        )
+        gross_tmps = {20200101, 20200102} | day_202001_tmps | day_202002_tmps
         all_hubs = instance.MARKETS_BY_MARKET_GROUP["All_Hubs"]
         self.assertListEqual(
             sorted((mrkt, tmp) for mrkt in all_hubs for tmp in gross_tmps),
             sorted(instance.GROSS_LIMIT_MARKET_TMPS),
         )
-        # Only the timepoint-level limits apply to the final position
+        # Only the timepoint-level limits, direct or by horizon, apply to the
+        # final position
         self.assertListEqual(
-            sorted((mrkt, tmp) for mrkt in all_hubs for tmp in [20200101, 20200102]),
+            sorted(
+                (mrkt, tmp)
+                for mrkt in all_hubs
+                for tmp in {20200101, 20200102} | day_202002_tmps
+            ),
             sorted(instance.GROSS_FINAL_LIMIT_MARKET_TMPS),
+        )
+
+        # Each horizon-to-timepoint limit is enforced in every timepoint of
+        # its horizon, alongside any timepoint-level limit there, and only
+        # where it is finite
+        self.assertListEqual(
+            sorted(
+                [("Market_Hub_1", "net", "day", 202001, tmp) for tmp in day_202001_tmps]
+                + [("All_Hubs", "gross", "day", 202002, tmp) for tmp in day_202002_tmps]
+            ),
+            sorted(instance.MARKET_GROUP_BLN_TYPE_HRZ_TMPS_W_HRZ_TO_TMP_LIMIT),
+        )
+        for constraint_name, idxs in [
+            (
+                "Max_Market_Group_Sales_Hrz_to_Tmp_Constraint",
+                [("Market_Hub_1", "net", "day", 202001, t) for t in day_202001_tmps]
+                + [("All_Hubs", "gross", "day", 202002, t) for t in day_202002_tmps],
+            ),
+            (
+                "Max_Market_Group_Purchases_Hrz_to_Tmp_Constraint",
+                [("All_Hubs", "gross", "day", 202002, t) for t in day_202002_tmps],
+            ),
+            ("Max_Market_Group_Final_Sales_Hrz_to_Tmp_Constraint", []),
+            (
+                "Max_Market_Group_Final_Purchases_Hrz_to_Tmp_Constraint",
+                [("Market_Hub_1", "net", "day", 202001, t) for t in day_202001_tmps],
+            ),
+        ]:
+            self.assertListEqual(
+                sorted(idxs),
+                sorted(getattr(instance, constraint_name)),
+                msg=constraint_name,
+            )
+        # Market_Hub_1 has a timepoint-level limit in 20200101 too: both apply
+        self.assertIn(
+            ("Market_Hub_1", "net", 20200101),
+            instance.Max_Market_Group_Sales_Constraint,
+        )
+        self.assertIn(20200101, day_202001_tmps)
+        self.assertIn(
+            ("Market_Hub_1", "net", "day", 202001, 20200101),
+            instance.Max_Market_Group_Sales_Hrz_to_Tmp_Constraint,
+        )
+        # The final position is built where a horizon-to-timepoint limit
+        # applies
+        self.assertTrue(
+            {("Market_Hub_1", tmp) for tmp in day_202001_tmps}
+            <= set(instance.MARKET_GROUP_TMPS_W_ANY_LIMIT)
         )
         # A group can carry a limit of each basis over the same horizon
         self.assertIn(
