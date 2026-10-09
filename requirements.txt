@@ -13,7 +13,7 @@ dill==0.4.1
 docutils==0.20.1
 duckdb==1.5.4
 execnet==2.1.2
-GridPath==2026.13.0
+GridPath==2026.13.1
 gurobipy==13.0.3
 highspy==1.15.1
 highspy-extras==1.15.1
