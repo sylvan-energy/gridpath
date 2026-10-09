@@ -1043,6 +1043,7 @@ def get_model_inputs_from_database(
                 SELECT project, {bt_hrz_scenario_id_column}
                 FROM inputs_project_operational_chars
                 WHERE project_operational_chars_scenario_id = {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+                AND operational_type = 'gen_hydro_water'
             )""",
         )
 
@@ -1061,6 +1062,7 @@ def get_model_inputs_from_database(
                 FROM inputs_project_operational_chars
                 WHERE project_operational_chars_scenario_id = 
                 {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+                AND operational_type = 'gen_hydro_water'
             )
             AND (balancing_type, horizon)
             IN (SELECT DISTINCT balancing_type_horizon, horizon
@@ -1089,6 +1091,7 @@ def get_model_inputs_from_database(
                 FROM inputs_project_operational_chars
                 WHERE project_operational_chars_scenario_id = 
                 {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+                AND operational_type = 'gen_hydro_water'
             )
             AND (balancing_type, horizon)
             IN (SELECT DISTINCT balancing_type_horizon, horizon
@@ -1117,6 +1120,7 @@ def get_model_inputs_from_database(
                 FROM inputs_project_operational_chars
                 WHERE project_operational_chars_scenario_id = 
                 {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+                AND operational_type = 'gen_hydro_water'
             )
             AND (balancing_type, horizon)
             IN (SELECT DISTINCT balancing_type_horizon, horizon
@@ -1145,6 +1149,7 @@ def get_model_inputs_from_database(
                 FROM inputs_project_operational_chars
                 WHERE project_operational_chars_scenario_id = 
                 {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+                AND operational_type = 'gen_hydro_water'
             )
             AND (balancing_type, horizon)
             IN (SELECT DISTINCT balancing_type_horizon, horizon

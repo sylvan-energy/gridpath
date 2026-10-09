@@ -512,6 +512,8 @@ def get_inputs_from_database(
         )
         -- Get the correct availability iteration
         AND availability_iteration = {availability_iteration}
+        -- Get the stage's data
+        AND stage_id = {stage}
         ;
     """
 
@@ -551,6 +553,8 @@ def get_inputs_from_database(
         )
         -- Get the correct weather iteration
         AND weather_iteration = {weather_iteration}
+        -- Get the stage's data
+        AND stage_id = {stage}
         ;
     """
 
@@ -618,6 +622,8 @@ def get_inputs_from_database(
         )
         -- Get the correct availability iteration
         AND availability_iteration = {availability_iteration}
+        -- Get the stage's data
+        AND stage_id = {stage}
         ;
     """
 
@@ -657,6 +663,8 @@ def get_inputs_from_database(
         )
         -- Get the correct weather iteration
         AND weather_iteration = {weather_iteration}
+        -- Get the stage's data
+        AND stage_id = {stage}
         ;
     """
 

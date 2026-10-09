@@ -1246,12 +1246,21 @@ def get_inputs_from_database(
         JOIN
         (SELECT balancing_type_horizon, horizon
         FROM inputs_temporal_horizons
-        WHERE temporal_scenario_id = {temporal_scenario_id}) as relevant_horizons
+        WHERE temporal_scenario_id = {temporal_scenario_id}
+        AND (balancing_type_horizon, horizon) in (
+            SELECT DISTINCT balancing_type_horizon, horizon
+            FROM inputs_temporal_horizon_timepoints
+            WHERE temporal_scenario_id = {temporal_scenario_id}
+            AND subproblem_id = {subproblem}
+            AND stage_id = {stage}
+        )) as relevant_horizons
         USING (balancing_type_horizon, horizon)
         WHERE project_portfolio_scenario_id = {project_portfolio_scenario_id}
         AND cap_factor_limits_scenario_id IS NOT NULL
         """.format(
             temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            subproblem=subproblem,
+            stage=stage,
             project_opchar_scenario_id=subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID,
             project_portfolio_scenario_id=subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID,
         )
