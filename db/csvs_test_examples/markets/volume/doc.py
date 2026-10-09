@@ -21,9 +21,11 @@ counted separately, and a group may have a row of each. A row maps the group
 to a volume profile at each temporal resolution it is limited at, and may
 carry flat timepoint- and period-level limits (the
 :code:`default_*` columns) that need no profile. The profiles themselves live
-in the :code:`volume_tmp_profiles`, :code:`volume_hrz_profiles` and
-:code:`volume_prd_profiles` subdirectories, keyed by market group; their rows
-override the flat limits column by column.
+in the :code:`volume_tmp_profiles`, :code:`volume_hrz_profiles`,
+:code:`volume_hrz_to_tmp_profiles` and :code:`volume_prd_profiles`
+subdirectories, keyed by market group; their rows override the flat limits
+column by column. The horizon-to-timepoint profiles give timepoint-level
+limits (MW) by horizon, applied in every timepoint of the horizon.
 
 """
 

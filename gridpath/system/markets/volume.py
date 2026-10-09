@@ -50,9 +50,9 @@ weight. Horizon-level limits follow a balancing type the user picks, so a
 limit can be imposed over any horizon defined in the scenario's temporal
 structure (a day, a week, a month, ...).
 
-The horizon profiles can also carry **horizon MW caps**: timepoint-level
-limits, in MW, given once per horizon and applied in every timepoint of the
-horizon. A seasonal hourly cap, e.g. purchases of at most 105 MW in every
+**Horizon-to-timepoint limits** are timepoint-level limits, in MW, given
+once per horizon in their own profile and applied in every timepoint of the
+horizon. A seasonal hourly limit, e.g. purchases of at most 105 MW in every
 hour of May and June, then takes one row per month horizon instead of one
 row per timepoint; with the built-in month balancing types
 (``subproblem_period_month_*``) it needs no user-defined horizons either.
@@ -66,8 +66,8 @@ row per timepoint; with the built-in month balancing types
 +------------+------------------------------+-----------------------------+
 | Horizon    | sales, purchases             | MWh                         |
 +------------+------------------------------+-----------------------------+
-| Horizon    | sales, purchases, final      | MW, in each timepoint of    |
-|            | sales, final purchases       | the horizon                 |
+| Horizon to | sales, purchases, final      | MW, in each timepoint of    |
+| timepoint  | sales, final purchases       | the horizon                 |
 +------------+------------------------------+-----------------------------+
 | Period     | sales, purchases             | MWh                         |
 +------------+------------------------------+-----------------------------+
@@ -120,14 +120,14 @@ naturally with a profile that lists only the exceptions. To leave a single
 timepoint unlimited when a finite default is in force, give it an explicitly
 large value.
 
-The horizon MW caps are a layer of the timepoint-level resolution, between
-the explicit timepoint rows and the timepoint wildcard row: an explicit
-timepoint row, then the cap of the timepoint's horizon, then the timepoint
-wildcard row, then the flat limit, then infinity. A horizon's cap is its
-explicit horizon row's or else its balancing type's wildcard row's. A
-timepoint in capped horizons of more than one balancing type gets the
-tightest of their caps, limit by limit, and a warning is issued. The MW caps
-and the horizon (MWh) limits of a row are resolved independently.
+The horizon-to-timepoint limits are a layer of the timepoint-level
+resolution, between the explicit timepoint rows and the timepoint wildcard
+row: an explicit timepoint row, then the limit of the timepoint's horizon,
+then the timepoint wildcard row, then the flat limit, then infinity. A
+horizon's limit is its explicit row's or else its balancing type's wildcard
+row's (``horizon = 0``). A timepoint in limited horizons of more than one
+balancing type gets the tightest of their limits, limit by limit, and a
+warning is issued.
 
 The layers are resolved when the model inputs are written, so the scenario's
 input files carry the resolved limits and the model itself never sees a
@@ -733,9 +733,9 @@ def limits_with_defaults_sql(
         of *value_columns*; the lowest layer of the fall-through, applied to
         every index entry
     :param inherited_subquery: optional SQL selecting limits inherited from
-        a coarser resolution (the horizon MW caps of the timepoints), keyed
-        by *match_columns* and naming its limits as *value_columns*; a layer
-        between the explicit and the wildcard rows
+        a coarser resolution (the timepoints' horizon-to-timepoint limits),
+        keyed by *match_columns* and naming its limits as *value_columns*; a
+        layer between the explicit and the wildcard rows
     :return: the SQL string
 
     An explicit row wins over the inherited limit, the inherited limit over
@@ -800,40 +800,37 @@ def limits_with_defaults_sql(
         """
 
 
-# The horizon MW caps and the timepoint-level limits each caps in every
-# timepoint of the horizon
-HRZ_MW_CAP_COLUMNS = {
-    "max_market_sales_mw_in_hrz": "max_market_sales",
-    "max_market_purchases_mw_in_hrz": "max_market_purchases",
-    "max_final_market_sales_mw_in_hrz": "max_final_market_sales",
-    "max_final_market_purchases_mw_in_hrz": "max_final_market_purchases",
-}
+# The timepoint-level limits, which the horizon-to-timepoint profiles also
+# give by horizon
+TMP_LIMIT_COLUMNS = [
+    "max_market_sales",
+    "max_market_purchases",
+    "max_final_market_sales",
+    "max_final_market_purchases",
+]
 
 
-def resolved_hrz_mw_caps_sql(hrz_index_subquery, profile_filter):
+def resolved_hrz_to_tmp_limits_sql(hrz_index_subquery, profile_filter):
     """
-    Resolve a group's horizon MW caps against the horizons: an explicit row,
-    then the balancing type's wildcard row (horizon = 0); only rows that set
-    an MW cap take part, so a row with only horizon (MWh) limits does not
-    mask the wildcard's caps.
+    Resolve a group's horizon-to-timepoint limits against the horizons: an
+    explicit row, then the balancing type's wildcard row (horizon = 0).
 
     :param hrz_index_subquery: SQL selecting the subproblem's and stage's
         balancing type - horizons
-    :param profile_filter: SQL condition selecting the group's horizon
-        profile rows
-    :return: SQL with one row per capped balancing type - horizon
+    :param profile_filter: SQL condition selecting the group's
+        horizon-to-timepoint profile rows
+    :return: SQL with one row per limited balancing type - horizon
     """
-    mw_columns = list(HRZ_MW_CAP_COLUMNS)
     return limits_with_defaults_sql(
         index_subquery=hrz_index_subquery,
         data_subquery=f"""
-            SELECT balancing_type_horizon, horizon, {", ".join(mw_columns)}
-            FROM inputs_market_volume_hrz_profiles
+            SELECT balancing_type_horizon, horizon,
+                {", ".join(TMP_LIMIT_COLUMNS)}
+            FROM inputs_market_volume_hrz_to_tmp_profiles
             WHERE {profile_filter}
-            AND COALESCE({", ".join(mw_columns)}) IS NOT NULL
             AND {{wildcard_filter}}
             """,
-        value_columns=mw_columns,
+        value_columns=TMP_LIMIT_COLUMNS,
         index_columns=["balancing_type_horizon", "horizon"],
         match_columns=["balancing_type_horizon", "horizon"],
         default_match_columns=["balancing_type_horizon"],
@@ -841,47 +838,46 @@ def resolved_hrz_mw_caps_sql(hrz_index_subquery, profile_filter):
     )
 
 
-def hrz_mw_caps_join_tmps_sql(hrz_mw_caps, temporal_scenario_id, subproblem, stage):
+def hrz_to_tmp_limits_join_tmps_sql(
+    hrz_limits, temporal_scenario_id, subproblem, stage
+):
     """
-    The resolved horizon MW caps joined to the timepoints of their horizons.
+    The resolved horizon-to-timepoint limits joined to the timepoints of
+    their horizons.
     """
     return f"""
-        FROM ({hrz_mw_caps}) AS cap
+        FROM ({hrz_limits}) AS hrz_limit
         JOIN inputs_temporal_horizon_timepoints AS tht
-            ON tht.balancing_type_horizon = cap.balancing_type_horizon
-            AND tht.horizon = cap.horizon
+            ON tht.balancing_type_horizon = hrz_limit.balancing_type_horizon
+            AND tht.horizon = hrz_limit.horizon
         WHERE tht.temporal_scenario_id = {temporal_scenario_id}
         AND tht.subproblem_id = {subproblem}
         AND tht.stage_id = {stage}
         """
 
 
-def hrz_mw_caps_by_tmp_sql(hrz_mw_caps, temporal_scenario_id, subproblem, stage):
+def hrz_to_tmp_limits_by_tmp_sql(hrz_limits, temporal_scenario_id, subproblem, stage):
     """
-    A group's horizon MW caps as timepoint-level limits: each timepoint gets
-    the cap of its horizon, and the tightest one, per limit, when it is in
-    capped horizons of more than one balancing type.
+    A group's horizon-to-timepoint limits by timepoint: each timepoint gets
+    the limits of its horizon, and the tightest, per limit, when it is in
+    limited horizons of more than one balancing type.
 
-    :return: SQL keyed by stage_id and timepoint, naming each cap after the
-        timepoint-level limit it sets
+    :return: SQL keyed by stage_id and timepoint
     """
-    select_caps = ", ".join(
-        f"MIN(cap.{hrz_column}) AS {tmp_column}"
-        for hrz_column, tmp_column in HRZ_MW_CAP_COLUMNS.items()
-    )
+    select_limits = ", ".join(f"MIN(hrz_limit.{c}) AS {c}" for c in TMP_LIMIT_COLUMNS)
     return f"""
         SELECT tht.stage_id AS stage_id, tht.timepoint AS timepoint,
-            {select_caps}
-        {hrz_mw_caps_join_tmps_sql(
-            hrz_mw_caps, temporal_scenario_id, subproblem, stage
+            {select_limits}
+        {hrz_to_tmp_limits_join_tmps_sql(
+            hrz_limits, temporal_scenario_id, subproblem, stage
         )}
         GROUP BY tht.stage_id, tht.timepoint
         """
 
 
-def warn_on_overlapping_hrz_mw_caps(
+def warn_on_overlapping_hrz_to_tmp_limits(
     conn,
-    hrz_mw_caps,
+    hrz_limits,
     temporal_scenario_id,
     subproblem,
     stage,
@@ -889,25 +885,26 @@ def warn_on_overlapping_hrz_mw_caps(
     basis,
 ):
     """
-    Warn when a group's horizon MW caps of different balancing types apply
-    in the same timepoints, where the tightest cap applies.
+    Warn when a group's horizon-to-timepoint limits of different balancing
+    types apply in the same timepoints, where the tightest limit applies.
     """
     overlaps = conn.execute(f"""
         SELECT DISTINCT bts FROM (
-            SELECT GROUP_CONCAT(DISTINCT cap.balancing_type_horizon) AS bts
-            {hrz_mw_caps_join_tmps_sql(
-                hrz_mw_caps, temporal_scenario_id, subproblem, stage
+            SELECT GROUP_CONCAT(DISTINCT hrz_limit.balancing_type_horizon) AS bts
+            {hrz_to_tmp_limits_join_tmps_sql(
+                hrz_limits, temporal_scenario_id, subproblem, stage
             )}
             GROUP BY tht.timepoint
-            HAVING COUNT(DISTINCT cap.balancing_type_horizon) > 1
+            HAVING COUNT(DISTINCT hrz_limit.balancing_type_horizon) > 1
         )
         """).fetchall()
     overlapping_bts = sorted({bt for (bts,) in overlaps for bt in bts.split(",")})
     if overlapping_bts:
         warnings.warn(
-            f"Market group '{market_group}' ({basis}): horizon MW caps of "
-            f"balancing types {', '.join(repr(bt) for bt in overlapping_bts)} "
-            f"apply in the same timepoints; the tightest cap applies in each."
+            f"Market group '{market_group}' ({basis}): horizon-to-timepoint "
+            f"limits of balancing types "
+            f"{', '.join(repr(bt) for bt in overlapping_bts)} apply in the "
+            f"same timepoints; the tightest limit applies in each."
         )
 
 
@@ -987,6 +984,7 @@ def get_inputs_from_database(
         basis,
         market_volume_tmp_profile_scenario_id,
         market_volume_hrz_profile_scenario_id,
+        market_volume_hrz_to_tmp_profile_scenario_id,
         market_volume_prd_profile_scenario_id,
         varies_by_weather_iteration,
         varies_by_hydro_iteration,
@@ -1007,22 +1005,29 @@ def get_inputs_from_database(
         """).fetchall()
 
     # Balancing types the temporal scenario lacks are dropped by the horizon
-    # limit resolution below
-    warn_on_unknown_balancing_types(
-        conn=conn,
-        temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
-        table="inputs_market_volume_hrz_profiles",
-        bt_column="balancing_type_horizon",
-        row_filter=f"""(market_group, market_volume_hrz_profile_scenario_id) IN (
-            SELECT market_group, market_volume_hrz_profile_scenario_id
-            FROM inputs_market_volume
-            WHERE market_volume_scenario_id = {subscenarios.MARKET_VOLUME_SCENARIO_ID}
-            AND market_group IN (
-                SELECT DISTINCT market_group
-                FROM ({get_market_groups_sql(subscenarios)})
-            )
-        )""",
-    )
+    # and horizon-to-timepoint limit resolutions below
+    for bt_hrz_table, profile_id_column in [
+        ("inputs_market_volume_hrz_profiles", "market_volume_hrz_profile_scenario_id"),
+        (
+            "inputs_market_volume_hrz_to_tmp_profiles",
+            "market_volume_hrz_to_tmp_profile_scenario_id",
+        ),
+    ]:
+        warn_on_unknown_balancing_types(
+            conn=conn,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            table=bt_hrz_table,
+            bt_column="balancing_type_horizon",
+            row_filter=f"""(market_group, {profile_id_column}) IN (
+                SELECT market_group, {profile_id_column}
+                FROM inputs_market_volume
+                WHERE market_volume_scenario_id = {subscenarios.MARKET_VOLUME_SCENARIO_ID}
+                AND market_group IN (
+                    SELECT DISTINCT market_group
+                    FROM ({get_market_groups_sql(subscenarios)})
+                )
+            )""",
+        )
 
     # The three limit resolutions: the temporal index each is resolved
     # against, the table it comes from, and how its wildcard row matches
@@ -1069,12 +1074,6 @@ def get_inputs_from_database(
             "default_match_columns": ["balancing_type_horizon"],
             "wildcard_column": "horizon",
             "data_index_columns": ["balancing_type_horizon", "horizon"],
-            # Rows that set only MW caps are not horizon (MWh) limits
-            "row_filter": """COALESCE(
-                max_market_sales_in_hrz,
-                max_market_purchases_in_hrz,
-                max_market_sales_in_hrz_include_storage_losses
-            ) IS NOT NULL""",
         },
         {
             "table": "inputs_market_volume_prd_profiles",
@@ -1114,6 +1113,7 @@ def get_inputs_from_database(
         basis,
         tmp_profile_id,
         hrz_profile_id,
+        hrz_to_tmp_profile_id,
         prd_profile_id,
         varies_by_weather_iteration,
         varies_by_hydro_iteration,
@@ -1150,6 +1150,7 @@ def get_inputs_from_database(
         profile_ids = {
             "market_volume_tmp_profile_scenario_id": tmp_profile_id,
             "market_volume_hrz_profile_scenario_id": hrz_profile_id,
+            "market_volume_hrz_to_tmp_profile_scenario_id": hrz_to_tmp_profile_id,
             "market_volume_prd_profile_scenario_id": prd_profile_id,
         }
 
@@ -1162,23 +1163,25 @@ def get_inputs_from_database(
                 AND stage_id = {stage}
                 """ for profile_id_column, profile_id in profile_ids.items()}
 
-        # The group's horizon MW caps, by timepoint, inherited by the
-        # timepoint-level limits
-        hrz_mw_caps_by_tmp = None
-        if hrz_profile_id is not None:
-            hrz_mw_caps = resolved_hrz_mw_caps_sql(
+        # The group's horizon-to-timepoint limits, by timepoint, inherited by
+        # the timepoint-level limits
+        hrz_to_tmp_limits_by_tmp = None
+        if hrz_to_tmp_profile_id is not None:
+            hrz_to_tmp_limits = resolved_hrz_to_tmp_limits_sql(
                 hrz_index_subquery=hrz_resolution["index_subquery"],
-                profile_filter=profile_filters["market_volume_hrz_profile_scenario_id"],
+                profile_filter=profile_filters[
+                    "market_volume_hrz_to_tmp_profile_scenario_id"
+                ],
             )
-            hrz_mw_caps_by_tmp = hrz_mw_caps_by_tmp_sql(
-                hrz_mw_caps=hrz_mw_caps,
+            hrz_to_tmp_limits_by_tmp = hrz_to_tmp_limits_by_tmp_sql(
+                hrz_limits=hrz_to_tmp_limits,
                 temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
                 subproblem=subproblem,
                 stage=stage,
             )
-            warn_on_overlapping_hrz_mw_caps(
+            warn_on_overlapping_hrz_to_tmp_limits(
                 conn=conn,
-                hrz_mw_caps=hrz_mw_caps,
+                hrz_limits=hrz_to_tmp_limits,
                 temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
                 subproblem=subproblem,
                 stage=stage,
@@ -1197,7 +1200,6 @@ def get_inputs_from_database(
                     SELECT {data_columns}
                     FROM {resolution["table"]}
                     WHERE {profile_filters[resolution["profile_id_column"]]}
-                    AND {resolution.get("row_filter", "1 = 1")}
                     AND {{wildcard_filter}}
                     """,
                     value_columns=resolution["value_columns"],
@@ -1212,7 +1214,7 @@ def get_inputs_from_database(
                         c: flat_values.get(c) for c in resolution["value_columns"]
                     },
                     inherited_subquery=(
-                        hrz_mw_caps_by_tmp
+                        hrz_to_tmp_limits_by_tmp
                         if resolution["table"] == "inputs_market_volume_tmp_profiles"
                         else None
                     ),
@@ -1332,49 +1334,54 @@ def validate_inputs(
             )
             """
 
-    profile_filter = profile_filter_for("market_volume_hrz_profile_scenario_id")
-
     # Balancing types and horizons the temporal structure does not define (a
     # horizon of 0 is the wildcard row and has no horizon to match)
-    unknown_bts = c.execute(f"""
-        SELECT DISTINCT balancing_type_horizon
-        FROM inputs_market_volume_hrz_profiles
-        WHERE {profile_filter}
-        AND balancing_type_horizon NOT IN (
+    for bt_hrz_table, profile_id_column in [
+        ("inputs_market_volume_hrz_profiles", "market_volume_hrz_profile_scenario_id"),
+        (
+            "inputs_market_volume_hrz_to_tmp_profiles",
+            "market_volume_hrz_to_tmp_profile_scenario_id",
+        ),
+    ]:
+        profile_filter = profile_filter_for(profile_id_column)
+        unknown_bts = c.execute(f"""
             SELECT DISTINCT balancing_type_horizon
-            FROM inputs_temporal_horizons
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-        )
-        """).fetchall()
-    for (bt,) in unknown_bts:
-        errors.append(
-            f"inputs_market_volume_hrz_profiles: balancing type '{bt}' is "
-            f"not in the scenario's temporal structure, so its limits are "
-            f"ignored."
-        )
+            FROM {bt_hrz_table}
+            WHERE {profile_filter}
+            AND balancing_type_horizon NOT IN (
+                SELECT DISTINCT balancing_type_horizon
+                FROM inputs_temporal_horizons
+                WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            )
+            """).fetchall()
+        for (bt,) in unknown_bts:
+            errors.append(
+                f"{bt_hrz_table}: balancing type '{bt}' is not in the "
+                f"scenario's temporal structure, so its limits are ignored."
+            )
 
-    unknown_hrzs = c.execute(f"""
-        SELECT DISTINCT balancing_type_horizon, horizon
-        FROM inputs_market_volume_hrz_profiles
-        WHERE {profile_filter}
-        AND horizon != 0
-        AND balancing_type_horizon IN (
-            SELECT DISTINCT balancing_type_horizon
-            FROM inputs_temporal_horizons
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-        )
-        AND (balancing_type_horizon, horizon) NOT IN (
-            SELECT balancing_type_horizon, horizon
-            FROM inputs_temporal_horizons
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-        )
-        """).fetchall()
-    for bt, hrz in unknown_hrzs:
-        errors.append(
-            f"inputs_market_volume_hrz_profiles: horizon {hrz} of balancing "
-            f"type '{bt}' is not in the scenario's temporal structure, so "
-            f"its limits are ignored."
-        )
+        unknown_hrzs = c.execute(f"""
+            SELECT DISTINCT balancing_type_horizon, horizon
+            FROM {bt_hrz_table}
+            WHERE {profile_filter}
+            AND horizon != 0
+            AND balancing_type_horizon IN (
+                SELECT DISTINCT balancing_type_horizon
+                FROM inputs_temporal_horizons
+                WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            )
+            AND (balancing_type_horizon, horizon) NOT IN (
+                SELECT balancing_type_horizon, horizon
+                FROM inputs_temporal_horizons
+                WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            )
+            """).fetchall()
+        for bt, hrz in unknown_hrzs:
+            errors.append(
+                f"{bt_hrz_table}: horizon {hrz} of balancing type '{bt}' is "
+                f"not in the scenario's temporal structure, so its limits are "
+                f"ignored."
+            )
 
     # Negative limits; the model params are non-negative, so these would
     # otherwise fail only at model load
@@ -1392,8 +1399,12 @@ def validate_inputs(
         (
             "inputs_market_volume_hrz_profiles",
             "market_volume_hrz_profile_scenario_id",
-            ["max_market_sales_in_hrz", "max_market_purchases_in_hrz"]
-            + list(HRZ_MW_CAP_COLUMNS),
+            ["max_market_sales_in_hrz", "max_market_purchases_in_hrz"],
+        ),
+        (
+            "inputs_market_volume_hrz_to_tmp_profiles",
+            "market_volume_hrz_to_tmp_profile_scenario_id",
+            TMP_LIMIT_COLUMNS,
         ),
         (
             "inputs_market_volume_prd_profiles",

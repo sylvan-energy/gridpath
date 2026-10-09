@@ -1,5 +1,5 @@
 scenario_id,206
-scenario_name,test_markets_w_hrz_mw_caps
+scenario_name,test_markets_w_hrz_to_tmp_limits
 of_transmission,
 of_transmission_hurdle_rates,
 of_transmission_hurdle_rates_by_timepoint,
