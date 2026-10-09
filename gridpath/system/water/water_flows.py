@@ -33,6 +33,7 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values, import_csv
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 from gridpath.common_functions import (
     create_results_df,
     duals_wrapper,
@@ -836,6 +837,35 @@ def get_inputs_from_database(
             """
 
     tmp_flow_bounds = c1.execute(tmp_sql)
+
+    # Balancing types the temporal scenario lacks are dropped by the
+    # balancing type - horizon queries below
+    for bt_hrz_table, bt_hrz_scenario_id_column in [
+        (
+            "inputs_system_water_flows_horizon_bounds",
+            "water_flow_horizon_bounds_scenario_id",
+        ),
+        (
+            "inputs_system_water_flow_ramp_limit_bt_hrz_values",
+            "water_flow_ramp_limit_scenario_id",
+        ),
+    ]:
+        warn_on_unknown_balancing_types(
+            conn=conn,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            table=bt_hrz_table,
+            bt_column="balancing_type",
+            row_filter=f"""(water_link, {bt_hrz_scenario_id_column}) IN (
+                SELECT water_link, {bt_hrz_scenario_id_column}
+                FROM inputs_system_water_flows
+                WHERE water_flow_scenario_id = {subscenarios.WATER_FLOW_SCENARIO_ID}
+            )
+            AND water_link IN (
+                SELECT water_link
+                FROM inputs_geography_water_network
+                WHERE water_network_scenario_id = {subscenarios.WATER_NETWORK_SCENARIO_ID}
+            )""",
+        )
 
     hrz_min_sql = f"""SELECT water_link, balancing_type, horizon,
             min_bt_hrz_flow_avg_vol_per_second

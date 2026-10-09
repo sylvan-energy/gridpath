@@ -52,6 +52,7 @@ from gridpath.auxiliary.validations import (
     validate_dtypes,
     validate_piecewise_curves,
     validate_startup_shutdown_rate_inputs,
+    warn_on_unknown_balancing_types,
 )
 from gridpath.project.common_functions import append_to_input_file
 from gridpath.project.operations.operational_types.common_functions import (
@@ -1205,6 +1206,28 @@ def get_inputs_from_database(
             project_portfolio_scenario_id=subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID,
         )
     )
+
+    # Balancing types the temporal scenario lacks are dropped by the queries
+    # below
+    for bt_hrz_table, bt_hrz_scenario_id_column in [
+        ("inputs_project_cap_factor_limits", "cap_factor_limits_scenario_id"),
+        ("inputs_project_n_startup_limits", "n_startup_limit_scenario_id"),
+    ]:
+        warn_on_unknown_balancing_types(
+            conn=conn,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            table=bt_hrz_table,
+            bt_column="balancing_type_horizon",
+            row_filter=f"""(project, {bt_hrz_scenario_id_column}) IN (
+                SELECT project, {bt_hrz_scenario_id_column}
+                FROM inputs_project_operational_chars
+                WHERE project_operational_chars_scenario_id = {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+                AND project IN (
+                    SELECT project FROM inputs_project_portfolios
+                    WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+                )
+            )""",
+        )
 
     c7 = conn.cursor()
     cap_factor_limits = c7.execute(

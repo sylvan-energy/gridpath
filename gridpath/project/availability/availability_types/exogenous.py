@@ -33,6 +33,7 @@ from gridpath.auxiliary.auxiliary import (
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import (
+    warn_on_unknown_balancing_types,
     write_validation_to_database,
     get_expected_dtypes,
     validate_dtypes,
@@ -555,6 +556,35 @@ def get_inputs_from_database(
 
     c2 = conn.cursor()
     weather_availabilities = c2.execute(weather_sql)
+
+    # Balancing types the temporal scenario lacks are dropped by the
+    # balancing type - horizon queries below
+    for bt_hrz_table, bt_hrz_scenario_id_column in [
+        (
+            "inputs_project_availability_exogenous_independent_bt_hrz",
+            "exogenous_availability_independent_bt_hrz_scenario_id",
+        ),
+        (
+            "inputs_project_availability_exogenous_weather_bt_hrz",
+            "exogenous_availability_weather_bt_hrz_scenario_id",
+        ),
+    ]:
+        warn_on_unknown_balancing_types(
+            conn=conn,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            table=bt_hrz_table,
+            bt_column="balancing_type_project",
+            row_filter=f"""project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )
+            AND (project, {bt_hrz_scenario_id_column}) IN (
+                SELECT project, {bt_hrz_scenario_id_column}
+                FROM inputs_project_availability
+                WHERE project_availability_scenario_id = {subscenarios.PROJECT_AVAILABILITY_SCENARIO_ID}
+                AND availability_type = 'exogenous'
+            )""",
+        )
 
     # Derate by balancing type - horizon
     bt_hrz_ind_sql = f"""

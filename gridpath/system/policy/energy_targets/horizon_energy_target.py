@@ -21,6 +21,7 @@ import os.path
 from pyomo.environ import Set, Param, NonNegativeReals, PercentFraction, Expression
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 
 
 def add_model_components(
@@ -180,6 +181,23 @@ def get_inputs_from_database(
     :param conn: database connection
     :return:
     """
+
+    # Balancing types the temporal scenario lacks are dropped by the query
+    # below
+    warn_on_unknown_balancing_types(
+        conn=conn,
+        temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+        table="inputs_system_horizon_energy_targets",
+        bt_column="balancing_type_horizon",
+        row_filter=f"""horizon_energy_target_scenario_id = {subscenarios.HORIZON_ENERGY_TARGET_SCENARIO_ID}
+        AND subproblem_id = {subproblem}
+        AND stage_id = {stage}
+        AND energy_target_zone IN (
+            SELECT energy_target_zone
+            FROM inputs_geography_energy_target_zones
+            WHERE energy_target_zone_scenario_id = {subscenarios.ENERGY_TARGET_ZONE_SCENARIO_ID}
+        )""",
+    )
 
     # Get the energy and percent targets
     c = conn.cursor()

@@ -23,6 +23,7 @@ import os.path
 from pyomo.environ import Set, Param, NonNegativeReals, Any, Reals
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 
 Infinity = float("inf")
 Negative_Infinity = float("-inf")
@@ -160,6 +161,23 @@ def get_inputs_from_database(
     :param conn: database connection
     :return:
     """
+
+    # Balancing types the temporal scenario lacks are dropped by the query
+    # below
+    warn_on_unknown_balancing_types(
+        conn=conn,
+        temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+        table="inputs_system_fuel_burn_limits",
+        bt_column="balancing_type_horizon",
+        row_filter=f"""fuel_burn_limit_scenario_id = {subscenarios.FUEL_BURN_LIMIT_SCENARIO_ID}
+        AND subproblem_id = {subproblem}
+        AND stage_id = {stage}
+        AND fuel_burn_limit_ba IN (
+            SELECT fuel_burn_limit_ba
+            FROM inputs_geography_fuel_burn_limit_balancing_areas
+            WHERE fuel_burn_limit_ba_scenario_id = {subscenarios.FUEL_BURN_LIMIT_BA_SCENARIO_ID}
+        )""",
+    )
 
     c = conn.cursor()
     fuel_burn_limits = c.execute(

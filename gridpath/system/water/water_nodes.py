@@ -31,6 +31,7 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
 )
@@ -308,6 +309,23 @@ def get_inputs_from_database(
                 AND hydro_iteration = {hydro_iteration}
                 ;
                 """
+    )
+
+    # Balancing types the temporal scenario lacks are dropped by the query
+    # below
+    warn_on_unknown_balancing_types(
+        conn=conn,
+        temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+        table="inputs_system_water_inflows_bt_hrz",
+        bt_column="balancing_type",
+        row_filter=f"""water_inflow_bt_hrz_scenario_id = {subscenarios.WATER_INFLOW_BT_HRZ_SCENARIO_ID}
+        AND water_node IN (
+            SELECT water_node_from FROM inputs_geography_water_network
+            WHERE water_network_scenario_id = {subscenarios.WATER_NETWORK_SCENARIO_ID}
+            UNION
+            SELECT water_node_to FROM inputs_geography_water_network
+            WHERE water_network_scenario_id = {subscenarios.WATER_NETWORK_SCENARIO_ID}
+        )""",
     )
 
     c2 = conn.cursor()

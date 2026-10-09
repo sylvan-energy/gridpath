@@ -37,6 +37,7 @@ from gridpath.auxiliary.auxiliary import (
     load_subtype_modules,
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 from gridpath.common_functions import (
     create_results_df,
     duals_wrapper,
@@ -777,6 +778,30 @@ def get_inputs_from_database(
                 )
         ;
         """)
+
+    # Balancing types the temporal scenario lacks are dropped by the
+    # balancing type - horizon queries below
+    for bt_hrz_table, bt_hrz_scenario_id_column in [
+        (
+            "inputs_system_water_node_reservoirs_volume_horizon_bounds",
+            "volume_hrz_bounds_scenario_id",
+        ),
+        (
+            "inputs_system_water_node_reservoirs_target_releases",
+            "target_release_scenario_id",
+        ),
+    ]:
+        warn_on_unknown_balancing_types(
+            conn=conn,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            table=bt_hrz_table,
+            bt_column="balancing_type",
+            row_filter=f"""(water_node, {bt_hrz_scenario_id_column}) IN (
+                SELECT water_node, {bt_hrz_scenario_id_column}
+                FROM inputs_system_water_node_reservoirs
+                WHERE water_node_reservoir_scenario_id = {subscenarios.WATER_NODE_RESERVOIR_SCENARIO_ID}
+            )""",
+        )
 
     c4 = conn.cursor()
     hrz_max_volumes = c4.execute(
