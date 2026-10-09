@@ -2701,6 +2701,18 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_hrz_to_tmp_and_looser_tmp_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_hrz_to_tmp_month_of_year_limits(self):
+        """
+        Check validation and objective function value of
+        "test_markets_w_hrz_to_tmp_month_of_year_limits" example:
+        test_markets_w_hrz_to_tmp_limits with the limit given as a
+        month-of-year row (horizon 1) instead of for horizon 202001; same
+        objective
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_to_tmp_month_of_year_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_markets_w_prd_total_limits(self):
         """
         Check validation and objective function value of "test" example
