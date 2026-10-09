@@ -803,15 +803,19 @@ def get_prj_temporal_index_opr_inputs_from_db(
         else:
             # Projects with a temporal map read their data at the resolved
             # (mapped) timepoints/horizons instead, relabeled with the
-            # model's timepoints/horizons
+            # model's timepoints/horizons. The resolved index goes first and
+            # CROSS JOIN makes SQLite keep that loop order, so each resolved
+            # timepoint/horizon is a primary-key lookup into the data table;
+            # with the data table outer, SQLite re-evaluates the map CTE per
+            # data row (minutes for 8760-hour profiles)
             map_select_columns = opr_index_dict["map_select_columns"]
             map_join_condition = opr_index_dict["map_join_condition"].format(
                 table=table
             )
             union_parts.append(f"""
             SELECT project, {map_select_columns}, {data_column}
-            FROM {table}
-            JOIN resolved_index_{map_id} AS resolved_index
+            FROM resolved_index_{map_id} AS resolved_index
+            CROSS JOIN {table}
                 ON {map_join_condition}
             WHERE project IN (SELECT project FROM portfolio_projects)
             AND (project, {subscenario_id_column}) IN (
