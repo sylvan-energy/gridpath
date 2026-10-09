@@ -58,6 +58,10 @@ STAGE = 1
 # group containing it narrows to Market_Hub_1 and the group containing only
 # it narrows to nothing
 SCENARIO_MARKETS = ["Market_Hub_1"]
+
+# A built-in balancing type whose horizons (period * 100 + month) accept
+# month-of-year rows
+MONTH_BT = "subproblem_period_month_circular"
 ALL_MARKETS = ["Market_Hub_1", "Market_Hub_2"]
 
 
@@ -269,6 +273,55 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
             VALUES (?, ?, ?, ?, 'month', 202001)""",
             [(TEMPORAL_SCENARIO_ID, SUBPROBLEM, STAGE, tmp) for tmp in TIMEPOINTS],
         )
+        self.conn.commit()
+
+    def add_builtin_month_horizons(self):
+        """
+        Give timepoints 1 and 2 months 1 and 2, add period 2030 with
+        timepoints 3 (month 1) and 4 (month 2), and put all four in the
+        built-in month horizons (202001, 202002, 203001, 203002).
+        """
+        c = self.conn.cursor()
+        c.execute(
+            "INSERT INTO inputs_temporal_periods (temporal_scenario_id, period) "
+            "VALUES (?, 2030)",
+            (TEMPORAL_SCENARIO_ID,),
+        )
+        for tmp, period, month in [
+            (1, 2020, 1),
+            (2, 2020, 2),
+            (3, 2030, 1),
+            (4, 2030, 2),
+        ]:
+            c.execute(
+                """INSERT INTO inputs_temporal
+                (temporal_scenario_id, subproblem_id, stage_id, timepoint, period,
+                 number_of_hours_in_timepoint, timepoint_weight,
+                 spinup_or_lookahead, month)
+                VALUES (?, ?, ?, ?, ?, 1, 1, 0, ?)
+                ON CONFLICT DO UPDATE SET month = excluded.month""",
+                (TEMPORAL_SCENARIO_ID, SUBPROBLEM, STAGE, tmp, period, month),
+            )
+            c.execute(
+                """INSERT INTO inputs_temporal_horizon_timepoints
+                (temporal_scenario_id, subproblem_id, stage_id, timepoint,
+                 balancing_type_horizon, horizon)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    TEMPORAL_SCENARIO_ID,
+                    SUBPROBLEM,
+                    STAGE,
+                    tmp,
+                    MONTH_BT,
+                    period * 100 + month,
+                ),
+            )
+            c.execute(
+                """INSERT INTO inputs_temporal_horizons
+                (temporal_scenario_id, balancing_type_horizon, horizon, boundary)
+                VALUES (?, ?, ?, 'circular')""",
+                (TEMPORAL_SCENARIO_ID, MONTH_BT, period * 100 + month),
+            )
         self.conn.commit()
 
     def insert_prd_limits(self, group, profile_id, rows):
@@ -630,6 +683,83 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
             ],
             tmp_limits,
         )
+
+    def test_hrz_to_tmp_month_of_year_rows_apply_in_every_period(self):
+        """
+        On a built-in month balancing type, a month-of-year row (horizon 2)
+        supplies month 2 of every period, between the explicit rows and the
+        balancing type's wildcard row, per column: 203002's NULL sales fall
+        through to the month 2 row, and the month 2 row's NULL purchases to
+        the wildcard row.
+        """
+        self.add_builtin_month_horizons()
+        self.limit_group("All_Hubs", hrz_to_tmp=1)
+        self.insert_hrz_to_tmp_limits(
+            "All_Hubs",
+            1,
+            [
+                (MONTH_BT, 0, 50, 50, None, None),
+                (MONTH_BT, 2, 105, None, None, None),
+                (MONTH_BT, 203002, None, 7, None, None),
+            ],
+        )
+        hrz_to_tmp_limits = self.resolve()[4]
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", MONTH_BT, 202001, 50, 50, None, None),
+                ("All_Hubs", "net", MONTH_BT, 202002, 105, 50, None, None),
+                ("All_Hubs", "net", MONTH_BT, 203001, 50, 50, None, None),
+                ("All_Hubs", "net", MONTH_BT, 203002, 105, 7, None, None),
+            ],
+            sorted(hrz_to_tmp_limits),
+        )
+
+    def test_hrz_month_of_year_rows_apply_in_every_period(self):
+        """
+        The horizon (MWh) profiles accept month-of-year rows too; with no
+        wildcard row, months without a row get no limit.
+        """
+        self.add_builtin_month_horizons()
+        self.limit_group("All_Hubs", hrz=1)
+        self.insert_hrz_limits("All_Hubs", 1, [(MONTH_BT, 1, 100, None, None)])
+        hrz_limits = self.resolve()[2]
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", MONTH_BT, 202001, 100, None, None),
+                ("All_Hubs", "net", MONTH_BT, 203001, 100, None, None),
+            ],
+            sorted(hrz_limits),
+        )
+
+    def test_month_of_year_rows_only_on_builtin_month_balancing_types(self):
+        """
+        On any other balancing type, horizon 1 is just a horizon: a row for
+        it does not apply to the type's horizons (here, the user-defined
+        'month' type's 202001), and validation flags it as unknown, while
+        month-of-year rows on the built-in month types are not flagged.
+        """
+        self.add_builtin_month_horizons()
+        self.add_month_horizon_timepoints()
+        self.limit_group("All_Hubs", hrz_to_tmp=1)
+        self.insert_hrz_to_tmp_limits(
+            "All_Hubs",
+            1,
+            [
+                ("month", 1, 5, 5, None, None),
+                (MONTH_BT, 1, 6, 6, None, None),
+            ],
+        )
+        hrz_to_tmp_limits = self.resolve()[4]
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", MONTH_BT, 202001, 6, 6, None, None),
+                ("All_Hubs", "net", MONTH_BT, 203001, 6, 6, None, None),
+            ],
+            sorted(hrz_to_tmp_limits),
+        )
+        errors = self.validate()
+        self.assertEqual(1, len(errors), msg=errors)
+        self.assertIn("horizon 1 of balancing type 'month'", errors[0])
 
     def validate(self):
         """

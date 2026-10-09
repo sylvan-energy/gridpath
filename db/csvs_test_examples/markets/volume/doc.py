@@ -27,6 +27,12 @@ subdirectories, keyed by market group; their rows override the flat limits
 column by column. The horizon-to-timepoint profiles give timepoint-level
 limits (MW) by horizon, applied in every timepoint of the horizon.
 
+On the built-in :code:`subproblem_period_month_circular` and
+:code:`subproblem_period_month_linear` balancing types, the horizon and
+horizon-to-timepoint profiles also accept month-of-year rows (:code:`horizon`
+1-12), which supply that month in every period without an explicit row; see
+the :code:`test_markets_w_hrz_to_tmp_month_of_year_limits` example.
+
 """
 
 if __name__ == "__main__":

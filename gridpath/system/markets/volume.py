@@ -132,6 +132,15 @@ an explicit row, then the balancing type's wildcard row (``horizon = 0``),
 then infinity. The group's flat limits are timepoint-level limits and do not
 default them.
 
+On the built-in ``subproblem_period_month_circular`` and
+``subproblem_period_month_linear`` balancing types (horizon =
+``period * 100 + month``), the horizon and horizon-to-timepoint profiles
+also accept month-of-year rows: a row with ``horizon`` 1-12 supplies that
+month in every period, between the explicit rows and the balancing type's
+wildcard row. A seasonal limit that repeats every year then needs a row per
+month (or one month-of-year row per exception month and a wildcard row for
+the rest), and years that differ need rows only for their own horizons.
+
 The layers are resolved when the model inputs are written, so the scenario's
 input files carry the resolved limits and the model itself never sees a
 default.
@@ -159,6 +168,7 @@ from gridpath.auxiliary.validations import (
 from gridpath.common_functions import constraint_dual, none_dual_type_error_wrapper
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
+    MONTH_HORIZON_TYPES,
 )
 
 Infinity = float("inf")
@@ -850,6 +860,7 @@ def limits_with_defaults_sql(
     wildcard_column,
     extra_select="",
     flat_values=None,
+    month_of_year=False,
 ):
     """
     Build the SQL that resolves a limits table against a scenario's temporal
@@ -874,14 +885,19 @@ def limits_with_defaults_sql(
     :param flat_values: the group's flat limits, a value (or None) per entry
         of *value_columns*; the lowest layer of the fall-through, applied to
         every index entry
+    :param month_of_year: whether to apply month-of-year rows (horizon 1-12
+        on the built-in month balancing types) between the explicit and the
+        wildcard rows; the index must then have balancing_type_horizon and
+        month_of_year columns (the horizon's month on the month balancing
+        types, else NULL), see bt_hrz_index_sql
     :return: the SQL string
 
-    An explicit row wins over the wildcard row, the wildcard row wins over
-    the flat limit, and the flat limit wins over the model default of
-    infinity. The COALESCE is per column, so a NULL cell in an explicit row
+    An explicit row wins over the (month-of-year row over the) wildcard row,
+    the wildcard row wins over the flat limit, and the flat limit wins over
+    the model default of infinity. The COALESCE is per column, so a NULL cell in an explicit row
     falls through to the wildcard row and a NULL there to the flat limit.
 
-    Index entries with neither an explicit nor a wildcard row are dropped,
+    Index entries with no explicit, month-of-year, or wildcard row are dropped,
     unless the group has a flat limit, in which case every entry gets one; so
     a group with no limits at this resolution contributes no rows and a
     scenario with no limits at all writes no file.
@@ -889,9 +905,10 @@ def limits_with_defaults_sql(
     if flat_values is None:
         flat_values = {}
     select_index = ", ".join(f"idx.{c} AS {c}" for c in index_columns)
+    month_of_year_value = "month_of_year.{c}, " if month_of_year else ""
     select_values = ", ".join(
-        f"COALESCE(explicit.{c}, wildcard.{c}, {sql_literal(flat_values.get(c))})"
-        f" AS {c}"
+        f"COALESCE(explicit.{c}, {month_of_year_value.format(c=c)}wildcard.{c}, "
+        f"{sql_literal(flat_values.get(c))}) AS {c}"
         for c in value_columns
     )
     has_flat_limit = any(v is not None for v in flat_values.values())
@@ -900,6 +917,17 @@ def limits_with_defaults_sql(
         if has_flat_limit
         else f"explicit.{wildcard_column} IS NOT NULL "
         f"OR wildcard.{wildcard_column} IS NOT NULL"
+        + (f" OR month_of_year.{wildcard_column} IS NOT NULL" if month_of_year else "")
+    )
+    month_of_year_join = (
+        f"""
+        LEFT OUTER JOIN (
+            {data_subquery.format(wildcard_filter=MONTH_OF_YEAR_ROW_FILTER)}
+        ) AS month_of_year
+            ON idx.balancing_type_horizon = month_of_year.balancing_type_horizon
+            AND idx.month_of_year = month_of_year.horizon"""
+        if month_of_year
+        else ""
     )
     explicit_join = " AND ".join(f"idx.{c} = explicit.{c}" for c in match_columns)
     wildcard_join = (
@@ -918,8 +946,37 @@ def limits_with_defaults_sql(
         LEFT OUTER JOIN (
             {data_subquery.format(wildcard_filter=f"{wildcard_column} = 0")}
         ) AS wildcard
-            ON {wildcard_join}
+            ON {wildcard_join}{month_of_year_join}
         WHERE {gate}
+        """
+
+
+# Month-of-year rows: horizon 1-12 on the built-in month balancing types
+MONTH_OF_YEAR_ROW_FILTER = (
+    "balancing_type_horizon IN ("
+    + ", ".join(f"'{bt}'" for bt in MONTH_HORIZON_TYPES)
+    + ") AND horizon BETWEEN 1 AND 12"
+)
+
+
+def bt_hrz_index_sql(subscenarios, subproblem, stage):
+    """
+    The (balancing type, horizon)s of the subproblem and stage, with each
+    horizon's month (month_of_year) on the built-in month balancing types
+    (NULL on the others), for resolving month-of-year rows.
+    """
+    month_bts = ", ".join(f"'{bt}'" for bt in MONTH_HORIZON_TYPES)
+    return f"""
+        SELECT DISTINCT hts.balancing_type_horizon AS balancing_type_horizon,
+            hts.horizon AS horizon,
+            CASE WHEN hts.balancing_type_horizon IN ({month_bts})
+                THEN t.month END AS month_of_year
+        FROM inputs_temporal_horizon_timepoints AS hts
+        JOIN inputs_temporal AS t
+            USING (temporal_scenario_id, subproblem_id, stage_id, timepoint)
+        WHERE hts.temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+        AND hts.subproblem_id = {subproblem}
+        AND hts.stage_id = {stage}
         """
 
 
@@ -1077,13 +1134,7 @@ def get_inputs_from_database(
         {
             "table": "inputs_market_volume_hrz_profiles",
             "profile_id_column": "market_volume_hrz_profile_scenario_id",
-            "index_subquery": f"""
-                SELECT DISTINCT balancing_type_horizon, horizon
-                FROM inputs_temporal_horizon_timepoints
-                WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-                AND subproblem_id = {subproblem}
-                AND stage_id = {stage}
-                """,
+            "index_subquery": bt_hrz_index_sql(subscenarios, subproblem, stage),
             "value_columns": [
                 "max_market_sales_in_hrz",
                 "max_market_purchases_in_hrz",
@@ -1094,6 +1145,7 @@ def get_inputs_from_database(
             "default_match_columns": ["balancing_type_horizon"],
             "wildcard_column": "horizon",
             "data_index_columns": ["balancing_type_horizon", "horizon"],
+            "month_of_year": True,
         },
         {
             "table": "inputs_market_volume_prd_profiles",
@@ -1118,19 +1170,14 @@ def get_inputs_from_database(
         {
             "table": "inputs_market_volume_hrz_to_tmp_profiles",
             "profile_id_column": "market_volume_hrz_to_tmp_profile_scenario_id",
-            "index_subquery": f"""
-                SELECT DISTINCT balancing_type_horizon, horizon
-                FROM inputs_temporal_horizon_timepoints
-                WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-                AND subproblem_id = {subproblem}
-                AND stage_id = {stage}
-                """,
+            "index_subquery": bt_hrz_index_sql(subscenarios, subproblem, stage),
             "value_columns": TMP_LIMIT_COLUMNS,
             "index_columns": ["balancing_type_horizon", "horizon"],
             "match_columns": ["balancing_type_horizon", "horizon"],
             "default_match_columns": ["balancing_type_horizon"],
             "wildcard_column": "horizon",
             "data_index_columns": ["balancing_type_horizon", "horizon"],
+            "month_of_year": True,
             # The group's flat limits are timepoint-level limits, not
             # defaults for these
             "no_flat_limits": True,
@@ -1220,6 +1267,7 @@ def get_inputs_from_database(
                     extra_select=(
                         f"'{market_group}' AS market_group, '{basis}' AS basis, "
                     ),
+                    month_of_year=resolution.get("month_of_year", False),
                     flat_values=(
                         {}
                         if resolution.get("no_flat_limits")
@@ -1344,7 +1392,8 @@ def validate_inputs(
             """
 
     # Balancing types and horizons the temporal structure does not define (a
-    # horizon of 0 is the wildcard row and has no horizon to match)
+    # horizon of 0 is the wildcard row and month-of-year rows apply to the
+    # months of every period, so neither has a horizon to match)
     for bt_hrz_table, profile_id_column in [
         ("inputs_market_volume_hrz_profiles", "market_volume_hrz_profile_scenario_id"),
         (
@@ -1374,6 +1423,7 @@ def validate_inputs(
             FROM {bt_hrz_table}
             WHERE {profile_filter}
             AND horizon != 0
+            AND NOT ({MONTH_OF_YEAR_ROW_FILTER})
             AND balancing_type_horizon IN (
                 SELECT DISTINCT balancing_type_horizon
                 FROM inputs_temporal_horizons
