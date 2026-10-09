@@ -44,6 +44,7 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
 from gridpath.project.operations.reserves.reserve_aggregation import (
     headroom_provision_rule,
@@ -1010,6 +1011,40 @@ def get_model_inputs_from_database(
     ) = directories_to_db_values(
         weather_iteration, hydro_iteration, availability_iteration, subproblem, stage
     )
+
+    # Balancing types the temporal scenario lacks are dropped by the queries
+    # below
+    for bt_hrz_table, bt_hrz_scenario_id_column in [
+        (
+            "inputs_project_bt_hrz_ramp_up_rate_limits",
+            "bt_hrz_ramp_up_rate_limit_scenario_id",
+        ),
+        (
+            "inputs_project_bt_hrz_ramp_down_rate_limits",
+            "bt_hrz_ramp_down_rate_limit_scenario_id",
+        ),
+        ("inputs_project_total_ramp_up_limits", "total_ramp_up_limit_scenario_id"),
+        (
+            "inputs_project_total_ramp_down_limits",
+            "total_ramp_down_limit_scenario_id",
+        ),
+    ]:
+        warn_on_unknown_balancing_types(
+            conn=conn,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            table=bt_hrz_table,
+            bt_column="balancing_type",
+            row_filter=f"""project IN (
+                SELECT project
+                FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )
+            AND (project, {bt_hrz_scenario_id_column}) IN (
+                SELECT project, {bt_hrz_scenario_id_column}
+                FROM inputs_project_operational_chars
+                WHERE project_operational_chars_scenario_id = {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+            )""",
+        )
 
     bt_hrz_ramp_up_rate_limits_sql = f"""
         SELECT project, balancing_type, horizon, ramp_up_rate_limit_mw_per_hour

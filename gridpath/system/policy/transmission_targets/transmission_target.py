@@ -26,6 +26,7 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import warn_on_unknown_balancing_types
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.transmission_targets import TX_TARGETS_DF
 
@@ -140,6 +141,23 @@ def get_inputs_from_database(
     :param conn: database connection
     :return:
     """
+
+    # Balancing types the temporal scenario lacks are dropped by the query
+    # below
+    warn_on_unknown_balancing_types(
+        conn=conn,
+        temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+        table="inputs_system_transmission_targets",
+        bt_column="balancing_type",
+        row_filter=f"""transmission_target_scenario_id = {subscenarios.TRANSMISSION_TARGET_SCENARIO_ID}
+        AND subproblem_id = {subproblem}
+        AND stage_id = {stage}
+        AND transmission_target_zone IN (
+            SELECT transmission_target_zone
+            FROM inputs_geography_transmission_target_zones
+            WHERE transmission_target_zone_scenario_id = {subscenarios.TRANSMISSION_TARGET_ZONE_SCENARIO_ID}
+        )""",
+    )
 
     # Get the transmission flow and percent targets
     c = conn.cursor()

@@ -130,7 +130,10 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values, import_csv
-from gridpath.auxiliary.validations import write_validation_to_database
+from gridpath.auxiliary.validations import (
+    write_validation_to_database,
+    warn_on_unknown_balancing_types,
+)
 from gridpath.common_functions import constraint_dual, none_dual_type_error_wrapper
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
@@ -851,6 +854,24 @@ def get_inputs_from_database(
             FROM ({get_market_groups_sql(subscenarios)})
         )
         """).fetchall()
+
+    # Balancing types the temporal scenario lacks are dropped by the horizon
+    # limit resolution below
+    warn_on_unknown_balancing_types(
+        conn=conn,
+        temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+        table="inputs_market_volume_hrz_profiles",
+        bt_column="balancing_type_horizon",
+        row_filter=f"""(market_group, market_volume_hrz_profile_scenario_id) IN (
+            SELECT market_group, market_volume_hrz_profile_scenario_id
+            FROM inputs_market_volume
+            WHERE market_volume_scenario_id = {subscenarios.MARKET_VOLUME_SCENARIO_ID}
+            AND market_group IN (
+                SELECT DISTINCT market_group
+                FROM ({get_market_groups_sql(subscenarios)})
+            )
+        )""",
+    )
 
     # The three limit resolutions: the temporal index each is resolved
     # against, the table it comes from, and how its wildcard row matches

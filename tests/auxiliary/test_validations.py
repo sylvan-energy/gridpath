@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import sqlite3
 import unittest
+import warnings
 
 import gridpath.auxiliary.validations as module_to_test
 
@@ -1084,6 +1085,61 @@ class TestValidations(unittest.TestCase):
                 idx_col=test_cases[test_case]["idx_col"],
             )
             self.assertListEqual(expected_list, actual_list)
+
+    def test_warn_on_unknown_balancing_types(self):
+        """
+        Warn only for the scenario's rows whose balancing type the temporal
+        scenario does not define; horizons the temporal scenario lacks for
+        known balancing types are not reported
+        """
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        conn.executescript("""
+            CREATE TABLE inputs_temporal_horizons (
+                temporal_scenario_id INTEGER, balancing_type_horizon TEXT,
+                horizon INTEGER);
+            INSERT INTO inputs_temporal_horizons VALUES
+                (1, 'day', 1), (1, 'subproblem_period_month_linear', 202005),
+                (2, 'week', 1);
+            CREATE TABLE limits (
+                limit_scenario_id INTEGER, balancing_type TEXT,
+                horizon INTEGER);
+            INSERT INTO limits VALUES
+                (1, 'day', 1), (1, 'day', 99),
+                (1, 'subproblem_period_month_linear', 202005),
+                (1, 'week', 1), (1, 'month', 5), (2, 'year', 2020);
+            """)
+
+        def warn(temporal_scenario_id, limit_scenario_id):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                module_to_test.warn_on_unknown_balancing_types(
+                    conn=conn,
+                    temporal_scenario_id=temporal_scenario_id,
+                    table="limits",
+                    bt_column="balancing_type",
+                    row_filter=f"limit_scenario_id = {limit_scenario_id}",
+                )
+            return [str(w.message) for w in caught]
+
+        self.assertEqual(
+            warn(1, 1),
+            [
+                "limits: rows on balancing type(s) 'month', 'week' are "
+                "ignored, as temporal scenario 1 does not define them."
+            ],
+        )
+        self.assertEqual(
+            warn(2, 2),
+            [
+                "limits: rows on balancing type(s) 'year' are ignored, as "
+                "temporal scenario 2 does not define them."
+            ],
+        )
+        # No rows selected, or all balancing types known
+        self.assertEqual(warn(1, 3), [])
+        conn.execute("DELETE FROM limits WHERE balancing_type IN ('week', 'month')")
+        self.assertEqual(warn(1, 1), [])
 
 
 if __name__ == "__main__":
