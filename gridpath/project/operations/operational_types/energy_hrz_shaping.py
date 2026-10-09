@@ -62,6 +62,7 @@ from gridpath.project.operations.operational_types.common_functions import (
     get_prj_temporal_index_opr_inputs_from_db,
     validate_energy_budget_balancing_type_rows,
     BT_HRZ_INDEX_QUERY_PARAMS,
+    require_bt_hrz_rows_for_every_project,
 )
 from gridpath.common_functions import create_results_df
 
@@ -642,6 +643,12 @@ def write_model_inputs(
         stage,
         fname,
         data,
+        check_rows=require_bt_hrz_rows_for_every_project(
+            conn=conn,
+            subscenarios=subscenarios,
+            op_type="energy_hrz_shaping",
+            db_table="inputs_project_energy_hrz_shaping",
+        ),
     )
 
 

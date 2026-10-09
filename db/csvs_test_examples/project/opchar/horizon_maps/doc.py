@@ -17,7 +17,9 @@ The horizon-indexed analog of the opchar timepoint maps (see the
 :code:`balancing_type_horizon`-:code:`horizon` to the :code:`data_horizon`
 at which to read horizon-indexed operating characteristics data (e.g.,
 hydro operational characteristics). Horizons not listed in a map read data
-at the horizon itself. Projects opt in per input type via the
+at the horizon itself (and, unlike for projects without a map, month-of-year
+rows on the built-in month balancing types are not read; see the *Hydro
+Operational Characteristics* section). Projects opt in per input type via the
 :code:`*_hrz_map_scenario_id` columns of
 :code:`inputs_project_operational_chars`, e.g.,
 :code:`hydro_operational_chars_hrz_map_scenario_id`.

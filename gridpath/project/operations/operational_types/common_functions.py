@@ -414,6 +414,7 @@ def write_tab_file_model_inputs(
     fname,
     data,
     replace_nulls=False,
+    check_rows=None,
 ):
     """
     Write inputs to tab-delimited file in appropriate directory
@@ -428,6 +429,8 @@ def write_tab_file_model_inputs(
     :param fname: the filename (with the .tab file extension)
     :param data: cursor object with query results
     :param replace_nulls: Booolean, whether the replace Nulls with "."
+    :param check_rows: optional function called with the list of data rows
+        before anything is written (e.g. to raise on missing inputs)
     :return:
     """
 
@@ -446,6 +449,8 @@ def write_tab_file_model_inputs(
 
     # Only write if we have data
     data_list = [row for row in data.fetchall()]
+    if check_rows is not None:
+        check_rows(data_list)
     if data_list:
         with open(out_file, append_mode, newline="") as f:
             writer = csv.writer(f, delimiter="\t", lineterminator="\n")
@@ -602,6 +607,7 @@ def get_bt_hrz_index_query_params(bt_column):
     allocation limits) use the canonical balancing_type_horizon.
     """
     return {
+        "bt_column": bt_column,
         "select_columns": f"{bt_column}, horizon",
         "index_columns": f"{bt_column}, horizon",
         "index_join_table": "inputs_temporal_horizon_timepoints",
@@ -628,6 +634,33 @@ def get_bt_hrz_index_query_params(bt_column):
 
 
 BT_HRZ_INDEX_QUERY_PARAMS = get_bt_hrz_index_query_params("balancing_type_project")
+
+# The built-in balancing types with one horizon per (period, month) (see
+# gridpath.temporal.operations.horizons, which can't be imported here)
+MONTH_HORIZON_TYPES = [
+    "subproblem_period_month_circular",
+    "subproblem_period_month_linear",
+]
+
+# Month-of-year rows: on the built-in month balancing types (horizon =
+# period * 100 + month), a row with horizon 1-12 gives the data for that
+# month of every period without an explicit row for its horizon. This CTE
+# resolves each month horizon of the subproblem/stage to its month via the
+# timepoints' month column (one month per horizon, as the temporal loader
+# writes them); columns are prefixed so they can't clash with data columns.
+MONTH_OF_YEAR_INDEX_CTE = """,
+        month_of_year_index AS (
+            SELECT DISTINCT hts.balancing_type_horizon AS moy_bt,
+                hts.horizon AS moy_horizon, t.month AS moy_month
+            FROM inputs_temporal_horizon_timepoints AS hts
+            JOIN inputs_temporal AS t
+                USING (temporal_scenario_id, subproblem_id, stage_id, timepoint)
+            WHERE hts.temporal_scenario_id = {temporal_scenario_id}
+            AND hts.subproblem_id = {subproblem}
+            AND hts.stage_id = {stage}
+            AND hts.balancing_type_horizon IN ({month_bts})
+            AND t.month IS NOT NULL
+        )"""
 
 
 def get_prj_temporal_index_opr_inputs_from_db(
@@ -716,7 +749,19 @@ def get_prj_temporal_index_opr_inputs_from_db(
         opr_index_dict["map_resolved_index_cte"].format(map_id=map_id)
         for map_id in map_ids
     )
-    cte_sql = cte_prj_sql + cte_tmp_sql + map_cte_sql
+    # Month-of-year rows apply to horizon-indexed inputs only
+    bt_column = opr_index_dict.get("bt_column")
+    month_of_year_cte_sql = (
+        MONTH_OF_YEAR_INDEX_CTE.format(
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            subproblem=subproblem,
+            stage=stage,
+            month_bts=", ".join(f"'{bt}'" for bt in MONTH_HORIZON_TYPES),
+        )
+        if bt_column is not None
+        else ""
+    )
+    cte_sql = cte_prj_sql + cte_tmp_sql + map_cte_sql + month_of_year_cte_sql
 
     # If no iteration configs exist, return empty result
     if not iteration_configs:
@@ -799,6 +844,43 @@ def get_prj_temporal_index_opr_inputs_from_db(
             AND hydro_iteration = {hydro_iter}
             {stage_subquery}
             {map_filter}
+        """)
+            if bt_column is not None:
+                # Month-of-year rows for the month horizons without an
+                # explicit row, relabeled with the model horizon (projects
+                # with a temporal map read only what the map points to)
+                explicit_stage = (
+                    "" if exclude_stage else f"AND explicit.stage_id = {stage}"
+                )
+                union_parts.append(f"""
+            SELECT project, moy.moy_bt AS {bt_column},
+                moy.moy_horizon AS horizon, {data_column}
+            FROM month_of_year_index AS moy
+            CROSS JOIN {table}
+                ON {table}.{bt_column} = moy.moy_bt
+                AND {table}.horizon = moy.moy_month
+            WHERE project IN (SELECT project FROM portfolio_projects)
+            AND (project, {subscenario_id_column}) IN (SELECT project, {subscenario_id_column} FROM optype_projects)
+            AND (project, {subscenario_id_column}) IN (
+                SELECT project, {subscenario_id_column}
+                FROM iteration_config
+                WHERE varies_by_weather_iteration = {varies_weather}
+                AND varies_by_hydro_iteration = {varies_hydro}
+            )
+            AND weather_iteration = {weather_iter}
+            AND hydro_iteration = {hydro_iter}
+            {stage_subquery}
+            {map_filter}
+            AND NOT EXISTS (
+                SELECT 1 FROM {table} AS explicit
+                WHERE explicit.project = {table}.project
+                AND explicit.{subscenario_id_column} = {table}.{subscenario_id_column}
+                AND explicit.{bt_column} = moy.moy_bt
+                AND explicit.horizon = moy.moy_horizon
+                AND explicit.weather_iteration = {weather_iter}
+                AND explicit.hydro_iteration = {hydro_iter}
+                {explicit_stage}
+            )
         """)
         else:
             # Projects with a temporal map read their data at the resolved
@@ -1008,6 +1090,55 @@ def load_hydro_opchars(
     data_portal.data()["{}_max_power_fraction".format(op_type)] = max
 
 
+def get_energy_budget_bt_by_prj(conn, subscenarios, op_type):
+    """
+    :return: dict of each *op_type* portfolio project's energy-budget
+        balancing type (energy_budget_balancing_type if specified, else
+        balancing_type_project)
+    """
+    c = conn.cursor()
+    return dict(c.execute(f"""SELECT project,
+            COALESCE(energy_budget_balancing_type, balancing_type_project)
+            FROM inputs_project_operational_chars
+            WHERE project_operational_chars_scenario_id =
+            {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+            AND operational_type = '{op_type}'
+            AND project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            );""").fetchall())
+
+
+def projects_without_bt_hrz_rows_error(projects, db_table):
+    return (
+        f"project(s) {projects}: no {db_table} rows for any horizon of "
+        f"the temporal scenario (of the project's energy-budget balancing "
+        f"type); the per-horizon parameters are required for every "
+        f"operational timepoint and the model would fail to build. On the "
+        f"built-in subproblem_period_month_* balancing types, rows may also "
+        f"be given per month of year (horizon 1-12)."
+    )
+
+
+def require_bt_hrz_rows_for_every_project(conn, subscenarios, op_type, db_table):
+    """
+    :return: a check_rows function for write_tab_file_model_inputs that
+        raises a ValueError if any *op_type* portfolio project has no
+        (project, balancing type, horizon)-indexed rows (project in the
+        first column), as the model would fail to build (the same check as
+        validate_energy_budget_balancing_type_rows)
+    """
+
+    def check_rows(rows):
+        projects = get_energy_budget_bt_by_prj(conn, subscenarios, op_type)
+        without_rows = sorted(set(projects) - {row[0] for row in rows})
+        if without_rows:
+            raise ValueError(projects_without_bt_hrz_rows_error(without_rows, db_table))
+
+    return check_rows
+
+
 def validate_energy_budget_balancing_type_rows(
     conn,
     scenario_id,
@@ -1035,18 +1166,7 @@ def validate_energy_budget_balancing_type_rows(
     errors to the database. (That the balancing types exist in the temporal
     scenario is validated in gridpath.project.operations.)
     """
-    c = conn.cursor()
-    budget_bt_by_prj = dict(c.execute(f"""SELECT project,
-            COALESCE(energy_budget_balancing_type, balancing_type_project)
-            FROM inputs_project_operational_chars
-            WHERE project_operational_chars_scenario_id =
-            {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
-            AND operational_type = '{op_type}'
-            AND project IN (
-                SELECT project FROM inputs_project_portfolios
-                WHERE project_portfolio_scenario_id =
-                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-            );""").fetchall())
+    budget_bt_by_prj = get_energy_budget_bt_by_prj(conn, subscenarios, op_type)
     mismatched = df[df["balancing_type_project"] != df["project"].map(budget_bt_by_prj)]
     errors = (
         [
@@ -1065,12 +1185,7 @@ def validate_energy_budget_balancing_type_rows(
     # horizons outside it (e.g. of an unknown balancing type)
     without_rows = sorted(set(budget_bt_by_prj) - set(df["project"]))
     if without_rows:
-        errors.append(
-            f"project(s) {without_rows}: no {db_table} rows for any horizon of "
-            f"the temporal scenario (of the project's energy-budget balancing "
-            f"type); the per-horizon parameters are required for every "
-            f"operational timepoint and the model would fail to build."
-        )
+        errors.append(projects_without_bt_hrz_rows_error(without_rows, db_table))
     write_validation_to_database(
         conn=conn,
         scenario_id=scenario_id,

@@ -442,6 +442,21 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2horizons_w_hydro_w_energy_budget_balancing_type"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2horizons_w_hydro_w_month_of_year_inputs(self):
+        """
+        Check validation and objective function value of
+        "2horizons_w_hydro_w_month_of_year_inputs" example: as
+        "2horizons_w_hydro" (same objective), but the Hydro project's
+        balancing type is the built-in subproblem_period_month_circular
+        (whose horizons coincide with the 'day' horizons here) and its
+        inputs are given per month of year: month 1 only as a month-of-year
+        row, month 2 as a month-of-year row (with a different value) that the
+        explicit 202002 row overrides.
+        :return:
+        """
+        scenario_name = "2horizons_w_hydro_w_month_of_year_inputs"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2horizons_w_hydro_and_nuclear_binary_availability(self):
         """
         Check validation and objective function value of

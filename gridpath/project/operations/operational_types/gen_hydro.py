@@ -66,6 +66,7 @@ from gridpath.project.operations.operational_types.common_functions import (
     validate_hydro_opchars,
     get_prj_temporal_index_opr_inputs_from_db,
     BT_HRZ_INDEX_QUERY_PARAMS,
+    require_bt_hrz_rows_for_every_project,
 )
 from gridpath.project.operations.operational_types.gen_hydro_common import (
     add_hydro_budget_allocation_components,
@@ -1142,6 +1143,12 @@ def write_model_inputs(
         stage,
         fname,
         data,
+        check_rows=require_bt_hrz_rows_for_every_project(
+            conn=conn,
+            subscenarios=subscenarios,
+            op_type="gen_hydro",
+            db_table="inputs_project_hydro_operational_chars",
+        ),
     )
 
     write_hydro_budget_allocation_inputs(
