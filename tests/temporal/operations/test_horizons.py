@@ -18,14 +18,19 @@ from importlib import import_module
 import os.path
 import pandas as pd
 import shutil
+import sqlite3
 import sys
 import tempfile
 import unittest
 import warnings
 
+from db.utilities.custom_functions import temporal
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 
 TEST_DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "..", "..", "test_data")
+DB_SCHEMA_FILE = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "db", "db_schema.sql"
+)
 
 # Import prerequisite modules
 PREREQUISITE_MODULE_NAMES = [
@@ -544,6 +549,92 @@ class TestHorizons(unittest.TestCase):
         self.assertEqual(warned_horizons, ["day, horizon 202001", "year, horizon 2020"])
         self.assertEqual(instance.hrz_period["day", 202001], 2020)
         self.assertEqual(instance.hrz_period["year", 2020], 2020)
+
+    def test_db_builtin_horizons_match_model(self):
+        """
+        The built-in horizons the database temporal loader writes match the
+        model's built-in horizons, boundaries, and timepoints for every
+        built-in balancing type, so horizon-indexed inputs on built-in
+        horizons reach the model; one month's timepoints are not contiguous
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            test_data_dir = os.path.join(tmp_dir, "test_data")
+            shutil.copytree(
+                os.path.join(TEST_DATA_DIRECTORY, "inputs"),
+                os.path.join(test_data_dir, "inputs"),
+            )
+            tmps_file = os.path.join(test_data_dir, "inputs", "timepoints.tab")
+            tmps_df = pd.read_csv(tmps_file, sep="\t", dtype=str, keep_default_na=False)
+            # Put a timepoint in the middle of May 2020 in September 2020
+            tmps_df.loc[tmps_df["timepoint"] == "20200112", "month"] = "9"
+            tmps_df.to_csv(tmps_file, sep="\t", index=False)
+
+            m, data = add_components_and_load_data(
+                prereq_modules=IMPORTED_PREREQ_MODULES,
+                module_to_test=MODULE_BEING_TESTED,
+                test_data_dir=test_data_dir,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+            )
+            instance = m.create_instance(data)
+
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        with open(DB_SCHEMA_FILE) as f:
+            conn.executescript(f.read())
+        conn.executemany(
+            """INSERT INTO inputs_temporal (temporal_scenario_id, subproblem_id,
+            stage_id, timepoint, period, number_of_hours_in_timepoint,
+            timepoint_weight, spinup_or_lookahead, month)
+            VALUES (1, 1, 1, ?, ?, ?, ?, 0, ?)""",
+            tmps_df[
+                [
+                    "timepoint",
+                    "period",
+                    "number_of_hours_in_timepoint",
+                    "timepoint_weight",
+                    "month",
+                ]
+            ]
+            .astype(float)
+            .values.tolist(),
+        )
+        temporal(conn=conn, subscenario_id=1)
+
+        db_boundaries = {
+            (bt, hrz): boundary
+            for bt, hrz, boundary in conn.execute(
+                """SELECT balancing_type_horizon, horizon, boundary
+                FROM inputs_temporal_horizons"""
+            )
+        }
+        db_tmps = {}
+        for bt, hrz, tmp in conn.execute(
+            """SELECT balancing_type_horizon, horizon, timepoint
+            FROM inputs_temporal_horizon_timepoints"""
+        ):
+            db_tmps.setdefault((bt, hrz), set()).add(tmp)
+
+        model_tmps = {
+            (bt, hrz): set(instance.TMPS_BY_BLN_TYPE_HRZ_BUILTIN[bt, hrz])
+            for bt, hrz in instance.BLN_TYPE_HRZS_BUILTIN
+        }
+        model_boundaries = {
+            (bt, hrz): instance.boundary_builtin[bt, hrz]
+            for bt, hrz in instance.BLN_TYPE_HRZS_BUILTIN
+        }
+
+        self.assertEqual(
+            sorted({bt for bt, _ in model_tmps}),
+            sorted(MODULE_BEING_TESTED.BUILTIN_HORIZON_TYPES),
+        )
+        self.assertIn(("subproblem_period_month_linear", 202009), model_tmps)
+        self.assertIn(20200112, model_tmps["subproblem_period_month_linear", 202009])
+        self.assertEqual(db_tmps, model_tmps)
+        self.assertEqual(db_boundaries, model_boundaries)
 
 
 if __name__ == "__main__":

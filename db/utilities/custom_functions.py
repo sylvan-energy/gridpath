@@ -168,6 +168,48 @@ def temporal(conn, subscenario_id):
 
             c.execute(subproblem_period_tmp_start_end_sql, ())
 
+    # Subproblem-period-month balancing type (linear and circular only, as
+    # in the model): a horizon (period * 100 + month) holds the timepoints
+    # with that period and month, so write its timepoints directly rather
+    # than via a start/end timepoint range, which would assume a month's
+    # timepoint IDs are contiguous
+    for boundary in ["circular", "linear"]:
+        month_horizons_sql = f"""
+            INSERT INTO inputs_temporal_horizons
+            (temporal_scenario_id, balancing_type_horizon, horizon, boundary)
+            SELECT DISTINCT temporal_scenario_id,
+                'subproblem_period_month_{boundary}', period * 100 + month,
+                '{boundary}'
+            FROM inputs_temporal
+            WHERE temporal_scenario_id = ?
+            AND month IS NOT NULL;
+            """
+        spin_on_database_lock(
+            conn=conn,
+            cursor=c,
+            sql=month_horizons_sql,
+            data=(subscenario_id,),
+            many=False,
+        )
+
+        month_horizon_timepoints_sql = f"""
+            INSERT INTO inputs_temporal_horizon_timepoints
+            (temporal_scenario_id, subproblem_id, stage_id, timepoint,
+            balancing_type_horizon, horizon)
+            SELECT temporal_scenario_id, subproblem_id, stage_id, timepoint,
+                'subproblem_period_month_{boundary}', period * 100 + month
+            FROM inputs_temporal
+            WHERE temporal_scenario_id = ?
+            AND month IS NOT NULL;
+            """
+        spin_on_database_lock(
+            conn=conn,
+            cursor=c,
+            sql=month_horizon_timepoints_sql,
+            data=(subscenario_id,),
+            many=False,
+        )
+
     # TIMEPOINT HORIZONS
     subproblem_stages = c.execute(f"""
         SELECT subproblem_id, stage_id
