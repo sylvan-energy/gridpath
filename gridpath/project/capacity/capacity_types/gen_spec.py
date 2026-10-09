@@ -19,7 +19,27 @@ projects or projects that will be built in the future and whose capital
 costs we want to ignore (in the objective function). A specified generator can
 be available at a specified capacity in all periods, or in some periods only,
 with no restriction on the order and combination of periods or the variation
-in capacity by period.
+in capacity by period. For a project in the portfolio, its specified-capacity
+row for a period determines whether it is in the model in that period:
+
+* **A capacity value, including zero**: the project is in the model in that
+  period at that capacity, appears in the results at that capacity, and all
+  of its operational inputs for the period (e.g. variable profiles, hydro
+  budgets, timepoint-varying costs) are required.
+* **A row with every capacity column blank**: the project is not in the
+  model in that period. No variables, constraints or results are created for
+  it and none of its operational inputs for the period are needed.
+* **No row**: the same as a blank row.
+
+Leaving a period out, or blank, is the way to model a project that retires
+or comes online within the study horizon; which of the three to use is the
+user's choice. Two validation checks apply. A project with no capacity in any
+period of the subscenario (no rows, or only blank rows) is a High-severity
+finding, as it is most likely a naming mismatch between the portfolio and
+the capacity inputs; a row with some of the capacity type's columns filled in
+and others blank is a High-severity missing input. A project with capacity in
+none of the subproblem's periods, or with a period left out between two
+periods with capacity, is reported at Low severity.
 
 The user may specify a fixed O&M cost for these generators, but this cost will
 be a fixed number in the objective function and will therefore not affect any
@@ -31,18 +51,17 @@ from pyomo.environ import Set, Param, NonNegativeReals
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.dynamic_components import capacity_type_operational_period_sets
 from gridpath.auxiliary.validations import (
-    get_projects,
     get_expected_dtypes,
     write_validation_to_database,
     validate_dtypes,
     validate_values,
-    validate_idxs,
     validate_missing_inputs,
 )
 from gridpath.project.capacity.capacity_types.common_methods import (
     spec_get_inputs_from_database,
     spec_write_tab_file,
     spec_determine_inputs,
+    validate_spec_capacity_coverage,
 )
 
 
@@ -297,13 +316,8 @@ def validate_inputs(
         conn,
     )
 
-    projects = get_projects(
-        conn, scenario_id, subscenarios, "capacity_type", "gen_spec"
-    )
-
-    # Convert input data into pandas DataFrame and extract data
+    # Convert input data into pandas DataFrame
     df = cursor_to_df(gen_spec_params)
-    spec_projects = df["project"].unique()
 
     # Get expected dtypes
     expected_dtypes = get_expected_dtypes(
@@ -349,22 +363,18 @@ def validate_inputs(
         errors=validate_values(df, valid_numeric_columns, min=0),
     )
 
-    # Ensure project capacity is specified in at least 1 period
-    msg = "Expected specified capacity for at least one period."
-    write_validation_to_database(
+    # Check the period coverage of the capacity rows
+    validate_spec_capacity_coverage(
         conn=conn,
         scenario_id=scenario_id,
+        subscenarios=subscenarios,
         weather_iteration=weather_iteration,
         hydro_iteration=hydro_iteration,
         availability_iteration=availability_iteration,
-        subproblem_id=subproblem,
-        stage_id=stage,
+        subproblem=subproblem,
+        stage=stage,
         gridpath_module=__name__,
-        db_table="inputs_project_specified_capacity",
-        severity="High",
-        errors=validate_idxs(
-            actual_idxs=spec_projects, req_idxs=projects, idx_label="project", msg=msg
-        ),
+        capacity_type="gen_spec",
     )
 
     # Check for missing values (vs. missing row entries above)

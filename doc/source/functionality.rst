@@ -650,7 +650,10 @@ pre-specified price streams, assuming resources are price-takers and subject to
 market volume limits. A volume limit applies to a group of markets: every market
 is implicitly a group of its own, so limiting a single market takes no group
 definition, while a group of all of them is a system-wide limit and a group of
-some of them limits a region's transactions. Groups may overlap. A limit is
+some of them limits a region's transactions. Groups may overlap. A limit caps
+either the group's net position, where a purchase in one market offsets a sale in
+another, or its gross sales and purchases, each counted without offsetting; a
+group can carry both. A limit is
 imposed on the group's position in a timepoint, over a horizon of any balancing
 type in the scenario's temporal structure, or over a period. A limit that does
 not vary can be entered once, as a flat limit on the group or as a default row of
@@ -703,17 +706,25 @@ operational type and fuel. The model aggregates all projects' contributions
 for each period and ensures that the total emissions stay below the cap in
 each *carbon cap zone* and *period*.
 
-GridPath can also optionally apply an emissions factor to energy imports
-into an emissions zone. For the purpose, the relevant transmission lines
-(i.e. transmission lines that connect the emissions zone to other zones)
-must be assigned an emissions zone and an emissions intensity per unit
-energy. These emissions are then added to the emissions cap constraint.
+GridPath can also optionally count the emissions of energy imported into an
+emissions zone, both over transmission lines and through market purchases.
+The relevant transmission lines (i.e. transmission lines that connect the
+emissions zone to other zones) and (load zone, market) pairs are assigned an
+emissions zone, an import intensity per unit energy and, optionally, an export
+intensity; a line or pair may be assigned to several zones, e.g. a line
+importing into the zone at one end and exporting from the zone at the other.
+How the imports count is set per zone by its *import-emissions basis*: on the
+``gross`` basis every imported MWh counts at the import intensity and exports
+earn nothing; on the ``net_prd`` basis exports earn a credit at the export
+intensity and the zone's net import emissions are floored at zero over each
+period. These emissions are then added to the emissions cap constraint.
 
 The emissions cap could be applied to carbon emissions or to other types of
 emissions.
 
 Alternatively, GridPath can model a cost on carbon emissions and optimize the amount
-of emissions.
+of emissions. The cost can likewise apply to the emissions of transmission
+imports and market purchases, with the same per-zone choice of basis.
 
 Fuel Use Limits
 ---------------

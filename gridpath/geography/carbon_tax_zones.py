@@ -19,9 +19,10 @@ zones and other balancing areas.
 
 import csv
 import os.path
-from pyomo.environ import Set
+from pyomo.environ import Set, Param
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.system.policy.import_emissions import GROSS, IMPORT_EMISSIONS_BASES
 
 
 def add_model_components(
@@ -45,6 +46,12 @@ def add_model_components(
     """
 
     m.CARBON_TAX_ZONES = Set()
+
+    # How imported emissions count toward the zone; see
+    # gridpath.system.policy.import_emissions
+    m.carbon_tax_import_emissions_basis = Param(
+        m.CARBON_TAX_ZONES, within=IMPORT_EMISSIONS_BASES, default=GROSS
+    )
 
 
 def load_model_data(
@@ -79,7 +86,8 @@ def load_model_data(
             "inputs",
             "carbon_tax_zones.tab",
         ),
-        set=m.CARBON_TAX_ZONES,
+        index=m.CARBON_TAX_ZONES,
+        param=m.carbon_tax_import_emissions_basis,
     )
 
 
@@ -102,7 +110,8 @@ def get_inputs_from_database(
     """
 
     c = conn.cursor()
-    carbon_tax_zone = c.execute("""SELECT carbon_tax_zone
+    carbon_tax_zone = c.execute("""SELECT carbon_tax_zone,
+        COALESCE(import_emissions_basis, 'gross') AS import_emissions_basis
         FROM inputs_geography_carbon_tax_zones
         WHERE carbon_tax_zone_scenario_id = {};
         """.format(subscenarios.CARBON_TAX_ZONE_SCENARIO_ID))
@@ -194,7 +203,7 @@ def write_model_inputs(
         writer = csv.writer(carbon_tax_zones_file, delimiter="\t", lineterminator="\n")
 
         # Write header
-        writer.writerow(["carbon_tax_zone"])
+        writer.writerow(["carbon_tax_zone", "import_emissions_basis"])
 
         for row in carbon_tax_zone:
             writer.writerow(row)

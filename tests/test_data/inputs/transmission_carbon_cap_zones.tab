@@ -1,0 +1,4 @@
+transmission_line	carbon_cap_zone	import_direction	tx_co2_intensity_tons_per_mwh	tx_export_co2_intensity_tons_per_mwh
+Tx1	Carbon_Cap_Zone1	negative	0.6	.
+Tx_New	Carbon_Cap_Zone1	negative	0.8	.
+Tx_New	Carbon_Cap_Zone2	positive	0.5	0.2

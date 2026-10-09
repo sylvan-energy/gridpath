@@ -1,0 +1,4 @@
+load_zone	market	carbon_cap_zone	co2_intensity_tons_per_mwh	export_co2_intensity_tons_per_mwh
+Zone1	Market_Hub_1	Carbon_Cap_Zone1	0.4	.
+Zone2	Market_Hub_1	Carbon_Cap_Zone2	0.4	0.3
+Zone1	Market_Hub_2	Carbon_Cap_Zone1	0.6	.

@@ -15,12 +15,11 @@
 """
 Tuning costs to prevent undesirable behavior if there are non-binding
 constraints, problem is degenerate, etc.
-Import_Carbon_Emissions_Tons must be non-negative and greater than the flow
-on the line times the emissions intensity. In the case, this constraint is
-non-binding -- and without a tuning cost, the optimization is allowed to
-set Import_Carbon_Emissions higher than the product of flow and emissions
-rate. Adding a tuning cost prevents that behavior as it pushes the emissions
-variable down to be equal.
+The carbon cap import emissions variables must be non-negative and at least
+the flow into the zone times the emissions intensity (or, in net-basis zones,
+the floored net import emissions). If the carbon cap is non-binding, nothing
+pushes them down to the actual import emissions. A tuning cost on the zones'
+total import emissions prevents that behavior.
 """
 
 import csv
@@ -52,18 +51,17 @@ def add_model_components(
 
     def total_import_carbon_tuning_cost_rule(mod):
         """
-        Hurdle costs for all transmission lines across all timepoints
+        Tuning cost on the import emissions counted toward every carbon cap
+        zone and period (already weighted by hours and timepoint weight)
         :param mod:
         :return:
         """
         return sum(
-            mod.Import_Carbon_Emissions_Tons[tx, tmp]
+            mod.Total_Carbon_Cap_Import_Emissions_Tons[z, p]
             * mod.import_carbon_tuning_cost_per_ton
-            * mod.hrs_in_tmp[tmp]
-            * mod.tmp_weight[tmp]
-            * mod.number_years_represented[mod.period[tmp]]
-            * mod.probability_weighted_discount_factor[mod.period[tmp]]
-            for (tx, tmp) in mod.CRB_TX_OPR_TMPS
+            * mod.number_years_represented[p]
+            * mod.probability_weighted_discount_factor[p]
+            for (z, p) in mod.CARBON_CAP_ZONE_PERIODS_WITH_CARBON_CAP
         )
 
     m.Total_Import_Carbon_Tuning_Cost = Expression(

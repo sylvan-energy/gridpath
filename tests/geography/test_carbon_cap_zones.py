@@ -131,3 +131,12 @@ class TestCarbonCapZones(unittest.TestCase):
             )
         )
         self.assertDictEqual(expected_penalty, actual_penalty)
+
+        # Param: import_emissions_basis
+        self.assertDictEqual(
+            {"Carbon_Cap_Zone1": "gross", "Carbon_Cap_Zone2": "net_prd"},
+            {
+                z: instance.carbon_cap_import_emissions_basis[z]
+                for z in instance.CARBON_CAP_ZONES
+            },
+        )

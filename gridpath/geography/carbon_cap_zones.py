@@ -22,6 +22,7 @@ import os.path
 from pyomo.environ import Set, Param, Boolean, NonNegativeReals
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.system.policy.import_emissions import GROSS, IMPORT_EMISSIONS_BASES
 
 
 def add_model_components(
@@ -46,6 +47,11 @@ def add_model_components(
     m.carbon_cap_allow_violation = Param(m.CARBON_CAP_ZONES, within=Boolean, default=0)
     m.carbon_cap_violation_penalty_per_emission = Param(
         m.CARBON_CAP_ZONES, within=NonNegativeReals, default=0
+    )
+    # How imported emissions count toward the zone; see
+    # gridpath.system.policy.import_emissions
+    m.carbon_cap_import_emissions_basis = Param(
+        m.CARBON_CAP_ZONES, within=IMPORT_EMISSIONS_BASES, default=GROSS
     )
 
 
@@ -75,6 +81,7 @@ def load_model_data(
         param=(
             m.carbon_cap_allow_violation,
             m.carbon_cap_violation_penalty_per_emission,
+            m.carbon_cap_import_emissions_basis,
         ),
     )
 
@@ -99,7 +106,8 @@ def get_inputs_from_database(
 
     c = conn.cursor()
     carbon_cap_zone = c.execute("""SELECT carbon_cap_zone, allow_violation, 
-        violation_penalty_per_emission
+        violation_penalty_per_emission,
+        COALESCE(import_emissions_basis, 'gross') AS import_emissions_basis
         FROM inputs_geography_carbon_cap_zones
         WHERE carbon_cap_zone_scenario_id = {};
         """.format(subscenarios.CARBON_CAP_ZONE_SCENARIO_ID))
@@ -192,7 +200,12 @@ def write_model_inputs(
 
         # Write header
         writer.writerow(
-            ["carbon_cap_zone", "allow_violation", "violation_penalty_per_emission"]
+            [
+                "carbon_cap_zone",
+                "allow_violation",
+                "violation_penalty_per_emission",
+                "import_emissions_basis",
+            ]
         )
 
         for row in carbon_cap_zone:

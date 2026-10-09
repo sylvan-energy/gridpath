@@ -1431,6 +1431,126 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_tx_simple_tmp_emissions"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_tx_simple_net_prd_imports(self):
+        """
+        "test_tx_simple" with the carbon cap zone on the net_prd
+        import-emissions basis and an export credit on the lines. The lines
+        never export from the zone, so the objective is that of
+        "test_tx_simple": net and gross accounting coincide without exports.
+        :return:
+        """
+        scenario_name = "test_tx_simple_net_prd_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_carbon_cap_2zones_tx_both_zones_capped(self):
+        """
+        "test_new_solar_carbon_cap_2zones_tx" with both load zones capped and
+        the line assigned to both zones: negative flow is an import into
+        Zone1, positive flow an import into Zone2. Both caps bind; Zone1's
+        imports count toward Zone1 and show as exports of Zone2.
+        :return:
+        """
+        scenario_name = "test_new_solar_carbon_cap_2zones_tx_both_zones_capped"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_carbon_tax_imports(self):
+        """
+        "test_tx_simple" with a carbon tax that also applies to the
+        transmission imports; the 300 tons imported under the binding cap
+        cost 300 x $30 more than in "test_tx_simple".
+        :return:
+        """
+        scenario_name = "test_tx_simple_carbon_tax_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports(self):
+        """
+        "test_markets" with a binding carbon cap that counts market purchases
+        at 0.5 tons/MWh on the gross basis.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports_net_prd(self):
+        """
+        "test_markets_w_carbon_cap_imports" on the net_prd basis with sales
+        credited at the purchase intensity: the system both buys and sells, so
+        the credits loosen the cap and the objective differs.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports_net_prd"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports_net_prd_no_export_credit(
+        self,
+    ):
+        """
+        "test_markets_w_carbon_cap_imports" on the net_prd basis with no
+        export credit, which is gross accounting through the net formulation;
+        the objective equals that of "test_markets_w_carbon_cap_imports".
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports_net_prd_no_export_credit"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_cap_imports_hourly(self):
+        """
+        "test_markets_w_carbon_cap_imports" with the 0.5 tons/MWh split into
+        a flat 0.3 and an hourly 0.2; the objective equals that of
+        "test_markets_w_carbon_cap_imports".
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_cap_imports_hourly"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_tax_imports(self):
+        """
+        "test_markets" with a carbon tax that also applies to market purchases
+        at 0.5 tons/MWh on the gross basis.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_tax_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_carbon_tax_imports_net_prd(self):
+        """
+        "test_markets_w_carbon_tax_imports" on the net_prd basis with sales
+        credited at the purchase intensity.
+        :return:
+        """
+        scenario_name = "test_markets_w_carbon_tax_imports_net_prd"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_import_emissions_accounting_equivalences(self):
+        """
+        The expected objectives pin the accounting identities: net_prd with
+        no export credit and an hourly split of the same intensity both
+        reproduce gross accounting to the digit, and net_prd with an export
+        credit is cheaper than gross when the system also sells.
+        """
+        gross = self.df.loc["test_markets_w_carbon_cap_imports"]["expected_objective"]
+        self.assertEqual(
+            gross,
+            self.df.loc["test_markets_w_carbon_cap_imports_net_prd_no_export_credit"][
+                "expected_objective"
+            ],
+        )
+        self.assertEqual(
+            gross,
+            self.df.loc["test_markets_w_carbon_cap_imports_hourly"][
+                "expected_objective"
+            ],
+        )
+        self.assertGreater(
+            ast.literal_eval(
+                self.df.loc["test_markets_w_carbon_cap_imports_net_prd"][
+                    "expected_objective"
+                ]
+            )[("", "", "", 1)][1],
+            ast.literal_eval(gross)[("", "", "", 1)][1],
+        )
+
     def test_example_test_tx_simple_additive(self):
         """
         Check validation and objective function value of
@@ -1568,6 +1688,46 @@ class TestExamples(unittest.TestCase):
         """
         scenario_name = "test_min_max_build_trans"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_min_max_build_trans_w_binding_min(self):
+        """
+        Check validation and objective function value of
+        "test_min_max_build_trans_w_binding_min" example, and that the
+        minimum cumulative build forces capacity beyond the 31.5 MW built
+        without it
+
+        Forcing the extra capacity moves the objective by less than the
+        objective tolerance in this penalty-regime example, so check the
+        build, limits and dual in the results directly.
+        :return:
+        """
+        scenario_name = "test_min_max_build_trans_w_binding_min"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+        df = pd.read_csv(
+            os.path.join(
+                EXAMPLES_DIRECTORY, scenario_name, "results", "transmission_period.csv"
+            )
+        )
+        df = df[df["transmission_line"] == "Tx_new"].set_index("period")
+
+        # 2020: the minimum binds and the unspecified maximum is empty
+        self.assertAlmostEqual(df.loc[2020, "new_build_capacity_mw"], 40, places=6)
+        self.assertEqual(df.loc[2020, "min_cumulative_new_build_mw"], 40)
+        self.assertTrue(pd.isna(df.loc[2020, "max_cumulative_new_build_mw"]))
+        self.assertNotAlmostEqual(df.loc[2020, "min_cum_build_dual"], 0, places=6)
+        # The period objective coefficient is 10 (discount factor of 1 times
+        # 10 years)
+        self.assertAlmostEqual(
+            df.loc[2020, "min_cum_build_marginal_cost_per_mw"],
+            df.loc[2020, "min_cum_build_dual"] / 10,
+            places=6,
+        )
+
+        # 2030: the maximum does not bind and the unspecified minimum is empty
+        self.assertEqual(df.loc[2030, "max_cumulative_new_build_mw"], 50)
+        self.assertTrue(pd.isna(df.loc[2030, "min_cumulative_new_build_mw"]))
+        self.assertTrue(pd.isna(df.loc[2030, "min_cum_build_dual"]))
 
     def test_example_2periods_new_build_2zones_transmission_Tx1halfavail(self):
         """
@@ -2600,6 +2760,115 @@ class TestExamples(unittest.TestCase):
         """
         scenario_name = "test_markets_w_flat_prd_total_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_gross_volume(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_gross_volume" example.
+
+        The "test_markets" limits on a gross basis; each group is a single
+        market, whose sales and purchases cannot offset each other, so gross
+        and net are the same restriction and the two share an objective.
+        :return:
+        """
+        scenario_name = "test_markets_w_gross_volume"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_two_market_gross_group_limit(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_two_market_gross_group_limit" example.
+
+        The All_Markets sales limit of "test_markets_w_two_market_group_limit"
+        on a gross basis: selling at one hub can no longer be covered by
+        buying at the other, so the objective is worse than the net case's.
+        :return:
+        """
+        scenario_name = "test_markets_w_two_market_gross_group_limit"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_two_market_net_and_individual_limits(self):
+        """
+        Check validation and objective function value of the
+        "test_markets_w_two_market_net_and_individual_limits" example.
+
+        With two markets, a net cap on the pair plus the same cap on each
+        market alone is exactly a gross cap on the pair; this example writes
+        the gross limit of "test_markets_w_two_market_gross_group_limit" that
+        way, with net limits only, and shares its objective.
+        :return:
+        """
+        scenario_name = "test_markets_w_two_market_net_and_individual_limits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_gross_market_group_limit_caps_the_sum_of_market_sales(self):
+        """
+        A gross sales limit must cap the sum of the sales of the group's
+        markets that are selling, whatever the others buy, and must bind;
+        the reported gross sales must be that sum.
+
+        Solve the example into a temporary directory rather than reading the
+        committed example directory, whose results are not committed.
+        :return:
+        """
+        scenario_name = "test_markets_w_two_market_gross_group_limit"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            get_scenario_inputs.main(
+                [
+                    "--database",
+                    DB_PATH,
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    temp_dir,
+                    "--quiet",
+                ]
+            )
+            run_scenario.main(
+                [
+                    "--scenario",
+                    scenario_name,
+                    "--scenario_location",
+                    temp_dir,
+                    "--quiet",
+                    "--mute_solver_output",
+                    "--testing",
+                ]
+            )
+            results = os.path.join(temp_dir, scenario_name, "results")
+            group_df = pd.read_csv(
+                os.path.join(results, "system_market_volume_tmp.csv")
+            )
+            market_df = pd.read_csv(
+                os.path.join(results, "system_market_participation.csv")
+            )
+
+        group_df = group_df[
+            (group_df["market_group"] == "All_Markets") & (group_df["basis"] == "gross")
+        ]
+        self.assertGreater(len(group_df), 0, msg="no gross All_Markets results")
+        market_sales_by_tmp = (
+            market_df.assign(sales=market_df["net_buy_power"].clip(upper=0) * -1)
+            .groupby("timepoint")["sales"]
+            .sum()
+        )
+        for row in group_df.itertuples():
+            self.assertAlmostEqual(
+                market_sales_by_tmp[row.timepoint],
+                row.gross_market_sales_mw,
+                places=6,
+                msg=f"gross sales differ from the sum of market sales in "
+                f"timepoint {row.timepoint}",
+            )
+            self.assertLessEqual(
+                row.gross_market_sales_mw,
+                row.max_market_sales + 1e-6,
+                msg=f"gross sales exceed the limit in timepoint {row.timepoint}",
+            )
+        self.assertTrue(
+            (group_df["max_market_sales_dual"].fillna(0) != 0).any(),
+            msg="the gross All_Markets sales limit never binds",
+        )
 
     def test_market_group_position_is_the_sum_over_its_markets(self):
         """

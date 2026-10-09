@@ -182,7 +182,7 @@ class TestMarketVolume(unittest.TestCase):
             df = pd.read_csv(
                 os.path.join(TEST_DATA_DIRECTORY, "inputs", filename), sep="\t"
             )
-            key_columns = ["market_group"] + index_columns
+            key_columns = ["market_group", "basis"] + index_columns
             # Keep the file's row order so each index lines up with its
             # limits below
             row_idxs = list(df[key_columns].itertuples(index=False, name=None))
@@ -267,6 +267,42 @@ class TestMarketVolume(unittest.TestCase):
                 sorted(getattr(instance, constraint_name)),
                 msg=constraint_name,
             )
+
+        # Gross limits split the position of each market of a gross-limited
+        # group, in the timepoints its gross limits cover: All_Hubs is gross
+        # in two timepoints and over the 'day' horizon 202001
+        horizon_tmps_df = pd.read_csv(
+            os.path.join(
+                TEST_DATA_DIRECTORY, "inputs", "horizon_user_defined_timepoints.tab"
+            ),
+            sep="\t",
+        )
+        day_202001_tmps = set(
+            horizon_tmps_df[
+                (horizon_tmps_df["balancing_type_horizon"] == "day")
+                & (horizon_tmps_df["horizon"] == 202001)
+            ]["timepoint"]
+        )
+        gross_tmps = {20200101, 20200102} | day_202001_tmps
+        all_hubs = instance.MARKETS_BY_MARKET_GROUP["All_Hubs"]
+        self.assertListEqual(
+            sorted((mrkt, tmp) for mrkt in all_hubs for tmp in gross_tmps),
+            sorted(instance.GROSS_LIMIT_MARKET_TMPS),
+        )
+        # Only the timepoint-level limits apply to the final position
+        self.assertListEqual(
+            sorted((mrkt, tmp) for mrkt in all_hubs for tmp in [20200101, 20200102]),
+            sorted(instance.GROSS_FINAL_LIMIT_MARKET_TMPS),
+        )
+        # A group can carry a limit of each basis over the same horizon
+        self.assertIn(
+            ("All_Hubs", "net", "day", 202001),
+            instance.Max_Market_Group_Sales_in_Hrz_Constraint,
+        )
+        self.assertIn(
+            ("All_Hubs", "gross", "day", 202001),
+            instance.Max_Market_Group_Sales_in_Hrz_Constraint,
+        )
 
         # A group's position is the sum over the markets it contains, so the
         # group of every hub covers every (load zone, market) pair

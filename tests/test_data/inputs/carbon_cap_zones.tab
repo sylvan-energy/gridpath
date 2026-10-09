@@ -1,3 +1,3 @@
-carbon_cap_zone	allow_violation	violation_penalty
-Carbon_Cap_Zone1	0	0
-Carbon_Cap_Zone2	0	0
+carbon_cap_zone	allow_violation	violation_penalty	import_emissions_basis
+Carbon_Cap_Zone1	0	0	gross
+Carbon_Cap_Zone2	0	0	net_prd

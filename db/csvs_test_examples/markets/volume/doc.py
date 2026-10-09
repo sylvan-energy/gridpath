@@ -15,8 +15,11 @@
 |:code:`input_` tables          |:code:`inputs_market_volume`                   |
 +-------------------------------+-----------------------------------------------+
 
-Each market group is mapped to a volume profile at each temporal resolution it
-is limited at, and may carry flat timepoint- and period-level limits (the
+Each row is a market group and a :code:`basis`: :code:`net` limits the
+group's net position, :code:`gross` its total sales and total purchases
+counted separately, and a group may have a row of each. A row maps the group
+to a volume profile at each temporal resolution it is limited at, and may
+carry flat timepoint- and period-level limits (the
 :code:`default_*` columns) that need no profile. The profiles themselves live
 in the :code:`volume_tmp_profiles`, :code:`volume_hrz_profiles` and
 :code:`volume_prd_profiles` subdirectories, keyed by market group; their rows
