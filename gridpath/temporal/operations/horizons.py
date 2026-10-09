@@ -73,6 +73,8 @@ BUILTIN_HORIZON_TYPES = [
     "subproblem_period_linear",
     "subproblem_linked",
     "subproblem_period_linked",
+    "subproblem_period_month_circular",
+    "subproblem_period_month_linear",
 ]
 
 
