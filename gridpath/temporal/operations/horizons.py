@@ -55,6 +55,7 @@ import warnings
 from pyomo.environ import Set, Param, PositiveIntegers
 
 from gridpath.auxiliary.auxiliary import cursor_to_df
+from gridpath.auxiliary.month_of_year import MONTH_HORIZON_TYPES
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import (
     write_validation_to_database,
@@ -73,9 +74,7 @@ BUILTIN_HORIZON_TYPES = [
     "subproblem_period_linear",
     "subproblem_linked",
     "subproblem_period_linked",
-    "subproblem_period_month_circular",
-    "subproblem_period_month_linear",
-]
+] + MONTH_HORIZON_TYPES
 
 
 def add_model_components(
@@ -258,10 +257,7 @@ def add_model_components(
             "subproblem_period_linked",
         ]:
             return [tmp for tmp in mod.TMPS_IN_PRD[h]]
-        elif b in [
-            "subproblem_period_month_circular",
-            "subproblem_period_month_linear",
-        ]:
+        elif b in MONTH_HORIZON_TYPES:
             return [
                 tmp for tmp in mod.TMPS if (mod.month[tmp] + 100 * mod.period[tmp]) == h
             ]

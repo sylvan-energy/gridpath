@@ -24,6 +24,13 @@ gridpath.auxiliary.dynamic_components
 .. automodule:: gridpath.auxiliary.dynamic_components
     :members: DynamicComponents
 
+gridpath.auxiliary.month_of_year
+********************************
+.. automodule:: gridpath.auxiliary.month_of_year
+    :members: month_of_year_row_sql, bt_hrz_month_index_sql,
+        month_of_year_join_sql, month_of_year_rows_sql,
+        month_of_year_index_cte_sql
+
 
 ================
 Running GridPath
