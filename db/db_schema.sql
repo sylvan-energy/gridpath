@@ -1254,6 +1254,11 @@ CREATE TABLE inputs_market_volume_hrz_profiles
     max_market_sales_in_hrz                       FLOAT,
     max_market_purchases_in_hrz                   FLOAT,
     max_market_sales_in_hrz_include_storage_losses INTEGER, -- Based on 'stor' operational type
+    -- MW caps applied in every timepoint of the horizon
+    max_market_sales_mw_in_hrz                    FLOAT,
+    max_market_purchases_mw_in_hrz                FLOAT,
+    max_final_market_sales_mw_in_hrz              FLOAT,
+    max_final_market_purchases_mw_in_hrz          FLOAT,
     PRIMARY KEY (market_group, market_volume_hrz_profile_scenario_id,
                  weather_iteration, hydro_iteration, stage_id,
                  balancing_type_horizon, horizon),

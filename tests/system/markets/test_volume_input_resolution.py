@@ -27,6 +27,7 @@ resolution only.
 import os.path
 import sqlite3
 import unittest
+import warnings
 
 from gridpath.system.markets.volume import (
     get_inputs_from_database,
@@ -227,6 +228,41 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
             [(group, profile_id, STAGE) + r for r in rows],
         )
         self.conn.commit()
+
+    def insert_hrz_mw_caps(self, group, profile_id, rows):
+        """
+        Horizon MW caps: rows of (balancing type, horizon, sales, purchases,
+        final sales, final purchases).
+        """
+        self.conn.cursor().executemany(
+            """INSERT INTO inputs_market_volume_hrz_profiles
+            (market_group, market_volume_hrz_profile_scenario_id,
+             weather_iteration, hydro_iteration, stage_id,
+             balancing_type_horizon, horizon, max_market_sales_mw_in_hrz,
+             max_market_purchases_mw_in_hrz,
+             max_final_market_sales_mw_in_hrz,
+             max_final_market_purchases_mw_in_hrz)
+            VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)""",
+            [(group, profile_id, STAGE) + r for r in rows],
+        )
+        self.conn.commit()
+
+    def add_month_horizon_timepoints(self):
+        """Put both timepoints in 'month' horizon 202001 too."""
+        self.conn.cursor().executemany(
+            """INSERT INTO inputs_temporal_horizon_timepoints
+            (temporal_scenario_id, subproblem_id, stage_id, timepoint,
+             balancing_type_horizon, horizon)
+            VALUES (?, ?, ?, ?, 'month', 202001)""",
+            [(TEMPORAL_SCENARIO_ID, SUBPROBLEM, STAGE, tmp) for tmp in TIMEPOINTS],
+        )
+        self.conn.commit()
+
+    def resolve_recording_warnings(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            resolved = self.resolve()
+        return resolved, [str(w.message) for w in caught]
 
     def insert_prd_limits(self, group, profile_id, rows):
         self.conn.cursor().executemany(
@@ -515,6 +551,102 @@ class TestMarketVolumeInputResolution(unittest.TestCase):
         self.assertListEqual([], tmp_limits)
         self.assertListEqual([], hrz_limits)
         self.assertListEqual([], prd_limits)
+
+    def test_horizon_mw_cap_applies_in_every_timepoint_of_the_horizon(self):
+        """
+        A horizon MW cap is the timepoint-level limit in each timepoint of
+        its horizon; a row with only MW caps is not a horizon (MWh) limit.
+        """
+        self.limit_group("All_Hubs", hrz=1)
+        self.insert_hrz_mw_caps("All_Hubs", 1, [("day", 202001, 7, 9, None, 3)])
+        (_, tmp_limits, hrz_limits, _), caught = self.resolve_recording_warnings()
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", 1, 7, 9, None, 3),
+                ("All_Hubs", "net", 2, 7, 9, None, 3),
+            ],
+            tmp_limits,
+        )
+        self.assertListEqual([], hrz_limits)
+        self.assertListEqual([], caught)
+
+    def test_horizon_mw_cap_sits_between_timepoint_rows_and_wildcard(self):
+        """
+        Per column: an explicit timepoint row wins over the horizon MW cap,
+        which wins over the timepoint wildcard row and the flat limit. Flat
+        purchases 5, a wildcard setting sales 10 and final purchases 3, a
+        horizon cap setting sales 7 and purchases 9, and an explicit row for
+        timepoint 2 setting sales 4.
+        """
+        self.limit_group("All_Hubs", tmp=1, hrz=1, max_market_purchases=5)
+        self.insert_tmp_limits(
+            "All_Hubs", 1, [(0, 10, None, None, 3), (2, 4, None, None, None)]
+        )
+        self.insert_hrz_mw_caps("All_Hubs", 1, [("day", 202001, 7, 9, None, None)])
+        _, tmp_limits, _, _ = self.resolve()
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", 1, 7, 9, None, 3),
+                ("All_Hubs", "net", 2, 4, 9, None, 3),
+            ],
+            tmp_limits,
+        )
+
+    def test_horizon_mw_cap_wildcard_row_falls_through_per_column(self):
+        """
+        A balancing type's wildcard row (horizon 0) sets the MW cap of its
+        horizons, and the MW caps and horizon (MWh) limits of a row fall
+        through independently: a wildcard row with an MW sales cap and MWh
+        purchases, and an explicit row with only MWh sales.
+        """
+        self.limit_group("All_Hubs", hrz=1)
+        self.insert_hrz_limits("All_Hubs", 1, [("day", 202001, 100, None, None)])
+        self.conn.execute("""INSERT INTO inputs_market_volume_hrz_profiles
+            (market_group, market_volume_hrz_profile_scenario_id,
+             weather_iteration, hydro_iteration, stage_id,
+             balancing_type_horizon, horizon, max_market_purchases_in_hrz,
+             max_market_sales_mw_in_hrz)
+            VALUES ('All_Hubs', 1, 0, 0, 1, 'day', 0, 50, 7)""")
+        _, tmp_limits, hrz_limits, _ = self.resolve()
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", 1, 7, None, None, None),
+                ("All_Hubs", "net", 2, 7, None, None, None),
+            ],
+            tmp_limits,
+        )
+        self.assertListEqual(
+            [("All_Hubs", "net", "day", 202001, 100, 50, None)], hrz_limits
+        )
+
+    def test_overlapping_horizon_mw_caps_take_the_tightest_and_warn(self):
+        """
+        In a timepoint in capped horizons of two balancing types, each limit
+        is the tighter of the two caps, and the overlap is warned about.
+        """
+        self.add_month_horizon_timepoints()
+        self.limit_group("All_Hubs", hrz=1)
+        self.insert_hrz_mw_caps(
+            "All_Hubs",
+            1,
+            [("day", 202001, 7, 9, None, None), ("month", 202001, 8, 6, 5, None)],
+        )
+        (_, tmp_limits, _, _), caught = self.resolve_recording_warnings()
+        self.assertListEqual(
+            [
+                ("All_Hubs", "net", 1, 7, 6, 5, None),
+                ("All_Hubs", "net", 2, 7, 6, 5, None),
+            ],
+            tmp_limits,
+        )
+        self.assertListEqual(
+            [
+                "Market group 'All_Hubs' (net): horizon MW caps of balancing "
+                "types 'day', 'month' apply in the same timepoints; the "
+                "tightest cap applies in each."
+            ],
+            caught,
+        )
 
     def validate(self):
         """

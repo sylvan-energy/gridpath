@@ -2664,6 +2664,17 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_tmp_total_limits"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_hrz_mw_caps(self):
+        """
+        Check validation and objective function value of "test" example;
+        the All_Markets timepoint limits of test_markets_w_tmp_total_limits
+        given as one MW cap on a built-in month horizon, so the objectives
+        are the same
+        :return:
+        """
+        scenario_name = "test_markets_w_hrz_mw_caps"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_markets_w_prd_total_limits(self):
         """
         Check validation and objective function value of "test" example
