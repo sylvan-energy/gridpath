@@ -1,0 +1,2 @@
+weather_iteration,hydro_iteration,stage_id,balancing_type_horizon,horizon,max_market_sales,max_market_purchases,max_final_market_sales,max_final_market_purchases
+0,0,1,subproblem_period_month_linear,202001,2,5,,
