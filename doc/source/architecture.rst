@@ -28,7 +28,8 @@ gridpath.auxiliary.calendar_rows
 ********************************
 .. automodule:: gridpath.auxiliary.calendar_rows
     :members: calendar_row_sql, bt_hrz_calendar_index_sql,
-        calendar_join_sql, calendar_rows_sql, calendar_index_cte_sql
+        calendar_join_sql, calendar_rows_sql, calendar_index_cte_sql,
+        calendar_hour_sql, timepoints_without_calendar_hour_sql
 
 gridpath.auxiliary.period_wildcards
 ***********************************

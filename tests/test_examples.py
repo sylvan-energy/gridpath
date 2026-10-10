@@ -556,6 +556,18 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_w_var_profile_tmp_map"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_w_var_profile_calendar_hour_map(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_w_var_profile_calendar_hour_map" example: same as
+        "2periods_new_build", but Wind's profile is specified once by
+        calendar hour and read in both periods through the built-in
+        calendar-hour timepoint map, so the objective function value must be
+        identical.
+        """
+        scenario_name = "2periods_new_build_w_var_profile_calendar_hour_map"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_new_build_2zones(self):
         """
         Check validation and objective function value of

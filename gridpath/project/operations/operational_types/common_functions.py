@@ -25,6 +25,8 @@ from gridpath.project.common_functions import (
 )
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.calendar_rows import (
+    CALENDAR_HOUR_TIMEPOINT_MAP_ID,
+    calendar_hour_sql,
     calendar_index_cte_sql,
     calendar_rows_sql,
 )
@@ -581,6 +583,9 @@ def load_var_profile_inputs(
 # timepoint (horizon) to read data at -- itself if not listed in the map --
 # and map_select_columns/map_join_condition relabel the data rows with the
 # model timepoint (horizon) when joining the data table through the map.
+# Built-in maps have no rows in the map table: builtin_map_resolved_index_ctes
+# resolves them instead (the calendar-hour timepoint map reads each
+# timepoint's data at its calendar hour; see gridpath.auxiliary.calendar_rows).
 TIMEPOINT_INDEX_QUERY_PARAMS = {
     "select_columns": "timepoint",
     "index_columns": "timepoint",
@@ -596,6 +601,19 @@ TIMEPOINT_INDEX_QUERY_PARAMS = {
                 ON m.opchar_timepoint_map_scenario_id = {map_id}
                 AND m.timepoint = rt.timepoint
         )""",
+    "builtin_map_resolved_index_ctes": {
+        CALENDAR_HOUR_TIMEPOINT_MAP_ID: """,
+        resolved_index_{map_id} AS (
+            SELECT t.timepoint AS timepoint,
+                """
+        + calendar_hour_sql("t")
+        + """ AS data_timepoint
+            FROM inputs_temporal AS t
+            WHERE t.temporal_scenario_id = {temporal_scenario_id}
+            AND t.subproblem_id = {subproblem}
+            AND t.stage_id = {stage}
+        )"""
+    },
     "map_select_columns": "resolved_index.timepoint AS timepoint",
     "map_join_condition": "{table}.timepoint = resolved_index.data_timepoint",
 }
@@ -722,8 +740,14 @@ def get_prj_temporal_index_opr_inputs_from_db(
     map_ids = sorted(
         {config[2] for config in iteration_configs if config[2] is not None}
     )
+    builtin_map_ctes = opr_index_dict.get("builtin_map_resolved_index_ctes", {})
     map_cte_sql = "".join(
-        opr_index_dict["map_resolved_index_cte"].format(map_id=map_id)
+        builtin_map_ctes.get(map_id, opr_index_dict["map_resolved_index_cte"]).format(
+            map_id=map_id,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            subproblem=subproblem,
+            stage=stage,
+        )
         for map_id in map_ids
     )
     # Calendar rows (see gridpath.auxiliary.calendar_rows) apply to
