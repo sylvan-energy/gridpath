@@ -2315,6 +2315,15 @@ CREATE TABLE subscenarios_project_opchar_timepoint_map
     description                      VARCHAR(128)
 );
 
+-- The built-in calendar-hour map (reserved ID 0) has no rows in
+-- inputs_project_opchar_timepoint_map: it reads each timepoint's data at
+-- month * 10000 + day_of_month * 100 + hour_of_day (see
+-- gridpath.auxiliary.calendar_rows)
+INSERT INTO subscenarios_project_opchar_timepoint_map
+    (opchar_timepoint_map_scenario_id, name, description)
+VALUES (0, 'calendar_hour',
+        'Built-in: month * 10000 + day_of_month * 100 + hour_of_day');
+
 DROP TABLE IF EXISTS inputs_project_opchar_timepoint_map;
 CREATE TABLE inputs_project_opchar_timepoint_map
 (

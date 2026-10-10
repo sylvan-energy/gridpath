@@ -25,6 +25,8 @@ from gridpath.project.common_functions import (
 )
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.calendar_rows import (
+    CALENDAR_HOUR_TIMEPOINT_MAP_ID,
+    calendar_hour_sql,
     calendar_index_cte_sql,
     calendar_rows_sql,
 )
@@ -581,6 +583,9 @@ def load_var_profile_inputs(
 # timepoint (horizon) to read data at -- itself if not listed in the map --
 # and map_select_columns/map_join_condition relabel the data rows with the
 # model timepoint (horizon) when joining the data table through the map.
+# Built-in maps have no rows in the map table: builtin_map_resolved_index_ctes
+# resolves them instead (the calendar-hour timepoint map reads each
+# timepoint's data at its calendar hour; see gridpath.auxiliary.calendar_rows).
 TIMEPOINT_INDEX_QUERY_PARAMS = {
     "select_columns": "timepoint",
     "index_columns": "timepoint",
@@ -596,6 +601,19 @@ TIMEPOINT_INDEX_QUERY_PARAMS = {
                 ON m.opchar_timepoint_map_scenario_id = {map_id}
                 AND m.timepoint = rt.timepoint
         )""",
+    "builtin_map_resolved_index_ctes": {
+        CALENDAR_HOUR_TIMEPOINT_MAP_ID: """,
+        resolved_index_{map_id} AS (
+            SELECT t.timepoint AS timepoint,
+                """
+        + calendar_hour_sql("t")
+        + """ AS data_timepoint
+            FROM inputs_temporal AS t
+            WHERE t.temporal_scenario_id = {temporal_scenario_id}
+            AND t.subproblem_id = {subproblem}
+            AND t.stage_id = {stage}
+        )"""
+    },
     "map_select_columns": "resolved_index.timepoint AS timepoint",
     "map_join_condition": "{table}.timepoint = resolved_index.data_timepoint",
 }
@@ -654,9 +672,17 @@ def get_prj_temporal_index_opr_inputs_from_db(
     data_column,
     opr_index_dict=None,
     exclude_stage=False,
+    map_data_gaps_handler=None,
 ):
     """
     Determine appropriate iterations for projects and get those inputs
+
+    For projects reading timepoint-indexed data through a timepoint map,
+    every operational timepoint must find data at its resolved data
+    timepoint (mapped timepoints don't fall back to their own data): the
+    (project, timepoint, data_timepoint)s without data are passed to
+    *map_data_gaps_handler*, by default raising a ValueError (validation
+    passes a handler recording them instead).
     """
     if opr_index_dict is None:
         opr_index_dict = TIMEPOINT_INDEX_QUERY_PARAMS
@@ -722,8 +748,14 @@ def get_prj_temporal_index_opr_inputs_from_db(
     map_ids = sorted(
         {config[2] for config in iteration_configs if config[2] is not None}
     )
+    builtin_map_ctes = opr_index_dict.get("builtin_map_resolved_index_ctes", {})
     map_cte_sql = "".join(
-        opr_index_dict["map_resolved_index_cte"].format(map_id=map_id)
+        builtin_map_ctes.get(map_id, opr_index_dict["map_resolved_index_cte"]).format(
+            map_id=map_id,
+            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+            subproblem=subproblem,
+            stage=stage,
+        )
         for map_id in map_ids
     )
     # Calendar rows (see gridpath.auxiliary.calendar_rows) apply to
@@ -885,12 +917,121 @@ def get_prj_temporal_index_opr_inputs_from_db(
             {stage_subquery}
         """)
 
+    # Mapped timepoints without data
+    if map_ids and bt_column is None:
+        gaps = c.execute(
+            cte_sql
+            + mapped_timepoint_data_gaps_sql(
+                subscenarios=subscenarios,
+                subproblem=subproblem,
+                stage=stage,
+                table=table,
+                subscenario_id_column=subscenario_id_column,
+                map_column=map_column,
+                iteration_configs=[
+                    (
+                        varies_weather,
+                        varies_hydro,
+                        map_id,
+                        weather_iteration if varies_weather else 0,
+                        hydro_iteration if varies_hydro else 0,
+                    )
+                    for varies_weather, varies_hydro, map_id in iteration_configs
+                    if map_id is not None
+                ],
+                stage_subquery=stage_subquery,
+            )
+        ).fetchall()
+        if gaps:
+            if map_data_gaps_handler is None:
+                raise ValueError(mapped_timepoint_data_gaps_error(table, gaps))
+            map_data_gaps_handler(gaps)
+
     # Combine CTE with UNION ALL
     all_projects_sql = cte_sql + "\nUNION ALL\n".join(union_parts)
 
     prj_tmp_data = c.execute(all_projects_sql)
 
     return prj_tmp_data
+
+
+def mapped_timepoint_data_gaps_sql(
+    subscenarios,
+    subproblem,
+    stage,
+    table,
+    subscenario_id_column,
+    map_column,
+    iteration_configs,
+    stage_subquery,
+):
+    """
+    :param iteration_configs: (varies_by_weather_iteration,
+        varies_by_hydro_iteration, map_id, weather_iteration,
+        hydro_iteration) of the mapped project groups
+    :return: SQL (following the CTEs of
+        :code:`get_prj_temporal_index_opr_inputs_from_db`) selecting the
+        (project, timepoint, data_timepoint)s of the mapped projects'
+        operational timepoints whose resolved data timepoint has no data
+    """
+    parts = []
+    for (
+        varies_weather,
+        varies_hydro,
+        map_id,
+        weather_iter,
+        hydro_iter,
+    ) in iteration_configs:
+        parts.append(f"""
+            SELECT op.project AS project, op.timepoint AS timepoint,
+                resolved_index.data_timepoint AS data_timepoint
+            FROM project_operational_timepoints AS op
+            JOIN resolved_index_{map_id} AS resolved_index
+                ON resolved_index.timepoint = op.timepoint
+            JOIN optype_projects AS prj ON prj.project = op.project
+            WHERE op.project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            AND op.project_operational_chars_scenario_id =
+                {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+            AND op.temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            AND (op.project_specified_capacity_scenario_id =
+                    {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}
+                OR op.project_new_cost_scenario_id =
+                    {subscenarios.PROJECT_NEW_COST_SCENARIO_ID})
+            AND op.subproblem_id = {subproblem}
+            AND op.stage_id = {stage}
+            AND prj.{map_column} = {map_id}
+            AND (prj.project, prj.{subscenario_id_column}) IN (
+                SELECT project, {subscenario_id_column}
+                FROM iteration_config
+                WHERE varies_by_weather_iteration = {varies_weather}
+                AND varies_by_hydro_iteration = {varies_hydro}
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM {table}
+                WHERE {table}.project = prj.project
+                AND {table}.{subscenario_id_column} = prj.{subscenario_id_column}
+                AND {table}.timepoint = resolved_index.data_timepoint
+                AND weather_iteration = {weather_iter}
+                AND hydro_iteration = {hydro_iter}
+                {stage_subquery}
+            )""")
+    return "\nUNION\n".join(parts) + "\nORDER BY project, timepoint"
+
+
+def mapped_timepoint_data_gaps_error(table, gaps):
+    """
+    :param gaps: (project, timepoint, data_timepoint)s without data
+    :return: the error message
+    """
+    return (
+        f"{table}: {len(gaps)} operational timepoint(s) of projects reading "
+        f"their data through a timepoint map have no data at the data "
+        f"timepoint the map points them to, e.g. (project, timepoint, "
+        f"data_timepoint) {gaps[:5]}. Mapped timepoints don't read their "
+        f"own data instead; with the calendar-hour map, e.g. a February 29 "
+        f"timepoint reads the data at 229HH."
+    )
 
 
 def make_project_str(projects_list):
@@ -934,6 +1075,7 @@ def validate_var_profiles(
     :param op_type:
     :return:
     """
+    map_data_gaps = []
     var_profiles = get_prj_temporal_index_opr_inputs_from_db(
         subscenarios=subscenarios,
         weather_iteration=weather_iteration,
@@ -946,6 +1088,7 @@ def validate_var_profiles(
         table=table,
         subscenario_id_column=subscenario_id_column,
         data_column=data_column,
+        map_data_gaps_handler=map_data_gaps.extend,
     )
 
     # Convert input data into pandas DataFrame
@@ -966,6 +1109,25 @@ def validate_var_profiles(
         db_table=table,
         severity="High",
         errors=validate_missing_inputs(df, value_cols, ["project", "timepoint"]),
+    )
+
+    # Check for mapped timepoints without data
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table=table,
+        severity="High",
+        errors=(
+            [mapped_timepoint_data_gaps_error(table, map_data_gaps)]
+            if map_data_gaps
+            else []
+        ),
     )
 
     # We now allow negative values and values > 1, so commenting this out

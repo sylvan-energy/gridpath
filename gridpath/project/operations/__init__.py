@@ -45,6 +45,10 @@ from pyomo.environ import Set, Param, NonNegativeReals, Reals, PositiveReals
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.db_interface import import_csv, directories_to_db_values
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
+from gridpath.auxiliary.calendar_rows import (
+    CALENDAR_HOUR_TIMEPOINT_MAP_ID,
+    timepoints_without_calendar_hour_sql,
+)
 from gridpath.auxiliary.period_wildcards import (
     period_wildcard_rows_sql,
     require_period_wildcard_only_rows,
@@ -1412,6 +1416,12 @@ def write_model_inputs(
             ),
         )
 
+    calendar_hour_errors = calendar_hour_map_errors(
+        conn, subscenarios, db_subproblem, db_stage
+    )
+    if calendar_hour_errors:
+        raise ValueError(calendar_hour_errors[0])
+
     inputs_directory = os.path.join(
         scenario_directory,
         weather_iteration,
@@ -1624,7 +1634,9 @@ def validate_opchar_temporal_map_references(
     inputs_project_operational_chars actually have data in the respective
     map inputs table (inputs_project_opchar_timepoint_map /
     inputs_project_opchar_horizon_map). A dangling reference would
-    otherwise silently behave as if no map were assigned.
+    otherwise silently behave as if no map were assigned. Projects using the
+    built-in calendar-hour timepoint map need a calendar hour for every
+    timepoint (see :code:`calendar_hour_map_errors`).
     """
     c = conn.cursor()
     map_columns = [
@@ -1646,6 +1658,12 @@ def validate_opchar_temporal_map_references(
             if map_column.endswith("_tmp_map_scenario_id")
             else "opchar_horizon_map_scenario_id"
         )
+        # The built-in calendar-hour map has no rows
+        builtin_map_filter = (
+            f"AND {map_column} != {CALENDAR_HOUR_TIMEPOINT_MAP_ID}"
+            if map_column.endswith("_tmp_map_scenario_id")
+            else ""
+        )
         dangling = c.execute(f"""
             SELECT project, {map_column}
             FROM inputs_project_operational_chars
@@ -1660,6 +1678,7 @@ def validate_opchar_temporal_map_references(
             AND {map_column} NOT IN (
                 SELECT {map_id_column} FROM {map_table}
             )
+            {builtin_map_filter}
         """).fetchall()
         for project, map_id in dangling:
             errors.append(
@@ -1667,6 +1686,8 @@ def validate_opchar_temporal_map_references(
                 f"{map_table} has no rows for {map_id_column} "
                 f"{int(map_id)}."
             )
+
+    errors += calendar_hour_map_errors(conn, subscenarios, subproblem, stage)
 
     write_validation_to_database(
         conn=conn,
@@ -1681,6 +1702,55 @@ def validate_opchar_temporal_map_references(
         severity="High",
         errors=errors,
     )
+
+
+def calendar_hour_map_errors(conn, subscenarios, subproblem, stage):
+    """
+    :param subproblem: the subproblem ID in the database
+    :param stage: the stage ID in the database
+    :return: an error message (in a list) if a portfolio project reads an
+        input through the built-in calendar-hour timepoint map while some
+        timepoints of the subproblem and stage have no calendar hour (see
+        gridpath.auxiliary.calendar_rows), as their data couldn't be found
+    """
+    c = conn.cursor()
+    map_columns = [
+        row[1]
+        for row in c.execute("PRAGMA table_info(inputs_project_operational_chars)")
+        if row[1].endswith("_tmp_map_scenario_id")
+    ]
+    users = c.execute(f"""SELECT DISTINCT project
+        FROM inputs_project_operational_chars
+        WHERE project_operational_chars_scenario_id =
+            {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID}
+        AND project IN (
+            SELECT project FROM inputs_project_portfolios
+            WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+        )
+        AND {CALENDAR_HOUR_TIMEPOINT_MAP_ID} IN ({", ".join(map_columns)})
+        ORDER BY project
+        """).fetchall()
+    if not users:
+        return []
+    timepoints = [
+        tmp
+        for (tmp,) in c.execute(
+            timepoints_without_calendar_hour_sql(
+                subscenarios.TEMPORAL_SCENARIO_ID, subproblem, stage
+            )
+        ).fetchall()
+    ]
+    if not timepoints:
+        return []
+    return [
+        f"Project(s) {[prj for (prj,) in users]} use the calendar-hour "
+        f"timepoint map ({CALENDAR_HOUR_TIMEPOINT_MAP_ID}), but "
+        f"{len(timepoints)} timepoint(s) of the temporal scenario have no "
+        f"calendar hour (e.g. {timepoints[:5]}): the map needs month, "
+        f"day_of_month (1-31) and a whole-hour hour_of_day (0-24) for every "
+        f"timepoint."
+    ]
 
 
 def validate_inputs(

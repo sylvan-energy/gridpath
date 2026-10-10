@@ -1,0 +1,9 @@
+stage_id,balancing_type_horizon,horizon,tmp_start,tmp_start_spinup_or_lookahead,tmp_end,tmp_end_spinup_or_lookahead
+1,day,202001,20200101,0,20200102,0
+1,day,203001,20300101,0,20300102,0
+1,year,2020,20200101,0,20200102,0
+1,year,2030,20300101,0,20300102,0
+1,halfyear,20201,20200101,0,20200101,0
+1,halfyear,20202,20200102,0,20200102,0
+1,halfyear,20301,20300101,0,20300101,0
+1,halfyear,20302,20300102,0,20300102,0

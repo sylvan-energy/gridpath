@@ -23,9 +23,14 @@ import os.path
 import sqlite3
 import unittest
 
-from gridpath.project.operations import validate_opchar_temporal_map_references
+from gridpath.auxiliary.calendar_rows import CALENDAR_HOUR_TIMEPOINT_MAP_ID
+from gridpath.project.operations import (
+    calendar_hour_map_errors,
+    validate_opchar_temporal_map_references,
+)
 from gridpath.project.operations.operational_types.common_functions import (
     get_prj_temporal_index_opr_inputs_from_db,
+    validate_var_profiles,
     BT_HRZ_INDEX_QUERY_PARAMS,
 )
 
@@ -38,6 +43,8 @@ class SubScenariosStub:
     PROJECT_PORTFOLIO_SCENARIO_ID = 1
     PROJECT_OPERATIONAL_CHARS_SCENARIO_ID = 1
     TEMPORAL_SCENARIO_ID = 1
+    PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID = 1
+    PROJECT_NEW_COST_SCENARIO_ID = "NULL"
 
 
 def get_var_profile_inputs(conn, weather_iteration=0, hydro_iteration=0):
@@ -117,10 +124,19 @@ class TestOpcharTemporalMaps(unittest.TestCase):
                 (tmp, hrz),
             )
 
+        c.execute("""INSERT INTO inputs_temporal_periods
+            (temporal_scenario_id, period) VALUES (1, 2020), (1, 2030)""")
+
         c.execute("""INSERT INTO inputs_project_portfolios
             (project_portfolio_scenario_id, project, capacity_type)
             VALUES (1, 'Wind', 'gen_spec'), (1, 'Solar', 'gen_spec'),
             (1, 'Solar_Rep_Day', 'gen_spec'), (1, 'Hydro', 'gen_spec')""")
+        # Every project is operational in both periods
+        c.execute("""INSERT INTO inputs_project_specified_capacity
+            (project_specified_capacity_scenario_id, project, period,
+            specified_capacity_mw)
+            VALUES (1, 'Wind', 0, 1), (1, 'Solar', 0, 1),
+            (1, 'Solar_Rep_Day', 0, 1), (1, 'Hydro', 0, 1)""")
 
         # Wind uses timepoint map 1 (2030 --> 2020); Solar_Rep_Day uses
         # timepoint map 2 (everything --> the first 2020 timepoint); Solar
@@ -362,6 +378,167 @@ class TestOpcharTemporalMaps(unittest.TestCase):
         self.assertIn("Wind", validation_results[0][0])
         self.assertIn(
             "variable_generator_profile_tmp_map_scenario_id", validation_results[0][0]
+        )
+
+
+class TestCalendarHourMap(unittest.TestCase):
+    """
+    The built-in calendar-hour timepoint map on the same fixture, with
+    calendar columns for the timepoints: hours 1 and 2 of 1 January in both
+    periods. Solar_Rep_Day reads its profile through the calendar-hour map
+    (stored once at 10101 and 10102), next to Wind's user map.
+    """
+
+    def setUp(self):
+        # The fixture of TestOpcharTemporalMaps
+        TestOpcharTemporalMaps.setUp(self)
+        self.addCleanup(self.conn.close)
+        c = self.conn.cursor()
+        c.execute("""UPDATE inputs_temporal
+            SET month = 1, day_of_month = 1, hour_of_day = timepoint % 100""")
+        c.execute(
+            """UPDATE inputs_project_operational_chars
+            SET variable_generator_profile_tmp_map_scenario_id = ?
+            WHERE project = 'Solar_Rep_Day'""",
+            (CALENDAR_HOUR_TIMEPOINT_MAP_ID,),
+        )
+        c.execute("""DELETE FROM inputs_project_variable_generator_profiles
+            WHERE project = 'Solar_Rep_Day'""")
+        c.execute("""INSERT INTO inputs_project_variable_generator_profiles
+            VALUES ('Solar_Rep_Day', 1, 0, 0, 1, 10101, 0.8),
+                   ('Solar_Rep_Day', 1, 0, 0, 1, 10102, 0.9),
+                   ('Solar_Rep_Day', 1, 0, 0, 1, 22902, 0.4)""")
+        self.conn.commit()
+
+    def solar_rep_day(self):
+        return [r for r in get_var_profile_inputs(self.conn) if r[0] == "Solar_Rep_Day"]
+
+    def validation_errors(self):
+        validate_opchar_temporal_map_references(
+            scenario_id=1,
+            subscenarios=SubScenariosStub(),
+            weather_iteration=0,
+            hydro_iteration=0,
+            availability_iteration=0,
+            subproblem=1,
+            stage=1,
+            conn=self.conn,
+        )
+        return [
+            description
+            for (description,) in self.conn.execute(
+                "SELECT description FROM status_validation"
+            )
+        ]
+
+    def test_schema_seeds_the_calendar_hour_map(self):
+        self.assertEqual(
+            [(CALENDAR_HOUR_TIMEPOINT_MAP_ID, "calendar_hour")],
+            self.conn.execute("""SELECT opchar_timepoint_map_scenario_id, name
+                FROM subscenarios_project_opchar_timepoint_map""").fetchall(),
+        )
+
+    def test_tmp_maps_expand_data(self):
+        """
+        Every period reads the calendar-hour data; Wind's user map and
+        Solar's unmapped profile are unaffected.
+        """
+        results = get_var_profile_inputs(self.conn)
+        self.assertEqual(
+            results,
+            sorted(
+                [
+                    ("Wind", 2020010101, 0.5),
+                    ("Wind", 2020010102, 0.6),
+                    ("Wind", 2030010101, 0.5),
+                    ("Wind", 2030010102, 0.6),
+                    ("Solar", 2020010101, 0.1),
+                    ("Solar", 2020010102, 0.2),
+                    ("Solar", 2030010101, 0.3),
+                    ("Solar", 2030010102, 0.4),
+                    ("Solar_Rep_Day", 2020010101, 0.8),
+                    ("Solar_Rep_Day", 2020010102, 0.9),
+                    ("Solar_Rep_Day", 2030010101, 0.8),
+                    ("Solar_Rep_Day", 2030010102, 0.9),
+                ]
+            ),
+        )
+
+    def test_mapped_timepoints_ignore_own_data(self):
+        """
+        Data stored at the model timepoint itself isn't read.
+        """
+        self.conn.execute("""INSERT INTO inputs_project_variable_generator_profiles
+            VALUES ('Solar_Rep_Day', 1, 0, 0, 1, 2030010101, 0.99)""")
+        self.assertIn(("Solar_Rep_Day", 2030010101, 0.8), self.solar_rep_day())
+
+    def test_leap_day_reads_leap_day_data(self):
+        self.conn.execute("""UPDATE inputs_temporal SET month = 2, day_of_month = 29
+            WHERE timepoint = 2030010102""")
+        self.assertIn(("Solar_Rep_Day", 2030010102, 0.4), self.solar_rep_day())
+
+    def test_mapped_timepoints_without_data(self):
+        """
+        A February 29 timepoint without data at 229HH doesn't fall back to
+        other data: writing the inputs fails and validation reports it. A
+        project that isn't operational in the period isn't checked there.
+        """
+        self.conn.execute("""UPDATE inputs_temporal SET month = 2, day_of_month = 29
+            WHERE timepoint = 2030010102""")
+        self.conn.execute("""DELETE FROM inputs_project_variable_generator_profiles
+            WHERE project = 'Solar_Rep_Day' AND timepoint = 22902""")
+        with self.assertRaisesRegex(
+            ValueError, r"\('Solar_Rep_Day', 2030010102, 22902\)"
+        ):
+            get_var_profile_inputs(self.conn)
+
+        validate_var_profiles(
+            scenario_id=1,
+            subscenarios=SubScenariosStub(),
+            weather_iteration=0,
+            hydro_iteration=0,
+            availability_iteration=0,
+            subproblem=1,
+            stage=1,
+            conn=self.conn,
+            op_type="gen_var",
+        )
+        errors = [
+            description
+            for (description,) in self.conn.execute(
+                "SELECT description FROM status_validation"
+            )
+        ]
+        self.assertEqual(1, len(errors))
+        self.assertIn("('Solar_Rep_Day', 2030010102, 22902)", errors[0])
+
+        # Solar_Rep_Day retired in 2030
+        self.conn.execute("""UPDATE inputs_project_specified_capacity
+            SET period = 2020 WHERE project = 'Solar_Rep_Day'""")
+        self.assertNotIn(2030010102, [r[1] for r in self.solar_rep_day()])
+
+    def test_validation(self):
+        """
+        The built-in map is not a dangling reference; timepoints without a
+        calendar hour (no day of month, or a fractional hour) are an error
+        for projects using it.
+        """
+        self.assertListEqual([], self.validation_errors())
+        self.conn.execute("""UPDATE inputs_temporal SET day_of_month = NULL
+            WHERE timepoint = 2030010101""")
+        self.conn.execute("""UPDATE inputs_temporal SET hour_of_day = 1.5
+            WHERE timepoint = 2030010102""")
+        errors = calendar_hour_map_errors(self.conn, SubScenariosStub(), 1, 1)
+        self.assertEqual(1, len(errors))
+        self.assertIn("['Solar_Rep_Day']", errors[0])
+        self.assertIn("[2030010101, 2030010102]", errors[0])
+        self.assertListEqual(errors, self.validation_errors())
+        # No error if no project uses the map
+        self.conn.execute("""UPDATE inputs_project_operational_chars
+            SET variable_generator_profile_tmp_map_scenario_id = NULL
+            WHERE project = 'Solar_Rep_Day'""")
+        self.assertListEqual(
+            [], calendar_hour_map_errors(self.conn, SubScenariosStub(), 1, 1)
         )
 
 

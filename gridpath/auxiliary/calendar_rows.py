@@ -38,9 +38,20 @@ with the explicit rows follows what a NULL means in the input's table:
   explicit row wins as a whole (see :code:`calendar_rows_sql`).
 
 Each horizon's calendar key is read from its timepoints' month and
-day_of_month columns, not derived from the horizon ID. This module imports
-nothing from the rest of GridPath, so the temporal, project and system
-modules can all use it.
+day_of_month columns, not derived from the horizon ID.
+
+Timepoint-indexed inputs can't have calendar rows the same way, as timepoint
+IDs are arbitrary (a temporal scenario may number its timepoints 1-8760).
+Instead, the built-in calendar-hour opchar timepoint map
+(:code:`CALENDAR_HOUR_TIMEPOINT_MAP_ID`, selected through the opchar
+``*_tmp_map_scenario_id`` columns) reads each timepoint's data at its
+calendar hour, month * 10000 + day_of_month * 100 + hour_of_day (e.g. 60307
+for hour 7 of 3 June), so one year of data serves every period of any
+temporal scenario whose timepoints have those columns; see
+:code:`calendar_hour_sql`.
+
+This module imports nothing from the rest of GridPath, so the temporal,
+project and system modules can all use it.
 """
 
 # The built-in balancing types with one horizon per (period, month) and per
@@ -53,6 +64,10 @@ DAY_HORIZON_TYPES = [
     "subproblem_period_day_circular",
     "subproblem_period_day_linear",
 ]
+
+# The reserved opchar timepoint map ID of the built-in calendar-hour map; the
+# database schema seeds it in subscenarios_project_opchar_timepoint_map
+CALENDAR_HOUR_TIMEPOINT_MAP_ID = 0
 
 
 def sql_list(values):
@@ -200,3 +215,37 @@ def calendar_index_cte_sql(
                 calendar_key AS cal_key
             FROM ({index_sql})
         )"""
+
+
+def calendar_hour_sql(alias="t"):
+    """
+    :return: SQL for the calendar hour, month * 10000 + day_of_month * 100 +
+        hour_of_day, of the inputs_temporal rows aliased *alias*
+    """
+    return (
+        f"{alias}.month * 10000 + {alias}.day_of_month * 100 "
+        f"+ CAST({alias}.hour_of_day AS INTEGER)"
+    )
+
+
+def timepoints_without_calendar_hour_sql(temporal_scenario_id, subproblem, stage):
+    """
+    :return: SQL selecting the timepoints of the subproblem and stage
+        without a calendar hour: with no month, day_of_month or hour_of_day,
+        or with an hour_of_day that isn't a whole hour from 0 to 24 or a
+        day_of_month that isn't 1-31
+    """
+    return f"""
+        SELECT timepoint
+        FROM inputs_temporal
+        WHERE temporal_scenario_id = {temporal_scenario_id}
+        AND subproblem_id = {subproblem}
+        AND stage_id = {stage}
+        AND (
+            month IS NULL OR day_of_month IS NULL OR hour_of_day IS NULL
+            OR day_of_month NOT BETWEEN 1 AND 31
+            OR hour_of_day NOT BETWEEN 0 AND 24
+            OR hour_of_day != CAST(hour_of_day AS INTEGER)
+        )
+        ORDER BY timepoint
+        """
