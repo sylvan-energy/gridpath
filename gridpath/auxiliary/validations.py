@@ -24,8 +24,8 @@ import pandas as pd
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.period_wildcards import (
-    redundant_period_wildcards_sql,
-    temporal_periods_sql,
+    mixed_period_wildcard_series_sql,
+    mixed_period_wildcards_error,
 )
 
 
@@ -1043,19 +1043,15 @@ def validate_period_wildcard_rows(
     row_filter,
 ):
     """
-    Flag (Low severity) series of *table* (identified by *key_columns*,
-    selected by *row_filter*) with period = 0 rows that apply to no period,
-    as explicit rows cover every period of the temporal scenario (see
-    gridpath.auxiliary.period_wildcards).
+    Flag (High severity) series of *table* (identified by *key_columns*,
+    selected by *row_filter*) with both period = 0 rows and rows for
+    explicit periods (see gridpath.auxiliary.period_wildcards).
     """
-    redundant = (
+    mixed = (
         conn.cursor()
         .execute(
-            redundant_period_wildcards_sql(
-                table=table,
-                key_columns=key_columns,
-                row_filter=row_filter,
-                periods_sql=temporal_periods_sql(subscenarios.TEMPORAL_SCENARIO_ID),
+            mixed_period_wildcard_series_sql(
+                table=table, key_columns=key_columns, row_filter=row_filter
             )
         )
         .fetchall()
@@ -1070,11 +1066,14 @@ def validate_period_wildcard_rows(
         stage_id=stage,
         gridpath_module=gridpath_module,
         db_table=table,
-        severity="Low",
-        errors=[
-            f"{dict(zip(key_columns, series))}: the period 0 rows apply to no "
-            f"period, as every period of the temporal scenario has explicit "
-            f"rows."
-            for series in redundant
-        ],
+        severity="High",
+        errors=(
+            [
+                mixed_period_wildcards_error(
+                    table, [dict(zip(key_columns, series)) for series in mixed]
+                )
+            ]
+            if mixed
+            else []
+        ),
     )

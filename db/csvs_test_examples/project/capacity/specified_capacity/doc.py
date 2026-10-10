@@ -37,4 +37,13 @@ period (and all other project-year-capacity data points would need to be
 re-inserted in the table under the new
 :code:`project_specified_capacity_scenario_id`).
 
+A project is operational in the periods for which it has a capacity row, so
+leaving periods out models a project that retires, or comes online, within
+the study horizon. A project with the same capacity in every period can
+instead be given with a single :code:`period = 0` row, which applies to every
+period (see :code:`gridpath.auxiliary.period_wildcards`); a project with a
+:code:`period = 0` row can have no rows for other periods, so a project
+that retires or comes online needs its periods given explicitly. See the
+:code:`2periods_gen_lin_econ_retirement_w_period_wildcards` example.
+
 """

@@ -48,6 +48,7 @@ from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_v
 from gridpath.auxiliary.period_wildcards import (
     expand_period_wildcard_rows,
     period_wildcard_rows_sql,
+    require_period_wildcard_only_rows,
     subproblem_periods_sql,
 )
 from gridpath.auxiliary.validations import (
@@ -736,7 +737,10 @@ def load_model_data(
             var_om_df = pd.read_csv(project_var_om_file, sep="\t")
             if prd_or_tmp_str == "period":
                 var_om_df = expand_period_wildcard_rows(
-                    var_om_df, key_columns=["project"], periods=prd_set
+                    var_om_df,
+                    key_columns=["project"],
+                    periods=prd_set,
+                    filename=project_var_om_file,
                 )
             var_om_df = var_om_df.set_index(["project", prd_or_tmp_str])
             var_om_prj_idx_list = []
@@ -830,6 +834,7 @@ def load_model_data(
             pd.read_csv(project_curtailment_cost_file, sep="\t"),
             key_columns=["project"],
             periods=prd_set,
+            filename=project_curtailment_cost_file,
         ).set_index(["project", "period"])
         curtailment_prj_idx_list = []
         curtailment_by_idx_dict = {}
@@ -973,14 +978,27 @@ def load_model_data(
 ###############################################################################
 
 
+# The period-indexed opchar tables supporting period wildcard rows, with their
+# subscenario ID columns
+OPCHAR_PERIOD_WILDCARD_TABLES = [
+    (
+        "inputs_project_variable_om_cost_by_period",
+        "variable_om_cost_by_period_scenario_id",
+    ),
+    ("inputs_project_heat_rate_curves", "heat_rate_curves_scenario_id"),
+    ("inputs_project_variable_om_curves", "variable_om_curves_scenario_id"),
+    ("inputs_project_curtailment_cost", "curtailment_cost_scenario_id"),
+]
+
+
 def get_opchar_period_wildcard_rows_sql(
     subscenarios, subproblem, table, scenario_id_column, columns
 ):
     """
     SQL for the period-indexed operating characteristics in *table* of the
     portfolio projects with a *scenario_id_column* subscenario, for the
-    subproblem's periods, with period = 0 rows applying to every period
-    without explicit rows (see gridpath.auxiliary.period_wildcards).
+    subproblem's periods, with period = 0 rows applying to every period (see
+    gridpath.auxiliary.period_wildcards).
     """
     return period_wildcard_rows_sql(
         table=table,
@@ -1395,6 +1413,16 @@ def write_model_inputs(
         conn,
     )
 
+    for table, scenario_id_column in OPCHAR_PERIOD_WILDCARD_TABLES:
+        require_period_wildcard_only_rows(
+            conn=conn,
+            table=table,
+            key_columns=["project", scenario_id_column],
+            row_filter=get_opchar_period_wildcard_row_filter(
+                subscenarios, scenario_id_column
+            ),
+        )
+
     inputs_directory = os.path.join(
         scenario_directory,
         weather_iteration,
@@ -1713,16 +1741,8 @@ def validate_inputs(
     # Convert input data into DataFrame
     prj_df = cursor_to_df(proj_opchar)
 
-    # Period wildcard rows that apply to no period
-    for table, scenario_id_column in [
-        (
-            "inputs_project_variable_om_cost_by_period",
-            "variable_om_cost_by_period_scenario_id",
-        ),
-        ("inputs_project_heat_rate_curves", "heat_rate_curves_scenario_id"),
-        ("inputs_project_variable_om_curves", "variable_om_curves_scenario_id"),
-        ("inputs_project_curtailment_cost", "curtailment_cost_scenario_id"),
-    ]:
+    # Series mixing period wildcard rows and explicit rows
+    for table, scenario_id_column in OPCHAR_PERIOD_WILDCARD_TABLES:
         validate_period_wildcard_rows(
             conn=conn,
             scenario_id=scenario_id,
@@ -2116,8 +2136,8 @@ def get_slopes_intercept_by_project_period_segment(df, input_col, projects, peri
     load point fraction for each project in each period, calculate the slope
     and intercept for the fuel burn or variable O&M cost curves for the
     segments defined by the load points (for each project and period). A
-    period without its own rows reads the project's period 0 rows, if any
-    (see gridpath.auxiliary.period_wildcards).
+    project's period 0 rows give its curve for every period (see
+    gridpath.auxiliary.period_wildcards).
 
     :param df: DataFrame with columns [project, period, load_point_fraction,
         input_col]
@@ -2143,8 +2163,7 @@ def get_slopes_intercept_by_project_period_segment(df, input_col, projects, peri
             raise ValueError(
                 f"{input_col} for project '{project}' isn't specified for all "
                 f"modeled periods. Give the curve for period 0 to apply it to "
-                f"every period without its own curve, or include all modeled "
-                f"periods."
+                f"every period, or give a curve for every modeled period."
             )
 
         for period in periods:

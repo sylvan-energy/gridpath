@@ -34,8 +34,8 @@ gridpath.auxiliary.period_wildcards
 ***********************************
 .. automodule:: gridpath.auxiliary.period_wildcards
     :members: period_wildcard_rows_sql, expand_period_wildcard_rows,
-        redundant_period_wildcards_sql, subproblem_periods_sql,
-        temporal_periods_sql
+        mixed_period_wildcard_series_sql, require_period_wildcard_only_rows,
+        subproblem_periods_sql, temporal_periods_sql
 
 
 ================

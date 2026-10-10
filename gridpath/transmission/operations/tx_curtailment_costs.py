@@ -38,6 +38,7 @@ from gridpath.auxiliary.validations import validate_period_wildcard_rows
 from gridpath.auxiliary.period_wildcards import (
     expand_period_wildcard_rows,
     period_wildcard_rows_sql,
+    require_period_wildcard_only_rows,
     subproblem_periods_sql,
 )
 from gridpath.project.operations.operational_types.common_functions import (
@@ -238,6 +239,7 @@ def load_model_data(
             pd.read_csv(tx_curtailment_cost_file, sep="\t"),
             key_columns=["transmission_line"],
             periods=set(pd.read_csv(periods_file, sep="\t")["period"]),
+            filename=tx_curtailment_cost_file,
         ).set_index(["transmission_line", "period"])
         curtailment_tx_idx_list = []
         curtailment_by_idx_dict = {}
@@ -258,6 +260,28 @@ def load_model_data(
 
 # Database
 ###############################################################################
+
+
+TABLE = "inputs_transmission_curtailment_cost"
+KEY_COLUMNS = ["transmission_line", "tx_curtailment_cost_scenario_id"]
+
+
+def get_row_filter(subscenarios):
+    """
+    :return: SQL condition selecting the curtailment cost rows of the
+        portfolio's lines with their subscenario IDs
+    """
+    return f"""(transmission_line, tx_curtailment_cost_scenario_id) IN (
+            SELECT transmission_line, tx_curtailment_cost_scenario_id
+            FROM inputs_transmission_operational_chars
+            WHERE transmission_operational_chars_scenario_id =
+            {subscenarios.TRANSMISSION_OPERATIONAL_CHARS_SCENARIO_ID}
+            AND transmission_line IN (
+                SELECT transmission_line FROM inputs_transmission_portfolios
+                WHERE transmission_portfolio_scenario_id =
+                {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
+            )
+        )"""
 
 
 def get_inputs_from_database(
@@ -281,22 +305,14 @@ def get_inputs_from_database(
     c = conn.cursor()
     tx_curtailment_cost = c.execute(
         period_wildcard_rows_sql(
-            table="inputs_transmission_curtailment_cost",
+            table=TABLE,
             columns=[
                 "transmission_line",
                 "period",
                 "tx_curtailment_cost_per_powerunithour",
             ],
-            key_columns=["transmission_line", "tx_curtailment_cost_scenario_id"],
-            row_filter=f"""(transmission_line, tx_curtailment_cost_scenario_id) IN (
-                SELECT transmission_line, tx_curtailment_cost_scenario_id
-                FROM inputs_transmission_operational_chars
-                WHERE transmission_operational_chars_scenario_id = {subscenarios.TRANSMISSION_OPERATIONAL_CHARS_SCENARIO_ID}
-                AND transmission_line IN (
-                    SELECT transmission_line FROM inputs_transmission_portfolios
-                    WHERE transmission_portfolio_scenario_id = {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
-                )
-            )""",
+            key_columns=KEY_COLUMNS,
+            row_filter=get_row_filter(subscenarios),
             periods_sql=subproblem_periods_sql(
                 subscenarios.TEMPORAL_SCENARIO_ID, subproblem
             ),
@@ -349,6 +365,13 @@ def write_model_inputs(
         conn,
     )
 
+    require_period_wildcard_only_rows(
+        conn=conn,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
+    )
+
     write_tab_file_model_inputs(
         scenario_directory=scenario_directory,
         weather_iteration=weather_iteration,
@@ -377,7 +400,7 @@ def validate_inputs(
     conn,
 ):
     """
-    Flag period wildcard rows that apply to no period.
+    Flag series mixing period wildcard rows and explicit rows.
     """
     validate_period_wildcard_rows(
         conn=conn,
@@ -389,17 +412,7 @@ def validate_inputs(
         subproblem=subproblem,
         stage=stage,
         gridpath_module=__name__,
-        table="inputs_transmission_curtailment_cost",
-        key_columns=["transmission_line", "tx_curtailment_cost_scenario_id"],
-        row_filter=f"""(transmission_line, tx_curtailment_cost_scenario_id) IN (
-            SELECT transmission_line, tx_curtailment_cost_scenario_id
-            FROM inputs_transmission_operational_chars
-            WHERE transmission_operational_chars_scenario_id =
-            {subscenarios.TRANSMISSION_OPERATIONAL_CHARS_SCENARIO_ID}
-            AND transmission_line IN (
-                SELECT transmission_line FROM inputs_transmission_portfolios
-                WHERE transmission_portfolio_scenario_id =
-                {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
-            )
-        )""",
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
     )

@@ -1,0 +1,4 @@
+transmission_line,period,min_mw,max_mw,fixed_cost_per_mw_yr
+Tx1,0,-10,10,
+Tx2,0,-10,10,
+Tx3,0,-10,10,

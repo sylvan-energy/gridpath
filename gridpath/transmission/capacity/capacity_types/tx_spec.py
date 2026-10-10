@@ -18,8 +18,10 @@ optimization without having to incur an investment cost, e.g. existing
 lines or lines that will be built in the future and whose capital costs
 we want to ignore (in the objective function). A specified transmission line
 can be available in all periods, or in some periods only, with no
-restriction on the order and combination of periods. The two transmission
-line directions may have different specified capacities, e.g. a line from
+restriction on the order and combination of periods. A line with the same
+capacity in every period can be given with a single row for period 0 (see
+:code:`gridpath.auxiliary.period_wildcards`). The two transmission line
+directions may have different specified capacities, e.g. a line from
 Zone 1 to Zone 2 with a minimum flow capacity of -1,000 MW and a maximum flow
 capacity of 1,200 MW can transmit up to 1,000 MW from Zone 2 to Zone 1 and
 up to 1,200 MW from Zone 1 to Zone 2.
@@ -36,8 +38,14 @@ from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.dynamic_components import (
     tx_capacity_type_operational_period_sets,
 )
+from gridpath.auxiliary.period_wildcards import (
+    period_wildcard_rows_sql,
+    require_period_wildcard_only_rows,
+    subproblem_periods_sql,
+)
 from gridpath.auxiliary.validations import (
     get_tx_lines,
+    validate_period_wildcard_rows,
     get_expected_dtypes,
     write_validation_to_database,
     validate_dtypes,
@@ -198,6 +206,24 @@ def load_model_data(
 ###############################################################################
 
 
+TABLE = "inputs_transmission_specified_capacity"
+KEY_COLUMNS = ["transmission_line", "transmission_specified_capacity_scenario_id"]
+
+
+def get_row_filter(subscenarios):
+    """
+    :return: SQL condition selecting the specified capacity rows of the
+        portfolio's lines in the specified capacity subscenario
+    """
+    return f"""transmission_specified_capacity_scenario_id =
+            {subscenarios.TRANSMISSION_SPECIFIED_CAPACITY_SCENARIO_ID}
+            AND transmission_line IN (
+                SELECT transmission_line FROM inputs_transmission_portfolios
+                WHERE transmission_portfolio_scenario_id =
+                {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
+            )"""
+
+
 def get_model_inputs_from_database(
     scenario_id,
     subscenarios,
@@ -216,6 +242,22 @@ def get_model_inputs_from_database(
     :return:
     """
     db_subproblem = subproblem if subproblem != "" else 1
+    # Capacities with period = 0 rows applying to every period
+    capacity_sql = period_wildcard_rows_sql(
+        table=TABLE,
+        columns=[
+            "transmission_line",
+            "period",
+            "min_mw",
+            "max_mw",
+            "fixed_cost_per_mw_yr",
+        ],
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
+        periods_sql=subproblem_periods_sql(
+            subscenarios.TEMPORAL_SCENARIO_ID, db_subproblem
+        ),
+    )
     c = conn.cursor()
     tx_capacities = c.execute(f"""SELECT transmission_line, period, min_mw, max_mw, 
         fixed_cost_per_mw_yr
@@ -225,9 +267,7 @@ def get_model_inputs_from_database(
         FROM inputs_temporal_periods
         WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}) as relevant_periods
         INNER JOIN
-        (SELECT transmission_line, period, min_mw, max_mw, fixed_cost_per_mw_yr
-        FROM inputs_transmission_specified_capacity
-        WHERE transmission_specified_capacity_scenario_id = {subscenarios.TRANSMISSION_SPECIFIED_CAPACITY_SCENARIO_ID} ) as capacity
+        ({capacity_sql}) as capacity
         USING (transmission_line, period)
         WHERE transmission_portfolio_scenario_id = {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
         AND period in (
@@ -272,6 +312,13 @@ def write_model_inputs(
         subproblem,
         stage,
         conn,
+    )
+
+    require_period_wildcard_only_rows(
+        conn=conn,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
     )
 
     with open(
@@ -340,6 +387,22 @@ def validate_inputs(
         subproblem,
         stage,
         conn,
+    )
+
+    # Series mixing period wildcard rows and explicit rows
+    validate_period_wildcard_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        gridpath_module=__name__,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
     )
 
     tx_lines = get_tx_lines(conn, scenario_id, subscenarios, "capacity_type", "tx_spec")

@@ -339,8 +339,8 @@ def load_model_data(
                 raise ValueError(
                     f"{input_col} for project '{project}' isn't specified for "
                     f"all modeled periods. Give the curve for period 0 to apply "
-                    f"it to every period without its own curve, or include all "
-                    f"modeled periods."
+                    f"it to every period, or give a curve for every modeled "
+                    f"period."
                 )
 
             for period in periods:

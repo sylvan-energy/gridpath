@@ -50,6 +50,31 @@ SPEC_CAPACITY_PRESENT_SQL = "COALESCE({}) IS NOT NULL".format(
     ", ".join(SPEC_CAPACITY_COLUMNS)
 )
 
+# The specified capacity and fixed cost tables, which support period wildcard
+# rows (see gridpath.auxiliary.period_wildcards), with their subscenario ID
+# columns
+SPEC_PERIOD_WILDCARD_TABLES = [
+    ("inputs_project_specified_capacity", "project_specified_capacity_scenario_id"),
+    (
+        "inputs_project_specified_fixed_cost",
+        "project_specified_fixed_cost_scenario_id",
+    ),
+]
+
+
+def spec_period_wildcard_row_filter(subscenarios, scenario_id_column):
+    """
+    :return: SQL condition selecting the rows of the portfolio's projects in
+        the scenario's *scenario_id_column* subscenario
+    """
+    return f"""{scenario_id_column} =
+            {getattr(subscenarios, scenario_id_column.upper())}
+            AND project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )"""
+
 
 def relevant_periods_by_project_vintage(
     future_trajectory_periods,
@@ -194,8 +219,19 @@ def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type)
     """
     db_subproblem = subproblem if subproblem != "" else 1
 
-    # Fixed costs with period = 0 rows applying to every period without
-    # explicit rows
+    # Capacity and fixed costs with period = 0 rows applying to every period;
+    # rows with no capacity of any kind count as absent
+    capacity_sql = period_wildcard_rows_sql(
+        table="inputs_project_specified_capacity",
+        columns=["project", "period"] + SPEC_CAPACITY_COLUMNS,
+        key_columns=["project", "project_specified_capacity_scenario_id"],
+        row_filter=f"project_specified_capacity_scenario_id = "
+        f"{subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID} "
+        f"AND {SPEC_CAPACITY_PRESENT_SQL}",
+        periods_sql=subproblem_periods_sql(
+            subscenarios.TEMPORAL_SCENARIO_ID, db_subproblem
+        ),
+    )
     fixed_cost_sql = period_wildcard_rows_sql(
         table="inputs_project_specified_fixed_cost",
         columns=["project", "period"] + SPEC_FIXED_COST_COLUMNS,
@@ -235,19 +271,7 @@ def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type)
         FROM inputs_temporal_periods
         WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}) as relevant_periods
         INNER JOIN
-        (SELECT project, period,
-        specified_capacity_mw,
-        specified_energy_mwh,
-        shaping_capacity_mw,
-        hyb_gen_specified_capacity_mw,
-        hyb_stor_specified_capacity_mw,
-        specified_stor_capacity_mwh,
-        fuel_production_capacity_fuelunitperhour,
-        fuel_release_capacity_fuelunitperhour,
-        fuel_storage_capacity_fuelunit
-        FROM inputs_project_specified_capacity
-        WHERE project_specified_capacity_scenario_id = {subscenarios.PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID}
-        AND {SPEC_CAPACITY_PRESENT_SQL}) as capacity
+        ({capacity_sql}) as capacity
         USING (project, period)
         LEFT JOIN -- operational periods are based on capacity; fixed costs are optional
         ({fixed_cost_sql}) as fixed_om
@@ -284,7 +308,8 @@ def validate_spec_capacity_coverage(
 
     A project is operational in exactly the periods for which it has a row in
     ``inputs_project_specified_capacity`` with at least one capacity column
-    filled in (a row with every capacity column NULL counts as absent).
+    filled in (a row with every capacity column NULL counts as absent), or
+    in every period if its row is for period 0.
     Leaving periods out is the intended way to model a project that retires,
     or comes online, within the study horizon, and a project may have no row
     at all in the periods of a given subproblem, so that one
@@ -330,16 +355,12 @@ def validate_spec_capacity_coverage(
         periods_by_project.setdefault(project, set()).add(period)
 
     # The same period scoping as spec_get_inputs_from_database
-    subproblem_periods_sql = f"""
-        SELECT DISTINCT period
-        FROM inputs_temporal
-        WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-        AND subproblem_id = {db_subproblem}
-        ORDER BY period
-        ;"""
-    subproblem_periods = [
-        period for (period,) in c.execute(subproblem_periods_sql).fetchall()
-    ]
+    subproblem_periods = sorted(
+        period
+        for (period,) in c.execute(
+            subproblem_periods_sql(subscenarios.TEMPORAL_SCENARIO_ID, db_subproblem)
+        ).fetchall()
+    )
 
     def write(severity, errors):
         write_validation_to_database(
@@ -373,14 +394,18 @@ def validate_spec_capacity_coverage(
     for project in sorted(projects):
         if project not in periods_by_project:
             continue
-        covered = [p for p in subproblem_periods if p in periods_by_project[project]]
+        # A period 0 row covers every period
+        project_periods = periods_by_project[project]
+        if 0 in project_periods:
+            continue
+        covered = [p for p in subproblem_periods if p in project_periods]
         if not covered:
             not_operational.append(project)
             continue
         uncovered_between = [
             p
             for p in subproblem_periods
-            if covered[0] < p < covered[-1] and p not in periods_by_project[project]
+            if covered[0] < p < covered[-1] and p not in project_periods
         ]
         if uncovered_between:
             gaps[project] = uncovered_between

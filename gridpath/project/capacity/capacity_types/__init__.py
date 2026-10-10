@@ -23,7 +23,12 @@ from gridpath.project.capacity.common_functions import (
     load_project_capacity_type_modules,
 )
 from gridpath.auxiliary.db_interface import get_required_capacity_types_from_database
+from gridpath.auxiliary.period_wildcards import require_period_wildcard_only_rows
 from gridpath.auxiliary.validations import validate_period_wildcard_rows
+from gridpath.project.capacity.capacity_types.common_methods import (
+    SPEC_PERIOD_WILDCARD_TABLES,
+    spec_period_wildcard_row_filter,
+)
 
 
 def validate_inputs(
@@ -54,27 +59,25 @@ def validate_inputs(
         required_capacity_type_modules
     )
 
-    # Specified fixed cost period wildcard rows that apply to no period
-    validate_period_wildcard_rows(
-        conn=conn,
-        scenario_id=scenario_id,
-        subscenarios=subscenarios,
-        weather_iteration=weather_iteration,
-        hydro_iteration=hydro_iteration,
-        availability_iteration=availability_iteration,
-        subproblem=subproblem,
-        stage=stage,
-        gridpath_module=__name__,
-        table="inputs_project_specified_fixed_cost",
-        key_columns=["project", "project_specified_fixed_cost_scenario_id"],
-        row_filter=f"""project_specified_fixed_cost_scenario_id =
-            {subscenarios.PROJECT_SPECIFIED_FIXED_COST_SCENARIO_ID}
-            AND project IN (
-                SELECT project FROM inputs_project_portfolios
-                WHERE project_portfolio_scenario_id =
-                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-            )""",
-    )
+    # Specified capacity and fixed cost series mixing period wildcard rows and
+    # explicit rows
+    for table, scenario_id_column in SPEC_PERIOD_WILDCARD_TABLES:
+        validate_period_wildcard_rows(
+            conn=conn,
+            scenario_id=scenario_id,
+            subscenarios=subscenarios,
+            weather_iteration=weather_iteration,
+            hydro_iteration=hydro_iteration,
+            availability_iteration=availability_iteration,
+            subproblem=subproblem,
+            stage=stage,
+            gridpath_module=__name__,
+            table=table,
+            key_columns=["project", scenario_id_column],
+            row_filter=spec_period_wildcard_row_filter(
+                subscenarios, scenario_id_column
+            ),
+        )
 
     # Validate module-specific inputs
     for op_m in required_capacity_type_modules:
@@ -111,9 +114,17 @@ def write_model_inputs(
     :param conn: database connection
     :return:
     """
-    c = conn.cursor()
-    # Load in the required capacity type modules
+    for table, scenario_id_column in SPEC_PERIOD_WILDCARD_TABLES:
+        require_period_wildcard_only_rows(
+            conn=conn,
+            table=table,
+            key_columns=["project", scenario_id_column],
+            row_filter=spec_period_wildcard_row_filter(
+                subscenarios, scenario_id_column
+            ),
+        )
 
+    # Load in the required capacity type modules
     required_capacity_type_modules = get_required_capacity_types_from_database(
         conn, scenario_id
     )

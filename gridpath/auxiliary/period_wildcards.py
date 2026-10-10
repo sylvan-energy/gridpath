@@ -15,21 +15,23 @@
 """
 Period wildcard rows for period-indexed inputs.
 
-In the period-indexed inputs that support it, a row with ``period = 0``
-gives the data for every period of the subproblem without an explicit row
-for that period, so data that doesn't change across periods needs one row
-instead of one per period, and periods that differ need rows only for
-themselves. The rows are resolved when the model inputs are written
+In the period-indexed inputs that support it, a series (e.g. a project's
+rows in one subscenario) is given either for every period at once, with
+``period = 0`` rows, or period by period, with explicit rows only: data that
+doesn't change across periods needs one row (or one set of rows, e.g. the
+load points of a heat rate curve) instead of one per period. Mixing the two
+in one series is an error (High severity in validation, and an error when the
+model inputs are written), so a wildcard never quietly fills a period that
+was left out on purpose (e.g. a retired project's periods in the specified
+capacity inputs): to vary by period, give every period explicitly.
+
+The rows are resolved when the model inputs are written
 (:code:`period_wildcard_rows_sql`), so the input files written from the
 database carry real periods only; input files written by other means may
 still contain period 0 rows, which the model data loaders resolve the same
-way (:code:`expand_period_wildcard_rows`).
-
-An explicit period's rows take precedence over the wildcard rows as a whole:
-for inputs with several rows per period (e.g. the load points of a heat rate
-curve), a period with any explicit row reads only its explicit rows. (The
-market volume period profiles, whose NULL cells fall through to the next
-layer, resolve their wildcard rows per column instead; see
+way (:code:`expand_period_wildcard_rows`). (The market volume period
+profiles, whose NULL cells fall through to the next layer, combine their
+wildcard rows with explicit rows per column instead; see
 :code:`gridpath.system.markets.volume`.)
 
 This module imports nothing from the rest of GridPath, so any module can
@@ -68,8 +70,7 @@ def period_wildcard_rows_sql(table, columns, key_columns, row_filter, periods_sq
     :param columns: the table's columns to select, in order, including
         period
     :param key_columns: the columns identifying a series of the table (e.g.
-        project and its subscenario ID); a period with an explicit row of the
-        series doesn't read the series' wildcard rows
+        project and its subscenario ID)
     :param row_filter: SQL condition on the table's rows selecting the
         series that apply (e.g. the portfolio projects with their
         subscenario IDs); it must not reference period
@@ -77,8 +78,9 @@ def period_wildcard_rows_sql(table, columns, key_columns, row_filter, periods_sq
         rows for, e.g. from :code:`subproblem_periods_sql`
     :return: SQL selecting *columns* for the explicit rows of the periods in
         *periods_sql*, and the wildcard (period 0) rows relabeled with each
-        of those periods that has no explicit row of the same series,
-        ordered by *key_columns*, period, and the other columns
+        of those periods, ordered by *key_columns*, period, and the other
+        columns (a series mixing the two, which
+        :code:`mixed_period_wildcard_series_sql` finds, would get both)
     """
     explicit_columns = ", ".join(f"{table}.{c} AS {c}" for c in columns)
     wildcard_columns = ", ".join(
@@ -89,7 +91,6 @@ def period_wildcard_rows_sql(table, columns, key_columns, row_filter, periods_sq
         )
         for c in columns
     )
-    key_match = " AND ".join(f"explicit.{c} = {table}.{c}" for c in key_columns)
     # Deterministic output: by series, period, then the remaining columns
     # (e.g. the load points of a curve)
     order_by = ", ".join(
@@ -111,22 +112,16 @@ def period_wildcard_rows_sql(table, columns, key_columns, row_filter, periods_sq
             ) AS wildcard_periods
             WHERE {row_filter}
             AND {table}.period = 0
-            AND NOT EXISTS (
-                SELECT 1 FROM {table} AS explicit
-                WHERE {key_match}
-                AND explicit.period = wildcard_periods.wildcard_period
-            )
         )
         ORDER BY {order_by}
         """
 
 
-def redundant_period_wildcards_sql(table, key_columns, row_filter, periods_sql):
+def mixed_period_wildcard_series_sql(table, key_columns, row_filter):
     """
     :return: SQL selecting the series (*key_columns*) of *table* matching
-        *row_filter* that have wildcard (period 0) rows and explicit rows
-        for every period in *periods_sql*, so that their wildcard rows apply
-        to no period
+        *row_filter* that have both wildcard (period 0) rows and explicit
+        rows
     """
     key_select = ", ".join(key_columns)
     key_match = " AND ".join(f"explicit.{c} = {table}.{c}" for c in key_columns)
@@ -135,42 +130,77 @@ def redundant_period_wildcards_sql(table, key_columns, row_filter, periods_sql):
         FROM {table}
         WHERE {row_filter}
         AND period = 0
-        AND NOT EXISTS (
-            SELECT 1 FROM ({periods_sql}) AS model_periods
-            WHERE NOT EXISTS (
-                SELECT 1 FROM {table} AS explicit
-                WHERE {key_match}
-                AND explicit.period = model_periods.period
-            )
+        AND EXISTS (
+            SELECT 1 FROM {table} AS explicit
+            WHERE {key_match}
+            AND explicit.period != 0
         )
+        ORDER BY {key_select}
         """
 
 
-def expand_period_wildcard_rows(df, key_columns, periods):
+def mixed_period_wildcards_error(table, series):
+    """
+    :param table: the input table (or input file)
+    :param series: the series mixing wildcard and explicit rows, as dicts of
+        their key columns
+    :return: the error message
+    """
+    return (
+        f"{table}: {series} have both period 0 rows and rows for explicit "
+        f"periods. Give either period 0 rows only, which apply to every "
+        f"period, or rows for explicit periods only."
+    )
+
+
+def require_period_wildcard_only_rows(conn, table, key_columns, row_filter):
+    """
+    Raise a ValueError if a series of *table* (see
+    :code:`mixed_period_wildcard_series_sql`) mixes wildcard and explicit
+    rows; call it where the model inputs are written.
+    """
+    mixed = (
+        conn.cursor()
+        .execute(mixed_period_wildcard_series_sql(table, key_columns, row_filter))
+        .fetchall()
+    )
+    if mixed:
+        raise ValueError(
+            mixed_period_wildcards_error(
+                table, [dict(zip(key_columns, series)) for series in mixed]
+            )
+        )
+
+
+def expand_period_wildcard_rows(df, key_columns, periods, filename="input file"):
     """
     The same resolution for an input file's rows: replace the period 0 rows
-    of *df* with a copy for each of *periods* that has no explicit row of the
-    same series (*key_columns*); explicit rows are kept as they are.
+    of *df* with a copy for each of *periods*; explicit rows are kept as
+    they are.
 
     :param df: DataFrame with a period column and *key_columns*
     :param key_columns: the columns identifying a series
     :param periods: the modeling periods
+    :param filename: the input file, for the error message
     :return: the DataFrame with the wildcard rows resolved
+    :raises ValueError: if a series has both wildcard and explicit rows
     """
     is_wildcard = df["period"] == 0
     if not is_wildcard.any():
         return df
     explicit = df[~is_wildcard]
     wildcard = df[is_wildcard]
-    explicit_keys = set(
-        explicit[key_columns + ["period"]].itertuples(index=False, name=None)
+    explicit_series = set(explicit[key_columns].itertuples(index=False, name=None))
+    mixed = sorted(
+        set(wildcard[key_columns].itertuples(index=False, name=None)) & explicit_series
     )
-    expanded = pd.concat(
-        [wildcard.assign(period=period) for period in sorted(periods)]
-        or [wildcard.iloc[0:0]]
+    if mixed:
+        raise ValueError(
+            mixed_period_wildcards_error(
+                filename, [dict(zip(key_columns, series)) for series in mixed]
+            )
+        )
+    return pd.concat(
+        [explicit] + [wildcard.assign(period=period) for period in sorted(periods)],
+        ignore_index=True,
     )
-    keep = [
-        key not in explicit_keys
-        for key in expanded[key_columns + ["period"]].itertuples(index=False, name=None)
-    ]
-    return pd.concat([explicit, expanded[keep]], ignore_index=True)
