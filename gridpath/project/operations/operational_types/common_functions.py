@@ -24,9 +24,9 @@ from gridpath.project.common_functions import (
     check_boundary_type,
 )
 from gridpath.auxiliary.auxiliary import cursor_to_df
-from gridpath.auxiliary.month_of_year import (
-    month_of_year_index_cte_sql,
-    month_of_year_rows_sql,
+from gridpath.auxiliary.calendar_rows import (
+    calendar_index_cte_sql,
+    calendar_rows_sql,
 )
 from gridpath.auxiliary.validations import (
     write_validation_to_database,
@@ -726,11 +726,11 @@ def get_prj_temporal_index_opr_inputs_from_db(
         opr_index_dict["map_resolved_index_cte"].format(map_id=map_id)
         for map_id in map_ids
     )
-    # Month-of-year rows (see gridpath.auxiliary.month_of_year) apply to
+    # Calendar rows (see gridpath.auxiliary.calendar_rows) apply to
     # horizon-indexed inputs only
     bt_column = opr_index_dict.get("bt_column")
-    month_of_year_cte_sql = (
-        month_of_year_index_cte_sql(
+    calendar_cte_sql = (
+        calendar_index_cte_sql(
             temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
             subproblem=subproblem,
             stage=stage,
@@ -738,7 +738,7 @@ def get_prj_temporal_index_opr_inputs_from_db(
         if bt_column is not None
         else ""
     )
-    cte_sql = cte_prj_sql + cte_tmp_sql + map_cte_sql + month_of_year_cte_sql
+    cte_sql = cte_prj_sql + cte_tmp_sql + map_cte_sql + calendar_cte_sql
 
     # If no iteration configs exist, return empty result
     if not iteration_configs:
@@ -823,14 +823,14 @@ def get_prj_temporal_index_opr_inputs_from_db(
             {map_filter}
         """)
             if bt_column is not None:
-                # Month-of-year rows for the month horizons without an
-                # explicit row, relabeled with the model horizon (projects
+                # Calendar (month-of-year and day-of-year) rows for the
+                # calendar horizons without an explicit row, relabeled with the model horizon (projects
                 # with a temporal map read only what the map points to)
                 explicit_stage = (
                     "" if exclude_stage else f"AND explicit.stage_id = {stage}"
                 )
                 union_parts.append(
-                    month_of_year_rows_sql(
+                    calendar_rows_sql(
                         table=table,
                         bt_column=bt_column,
                         select_columns=("project", data_column),
@@ -1086,8 +1086,9 @@ def projects_without_bt_hrz_rows_error(projects, db_table):
         f"the temporal scenario (of the project's energy-budget balancing "
         f"type); the per-horizon parameters are required for every "
         f"operational timepoint and the model would fail to build. On the "
-        f"built-in subproblem_period_month_* balancing types, rows may also "
-        f"be given per month of year (horizon 1-12)."
+        f"built-in subproblem_period_month_* and subproblem_period_day_* "
+        f"balancing types, rows may also be given per month of year "
+        f"(horizon 1-12) or day of year (horizon month * 100 + day, 101-1231)."
     )
 
 

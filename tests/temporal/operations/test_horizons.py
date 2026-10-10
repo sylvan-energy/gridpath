@@ -555,7 +555,10 @@ class TestHorizons(unittest.TestCase):
         The built-in horizons the database temporal loader writes match the
         model's built-in horizons, boundaries, and timepoints for every
         built-in balancing type, so horizon-indexed inputs on built-in
-        horizons reach the model; one month's timepoints are not contiguous
+        horizons reach the model; one month's timepoints are not contiguous,
+        days of month cycle so that days' timepoints are not contiguous
+        either, and one timepoint has no day of month (so is in no day
+        horizon)
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             test_data_dir = os.path.join(tmp_dir, "test_data")
@@ -567,6 +570,8 @@ class TestHorizons(unittest.TestCase):
             tmps_df = pd.read_csv(tmps_file, sep="\t", dtype=str, keep_default_na=False)
             # Put a timepoint in the middle of May 2020 in September 2020
             tmps_df.loc[tmps_df["timepoint"] == "20200112", "month"] = "9"
+            tmps_df["day_of_month"] = [str(i % 3 + 1) for i in range(len(tmps_df))]
+            tmps_df.loc[tmps_df["timepoint"] == "20200105", "day_of_month"] = "."
             tmps_df.to_csv(tmps_file, sep="\t", index=False)
 
             m, data = add_components_and_load_data(
@@ -588,8 +593,8 @@ class TestHorizons(unittest.TestCase):
         conn.executemany(
             """INSERT INTO inputs_temporal (temporal_scenario_id, subproblem_id,
             stage_id, timepoint, period, number_of_hours_in_timepoint,
-            timepoint_weight, spinup_or_lookahead, month)
-            VALUES (1, 1, 1, ?, ?, ?, ?, 0, ?)""",
+            timepoint_weight, spinup_or_lookahead, month, day_of_month)
+            VALUES (1, 1, 1, ?, ?, ?, ?, 0, ?, ?)""",
             tmps_df[
                 [
                     "timepoint",
@@ -597,8 +602,10 @@ class TestHorizons(unittest.TestCase):
                     "number_of_hours_in_timepoint",
                     "timepoint_weight",
                     "month",
+                    "day_of_month",
                 ]
             ]
+            .replace(".", None)
             .astype(float)
             .values.tolist(),
         )
@@ -633,6 +640,17 @@ class TestHorizons(unittest.TestCase):
         )
         self.assertIn(("subproblem_period_month_linear", 202009), model_tmps)
         self.assertIn(20200112, model_tmps["subproblem_period_month_linear", 202009])
+        self.assertIn(("subproblem_period_day_circular", 20200502), model_tmps)
+        self.assertNotIn(
+            20200105,
+            set().union(
+                *(
+                    tmps
+                    for (bt, _), tmps in model_tmps.items()
+                    if bt.startswith("subproblem_period_day")
+                )
+            ),
+        )
         self.assertEqual(db_tmps, model_tmps)
         self.assertEqual(db_boundaries, model_boundaries)
 

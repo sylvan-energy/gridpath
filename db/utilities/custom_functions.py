@@ -210,6 +210,50 @@ def temporal(conn, subscenario_id):
             many=False,
         )
 
+    # Subproblem-period-day balancing type (linear and circular only, as in
+    # the model): a horizon (period * 10000 + month * 100 + day_of_month)
+    # holds the timepoints with that period, month, and day of month;
+    # timepoints without a month or day of month are in no day horizon
+    for boundary in ["circular", "linear"]:
+        day_horizons_sql = f"""
+            INSERT INTO inputs_temporal_horizons
+            (temporal_scenario_id, balancing_type_horizon, horizon, boundary)
+            SELECT DISTINCT temporal_scenario_id,
+                'subproblem_period_day_{boundary}',
+                period * 10000 + month * 100 + day_of_month, '{boundary}'
+            FROM inputs_temporal
+            WHERE temporal_scenario_id = ?
+            AND month IS NOT NULL
+            AND day_of_month IS NOT NULL;
+            """
+        spin_on_database_lock(
+            conn=conn,
+            cursor=c,
+            sql=day_horizons_sql,
+            data=(subscenario_id,),
+            many=False,
+        )
+
+        day_horizon_timepoints_sql = f"""
+            INSERT INTO inputs_temporal_horizon_timepoints
+            (temporal_scenario_id, subproblem_id, stage_id, timepoint,
+            balancing_type_horizon, horizon)
+            SELECT temporal_scenario_id, subproblem_id, stage_id, timepoint,
+                'subproblem_period_day_{boundary}',
+                period * 10000 + month * 100 + day_of_month
+            FROM inputs_temporal
+            WHERE temporal_scenario_id = ?
+            AND month IS NOT NULL
+            AND day_of_month IS NOT NULL;
+            """
+        spin_on_database_lock(
+            conn=conn,
+            cursor=c,
+            sql=day_horizon_timepoints_sql,
+            data=(subscenario_id,),
+            many=False,
+        )
+
     # TIMEPOINT HORIZONS
     subproblem_stages = c.execute(f"""
         SELECT subproblem_id, stage_id

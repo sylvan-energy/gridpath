@@ -1,0 +1,2 @@
+weather_iteration,stage_id,balancing_type_project,horizon,availability_derate_weather_bt_hrz
+0,1,subproblem_period_day_circular,101,0.75

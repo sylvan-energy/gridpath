@@ -13,18 +13,19 @@
 # limitations under the License.
 
 """
-The shared month-of-year SQL building blocks; their use by the opchar and
-market volume inputs is tested with those modules.
+The shared calendar row SQL building blocks; their use by the opchar, market
+volume and availability inputs is tested with those modules.
 """
 
 import os.path
 import sqlite3
 import unittest
 
-from gridpath.auxiliary.month_of_year import (
+from gridpath.auxiliary.calendar_rows import (
+    DAY_HORIZON_TYPES,
     MONTH_HORIZON_TYPES,
-    bt_hrz_month_index_sql,
-    month_of_year_row_sql,
+    bt_hrz_calendar_index_sql,
+    calendar_row_sql,
 )
 from gridpath.temporal.operations.horizons import BUILTIN_HORIZON_TYPES
 
@@ -33,25 +34,31 @@ DB_SCHEMA_FILE = os.path.join(
 )
 
 MONTH_BT = "subproblem_period_month_linear"
+DAY_BT = "subproblem_period_day_circular"
 
 
-class TestMonthOfYear(unittest.TestCase):
+class TestCalendarRows(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
         with open(DB_SCHEMA_FILE) as f:
             self.conn.executescript(f.read())
-        # Period 2020, months 1 and 2, one timepoint each; every timepoint is
-        # in a 'day' horizon and in its built-in month horizon
-        for tmp, month in [(1, 1), (2, 2)]:
+        # Period 2020: 3 January and 14 February, one timepoint each; every
+        # timepoint is in a 'day' horizon and in its built-in month and day
+        # horizons
+        for tmp, month, day in [(1, 1, 3), (2, 2, 14)]:
             self.conn.execute(
                 """INSERT INTO inputs_temporal
                 (temporal_scenario_id, subproblem_id, stage_id, timepoint,
                 period, number_of_hours_in_timepoint, timepoint_weight,
-                spinup_or_lookahead, month)
-                VALUES (1, 1, 1, ?, 2020, 1, 1, 0, ?)""",
-                (tmp, month),
+                spinup_or_lookahead, month, day_of_month)
+                VALUES (1, 1, 1, ?, 2020, 1, 1, 0, ?, ?)""",
+                (tmp, month, day),
             )
-            for bt, hrz in [("day", tmp), (MONTH_BT, 202000 + month)]:
+            for bt, hrz in [
+                ("day", tmp),
+                (MONTH_BT, 202000 + month),
+                (DAY_BT, 20200000 + month * 100 + day),
+            ]:
                 self.conn.execute(
                     """INSERT INTO inputs_temporal_horizon_timepoints
                     (temporal_scenario_id, subproblem_id, stage_id, timepoint,
@@ -63,43 +70,45 @@ class TestMonthOfYear(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def test_month_horizon_types_are_builtin(self):
-        self.assertTrue(set(MONTH_HORIZON_TYPES) <= set(BUILTIN_HORIZON_TYPES))
+    def test_calendar_horizon_types_are_builtin(self):
+        self.assertTrue(
+            set(MONTH_HORIZON_TYPES + DAY_HORIZON_TYPES) <= set(BUILTIN_HORIZON_TYPES)
+        )
 
-    def test_index_has_months_of_month_horizons_only(self):
-        rows = self.conn.execute(bt_hrz_month_index_sql(1, 1, 1)).fetchall()
+    def test_index_has_calendar_keys_of_calendar_horizons_only(self):
+        rows = self.conn.execute(bt_hrz_calendar_index_sql(1, 1, 1)).fetchall()
+        calendar_rows = [
+            (MONTH_BT, 202001, 1),
+            (MONTH_BT, 202002, 2),
+            (DAY_BT, 20200103, 103),
+            (DAY_BT, 20200214, 214),
+        ]
         self.assertListEqual(
             sorted(rows, key=str),
-            sorted(
-                [
-                    ("day", 1, None),
-                    ("day", 2, None),
-                    (MONTH_BT, 202001, 1),
-                    (MONTH_BT, 202002, 2),
-                ],
-                key=str,
-            ),
+            sorted([("day", 1, None), ("day", 2, None)] + calendar_rows, key=str),
         )
         rows = self.conn.execute(
-            bt_hrz_month_index_sql(1, 1, 1, month_horizons_only=True)
+            bt_hrz_calendar_index_sql(1, 1, 1, calendar_horizons_only=True)
         ).fetchall()
-        self.assertListEqual(
-            sorted(rows), [(MONTH_BT, 202001, 1), (MONTH_BT, 202002, 2)]
-        )
+        self.assertListEqual(sorted(rows), sorted(calendar_rows))
 
-    def test_month_of_year_row_condition(self):
+    def test_calendar_row_condition(self):
         rows = [(MONTH_BT, 1), (MONTH_BT, 12), (MONTH_BT, 13), (MONTH_BT, 0)]
-        rows += [(MONTH_BT, 202001), ("day", 1)]
+        rows += [(MONTH_BT, 202001), (MONTH_BT, 101)]
+        rows += [(DAY_BT, 101), (DAY_BT, 1231), (DAY_BT, 1), (DAY_BT, 0)]
+        rows += [(DAY_BT, 1232), (DAY_BT, 20200101), ("day", 1), ("day", 101)]
         matches = [
             row
             for row in rows
             if self.conn.execute(
-                f"""SELECT {month_of_year_row_sql("bt", "hrz")}
+                f"""SELECT {calendar_row_sql("bt", "hrz")}
                 FROM (SELECT ? AS bt, ? AS hrz)""",
                 row,
             ).fetchone()[0]
         ]
-        self.assertListEqual([(MONTH_BT, 1), (MONTH_BT, 12)], matches)
+        self.assertListEqual(
+            [(MONTH_BT, 1), (MONTH_BT, 12), (DAY_BT, 101), (DAY_BT, 1231)], matches
+        )
 
 
 if __name__ == "__main__":

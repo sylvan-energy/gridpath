@@ -239,6 +239,37 @@ class TestOpcharMonthOfYearInputs(unittest.TestCase):
             self.project_rows("Hydro_MOY", exclude_stage=True),
         )
 
+    def test_day_of_year_rows_apply_to_every_period(self):
+        """
+        On the built-in day balancing type, a day-of-year row (horizon
+        month * 100 + day, here 1 February = 201) supplies that date in every
+        period, and an explicit 2030 row takes precedence.
+        """
+        day_bt = "subproblem_period_day_linear"
+        self.conn.execute("UPDATE inputs_temporal SET day_of_month = 1")
+        self.conn.execute("""INSERT INTO inputs_temporal_horizon_timepoints
+            SELECT temporal_scenario_id, subproblem_id, stage_id, timepoint,
+                'subproblem_period_day_linear',
+                period * 10000 + month * 100 + day_of_month
+            FROM inputs_temporal""")
+        self.conn.execute("""UPDATE inputs_project_operational_chars
+            SET balancing_type_project = 'subproblem_period_day_linear'
+            WHERE project = 'Hydro_Day'""")
+        self.insert_rows(
+            [
+                ("Hydro_Day", 1, day_bt, 201, 0.4),
+                ("Hydro_Day", 1, day_bt, 20300201, 0.6),
+                ("Hydro_Day", 1, day_bt, 1, 0.9),
+            ]
+        )
+        self.assertEqual(
+            self.project_rows("Hydro_Day"),
+            [
+                ("Hydro_Day", day_bt, 20200201, 0.4),
+                ("Hydro_Day", day_bt, 20300201, 0.6),
+            ],
+        )
+
     def test_require_rows_for_every_project(self):
         """
         The get_inputs check raises, naming the projects without rows

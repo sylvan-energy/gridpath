@@ -32,6 +32,10 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.calendar_rows import (
+    calendar_index_cte_sql,
+    calendar_rows_sql,
+)
 from gridpath.auxiliary.validations import (
     warn_on_unknown_balancing_types,
     write_validation_to_database,
@@ -460,6 +464,70 @@ def load_model_data(
 ###############################################################################
 
 
+def get_bt_hrz_derate_sql(
+    subscenarios,
+    subproblem,
+    stage,
+    table,
+    scenario_id_column,
+    derate_column,
+    iteration_column,
+    iteration,
+):
+    """
+    The (project, balancing type, horizon) derates of *table* for the
+    portfolio's exogenous-availability projects with a *scenario_id_column*
+    subscenario, for the horizons of the subproblem, and the iteration and
+    stage; on the built-in month and day balancing types, calendar rows
+    (month-of-year and day-of-year rows, see gridpath.auxiliary.calendar_rows)
+    supply the horizons without an explicit row.
+    """
+    row_filter = f"""project IN (
+            SELECT project FROM inputs_project_portfolios
+            WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+        )
+        -- Projects from this availability ID and type with this subscenario
+        AND (project, {scenario_id_column}) IN (
+            SELECT project, {scenario_id_column}
+            FROM inputs_project_availability
+            WHERE project_availability_scenario_id = {subscenarios.PROJECT_AVAILABILITY_SCENARIO_ID}
+            AND availability_type = 'exogenous'
+            AND {scenario_id_column} IS NOT NULL
+        )
+        -- Get the correct iteration
+        AND {iteration_column} = {iteration}
+        -- Get the stage's data
+        AND stage_id = {stage}"""
+
+    calendar_rows = calendar_rows_sql(
+        table=table,
+        bt_column="balancing_type_project",
+        select_columns=("project", derate_column),
+        row_filter=row_filter,
+        key_columns=["project", scenario_id_column],
+        explicit_filter=f"""AND explicit.{iteration_column} = {iteration}
+            AND explicit.stage_id = {stage}""",
+    )
+
+    return f"""
+        {calendar_index_cte_sql(
+            subscenarios.TEMPORAL_SCENARIO_ID, subproblem, stage, first=True
+        )}
+        SELECT project, balancing_type_project, horizon, {derate_column}
+        FROM {table}
+        WHERE {row_filter}
+        -- Relevant temporal index
+        AND (balancing_type_project, horizon) IN (
+            SELECT balancing_type_horizon, horizon
+            FROM inputs_temporal_horizon_timepoints
+            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            AND subproblem_id = {subproblem}
+        )
+        UNION ALL
+        {calendar_rows}
+        """
+
+
 def get_inputs_from_database(
     scenario_id,
     subscenarios,
@@ -590,84 +658,30 @@ def get_inputs_from_database(
             )""",
         )
 
-    # Derate by balancing type - horizon
-    bt_hrz_ind_sql = f"""
-        SELECT project, balancing_type_project, horizon, availability_derate_independent_bt_hrz
-        FROM inputs_project_availability_exogenous_independent_bt_hrz
-        -- Portfolio projects only
-        WHERE project IN (
-            SELECT project FROM inputs_project_portfolios
-            WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-        )
-        -- Projects from this availability ID and type only
-        AND project IN (
-            SELECT project
-            FROM inputs_project_availability
-            WHERE project_availability_scenario_id = {subscenarios.PROJECT_AVAILABILITY_SCENARIO_ID}
-            AND availability_type = 'exogenous'
-            AND exogenous_availability_independent_bt_hrz_scenario_id IS NOT NULL
-        )
-        -- Relevant optype opchar ID
-        AND (project, exogenous_availability_independent_bt_hrz_scenario_id) IN (
-            SELECT project, exogenous_availability_independent_bt_hrz_scenario_id
-            FROM inputs_project_availability
-            WHERE project_availability_scenario_id = {subscenarios.PROJECT_AVAILABILITY_SCENARIO_ID}
-        )
-        -- Relevant temporal index
-        AND (balancing_type_project, horizon) IN (
-            SELECT balancing_type_horizon, horizon
-            FROM inputs_temporal_horizon_timepoints
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            AND subproblem_id = {subproblem}
-        )
-        -- Get the correct availability iteration
-        AND availability_iteration = {availability_iteration}
-        -- Get the stage's data
-        AND stage_id = {stage}
-        ;
-    """
-
+    # Derates by balancing type - horizon, independent and weather-dependent
+    bt_hrz_ind_sql = get_bt_hrz_derate_sql(
+        subscenarios=subscenarios,
+        subproblem=subproblem,
+        stage=stage,
+        table="inputs_project_availability_exogenous_independent_bt_hrz",
+        scenario_id_column="exogenous_availability_independent_bt_hrz_scenario_id",
+        derate_column="availability_derate_independent_bt_hrz",
+        iteration_column="availability_iteration",
+        iteration=availability_iteration,
+    )
     c3 = conn.cursor()
     bt_hrz_independent_availabilities = c3.execute(bt_hrz_ind_sql)
 
-    # Derate by timepoint and weather
-    bt_hrz_weather_sql = f"""
-        SELECT project, balancing_type_project, horizon, 
-        availability_derate_weather_bt_hrz
-        FROM inputs_project_availability_exogenous_weather_bt_hrz
-        -- Portfolio projects only
-        WHERE project IN (
-            SELECT project FROM inputs_project_portfolios
-            WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-        )
-        -- Projects from this availability ID and type only
-        AND project IN (
-            SELECT project
-            FROM inputs_project_availability
-            WHERE project_availability_scenario_id = {subscenarios.PROJECT_AVAILABILITY_SCENARIO_ID}
-            AND availability_type = 'exogenous'
-            AND exogenous_availability_weather_bt_hrz_scenario_id IS NOT NULL
-        )
-        -- Relevant optype opchar ID
-        AND (project, exogenous_availability_weather_bt_hrz_scenario_id) IN (
-            SELECT project, exogenous_availability_weather_bt_hrz_scenario_id
-            FROM inputs_project_availability
-            WHERE project_availability_scenario_id = {subscenarios.PROJECT_AVAILABILITY_SCENARIO_ID}
-        )
-        -- Relevant temporal index
-        AND (balancing_type_project, horizon) IN (
-            SELECT balancing_type_horizon, horizon
-            FROM inputs_temporal_horizon_timepoints
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            AND subproblem_id = {subproblem}
-        )
-        -- Get the correct weather iteration
-        AND weather_iteration = {weather_iteration}
-        -- Get the stage's data
-        AND stage_id = {stage}
-        ;
-    """
-
+    bt_hrz_weather_sql = get_bt_hrz_derate_sql(
+        subscenarios=subscenarios,
+        subproblem=subproblem,
+        stage=stage,
+        table="inputs_project_availability_exogenous_weather_bt_hrz",
+        scenario_id_column="exogenous_availability_weather_bt_hrz_scenario_id",
+        derate_column="availability_derate_weather_bt_hrz",
+        iteration_column="weather_iteration",
+        iteration=weather_iteration,
+    )
     c4 = conn.cursor()
     bt_hrz_weather_availabilities = c4.execute(bt_hrz_weather_sql)
 

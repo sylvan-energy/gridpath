@@ -1,0 +1,5 @@
+project,availability_type,exogenous_availability_independent_scenario_id,exogenous_availability_weather_scenario_id,exogenous_availability_independent_bt_hrz_scenario_id,exogenous_availability_weather_bt_hrz_scenario_id,exogenous_availability_monthly_scenario_id,endogenous_availability_scenario_id
+Coal,exogenous,2,,2,2,,
+Batteries,exogenous,1,,,,,
+Gas,exogenous,1,1,,,,
+Hybrid,exogenous,1,,,,,

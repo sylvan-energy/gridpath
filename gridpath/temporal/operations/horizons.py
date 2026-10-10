@@ -42,6 +42,27 @@ the previous horizon as the previous timepoint for the first timepoint of a
 horizon (this can only be done when running multiple subproblems and inputs
 must be specified appropriately).
 
+GridPath also builds a set of *built-in* balancing types from the timepoints'
+subproblem, period, month and day of month, so they need no horizon inputs:
+
+* :code:`subproblem_{circular,linear,linked}`: one horizon (1) with all
+  timepoints of the subproblem;
+* :code:`subproblem_period_{circular,linear,linked}`: one horizon per period
+  (horizon = period);
+* :code:`subproblem_period_month_{circular,linear}`: one horizon per period
+  and month (horizon = :code:`period * 100 + month`);
+* :code:`subproblem_period_day_{circular,linear}`: one horizon per period and
+  day (horizon = :code:`period * 10000 + month * 100 + day_of_month`, i.e.
+  YYYYMMDD when periods are calendar years); timepoints without a day of
+  month are in no day horizon.
+
+The month and day types group timepoints by period and calendar month or
+date, so a period that spans several calendar years merges the same month or
+date of those years into one horizon; define your own balancing types where
+that matters. Horizon-indexed inputs on the month and day types can also be
+given once per month or date for every period (month-of-year and day-of-year
+rows; see :code:`gridpath.auxiliary.calendar_rows`).
+
 Each *horizon* can optionally also be designated as an 'average' or 'stress'
 horizon via the :code:`stor_stress_hrz_type` input; this designation is used
 only by projects of the :code:`stor_stress_hrz` operational type and is
@@ -55,7 +76,7 @@ import warnings
 from pyomo.environ import Set, Param, PositiveIntegers
 
 from gridpath.auxiliary.auxiliary import cursor_to_df
-from gridpath.auxiliary.month_of_year import MONTH_HORIZON_TYPES
+from gridpath.auxiliary.calendar_rows import DAY_HORIZON_TYPES, MONTH_HORIZON_TYPES
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import (
     write_validation_to_database,
@@ -67,14 +88,44 @@ from gridpath.auxiliary.validations import (
 )
 from gridpath.project import write_tab_file_model_inputs
 
-BUILTIN_HORIZON_TYPES = [
-    "subproblem_circular",
-    "subproblem_period_circular",
-    "subproblem_linear",
-    "subproblem_period_linear",
-    "subproblem_linked",
-    "subproblem_period_linked",
-] + MONTH_HORIZON_TYPES
+BUILTIN_HORIZON_TYPES = (
+    [
+        "subproblem_circular",
+        "subproblem_period_circular",
+        "subproblem_linear",
+        "subproblem_period_linear",
+        "subproblem_linked",
+        "subproblem_period_linked",
+    ]
+    + MONTH_HORIZON_TYPES
+    + DAY_HORIZON_TYPES
+)
+
+# Cached on the model instance by calendar_horizon_tmps()
+CALENDAR_HORIZON_TMPS_CACHE = "_gridpath_calendar_horizon_tmps"
+
+
+def calendar_horizon_tmps(mod):
+    """
+    The timepoints of each built-in month horizon (period * 100 + month) and
+    day horizon (period * 10000 + month * 100 + day_of_month), in timepoint
+    order, built in one pass over the timepoints and cached on the model
+    instance. Timepoints without a day of month (0) are in no day horizon.
+
+    :return: dict of {"month": {horizon: [tmps]}, "day": {horizon: [tmps]}}
+    """
+    cached = getattr(mod, CALENDAR_HORIZON_TMPS_CACHE, None)
+    if cached is None:
+        cached = {"month": {}, "day": {}}
+        for tmp in mod.TMPS:
+            period, month, day = mod.period[tmp], mod.month[tmp], mod.day_of_month[tmp]
+            cached["month"].setdefault(period * 100 + month, []).append(tmp)
+            if day > 0:
+                cached["day"].setdefault(period * 10000 + month * 100 + day, []).append(
+                    tmp
+                )
+        setattr(mod, CALENDAR_HORIZON_TMPS_CACHE, cached)
+    return cached
 
 
 def add_model_components(
@@ -212,6 +263,8 @@ def add_model_components(
         * subproblem_period: all timepoints in a given period in the subproblem
         * subproblem_period_month: all timepoints in a given month in the
         subproblem and period
+        * subproblem_period_day: all timepoints on a given day (month and
+          day of month) in the subproblem and period
 
         These can be linear or circular
         """
@@ -229,6 +282,11 @@ def add_model_components(
             + [
                 ("subproblem_period_month_circular", period * 100 + month)
                 for (period, month) in mod.VALID_PERIOD_MONTHS
+            ]
+            + [
+                (bt, hrz)
+                for bt in DAY_HORIZON_TYPES
+                for hrz in calendar_horizon_tmps(mod)["day"]
             ]
         )
 
@@ -258,9 +316,9 @@ def add_model_components(
         ]:
             return [tmp for tmp in mod.TMPS_IN_PRD[h]]
         elif b in MONTH_HORIZON_TYPES:
-            return [
-                tmp for tmp in mod.TMPS if (mod.month[tmp] + 100 * mod.period[tmp]) == h
-            ]
+            return calendar_horizon_tmps(mod)["month"][h]
+        elif b in DAY_HORIZON_TYPES:
+            return calendar_horizon_tmps(mod)["day"][h]
         else:
             raise ValueError(
                 f"Unrecognized built-in balancing type '{b}' " f"with horizon '{h}'."
