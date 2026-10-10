@@ -2,9 +2,3 @@ project	period	load_point_fraction	average_variable_om_cost_per_mwh
 Gas_CCGT	2020	0.5	2.0
 Gas_CCGT	2020	0.75	1.8
 Gas_CCGT	2020	1.0	1.75
-Gas_CCGT	2030	0.5	2.0
-Gas_CCGT	2030	0.75	1.8
-Gas_CCGT	2030	1.0	1.75
-Gas_CCGT	2040	0.5	2.0
-Gas_CCGT	2040	0.75	1.8
-Gas_CCGT	2040	1.0	1.75

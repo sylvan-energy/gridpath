@@ -21,6 +21,10 @@ import os.path
 import pandas as pd
 
 from db.common_functions import spin_on_database_lock
+from gridpath.auxiliary.period_wildcards import (
+    period_wildcard_rows_sql,
+    subproblem_periods_sql,
+)
 from gridpath.auxiliary.validations import (
     get_projects,
     validate_idxs,
@@ -170,12 +174,38 @@ def project_vintages_relevant_in_period(
 
 
 # Specified projects common functions
+SPEC_FIXED_COST_COLUMNS = [
+    "fixed_cost_per_mw_yr",
+    "fixed_cost_per_energy_mwh_yr",
+    "fixed_cost_per_shaping_mw_yr",
+    "hyb_gen_fixed_cost_per_mw_yr",
+    "hyb_stor_fixed_cost_per_mw_yr",
+    "fixed_cost_per_stor_mwh_yr",
+    "fuel_release_capacity_fixed_cost_per_fuelunitperhour_yr",
+    "fuel_production_capacity_fixed_cost_per_fuelunitperhour_yr",
+    "fuel_storage_capacity_fixed_cost_per_fuelunit_yr",
+]
+
+
 def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type):
     """
     Get the various capacity and fixed cost parameters for projects with
     "specified" capacity types.
     """
     db_subproblem = subproblem if subproblem != "" else 1
+
+    # Fixed costs with period = 0 rows applying to every period without
+    # explicit rows
+    fixed_cost_sql = period_wildcard_rows_sql(
+        table="inputs_project_specified_fixed_cost",
+        columns=["project", "period"] + SPEC_FIXED_COST_COLUMNS,
+        key_columns=["project", "project_specified_fixed_cost_scenario_id"],
+        row_filter=f"project_specified_fixed_cost_scenario_id = "
+        f"{subscenarios.PROJECT_SPECIFIED_FIXED_COST_SCENARIO_ID}",
+        periods_sql=subproblem_periods_sql(
+            subscenarios.TEMPORAL_SCENARIO_ID, db_subproblem
+        ),
+    )
 
     c = conn.cursor()
     spec_project_params = c.execute(f"""
@@ -220,17 +250,7 @@ def spec_get_inputs_from_database(conn, subscenarios, subproblem, capacity_type)
         AND {SPEC_CAPACITY_PRESENT_SQL}) as capacity
         USING (project, period)
         LEFT JOIN -- operational periods are based on capacity; fixed costs are optional
-        (SELECT project, period,
-        fixed_cost_per_mw_yr, fixed_cost_per_energy_mwh_yr, 
-        fixed_cost_per_shaping_mw_yr,
-        hyb_gen_fixed_cost_per_mw_yr,
-        hyb_stor_fixed_cost_per_mw_yr,
-        fixed_cost_per_stor_mwh_yr,
-        fuel_release_capacity_fixed_cost_per_fuelunitperhour_yr,
-        fuel_production_capacity_fixed_cost_per_fuelunitperhour_yr,
-        fuel_storage_capacity_fixed_cost_per_fuelunit_yr
-        FROM inputs_project_specified_fixed_cost
-        WHERE project_specified_fixed_cost_scenario_id = {subscenarios.PROJECT_SPECIFIED_FIXED_COST_SCENARIO_ID}) as fixed_om
+        ({fixed_cost_sql}) as fixed_om
         USING (project, period)
         WHERE project_portfolio_scenario_id = {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
         AND capacity_type = '{capacity_type}'

@@ -23,6 +23,7 @@ from gridpath.project.capacity.common_functions import (
     load_project_capacity_type_modules,
 )
 from gridpath.auxiliary.db_interface import get_required_capacity_types_from_database
+from gridpath.auxiliary.validations import validate_period_wildcard_rows
 
 
 def validate_inputs(
@@ -51,6 +52,28 @@ def validate_inputs(
     )
     imported_capacity_type_modules = load_project_capacity_type_modules(
         required_capacity_type_modules
+    )
+
+    # Specified fixed cost period wildcard rows that apply to no period
+    validate_period_wildcard_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        gridpath_module=__name__,
+        table="inputs_project_specified_fixed_cost",
+        key_columns=["project", "project_specified_fixed_cost_scenario_id"],
+        row_filter=f"""project_specified_fixed_cost_scenario_id =
+            {subscenarios.PROJECT_SPECIFIED_FIXED_COST_SCENARIO_ID}
+            AND project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )""",
     )
 
     # Validate module-specific inputs

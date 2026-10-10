@@ -21,7 +21,13 @@ the specified project capacity in every period. These can be varied by
 scenario via the :code:`project_specified_fixed_cost_scenario_id` subscenario.
 
 The treatment for specified project fixed cost inputs is similar to that for
-their capacity (see :ref:`specified-project-capacity-section-ref`).
+their capacity (see :ref:`specified-project-capacity-section-ref`): fixed
+costs are read for the periods in which the project has specified capacity.
+Unlike the capacity, fixed costs accept :code:`period = 0` rows, which give
+the fixed costs for every period without an explicit row for the project
+(see :code:`gridpath.auxiliary.period_wildcards`); see the
+:code:`2periods_gen_lin_econ_retirement_w_period_wildcard_fixed_cost`
+example.
 
 """
 

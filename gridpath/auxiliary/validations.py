@@ -23,6 +23,10 @@ import pandas as pd
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import cursor_to_df
+from gridpath.auxiliary.period_wildcards import (
+    redundant_period_wildcards_sql,
+    temporal_periods_sql,
+)
 
 
 def _get_idx_col(df):
@@ -1022,3 +1026,55 @@ def warn_on_unknown_balancing_types(
             f"them.",
             stacklevel=2,
         )
+
+
+def validate_period_wildcard_rows(
+    conn,
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    gridpath_module,
+    table,
+    key_columns,
+    row_filter,
+):
+    """
+    Flag (Low severity) series of *table* (identified by *key_columns*,
+    selected by *row_filter*) with period = 0 rows that apply to no period,
+    as explicit rows cover every period of the temporal scenario (see
+    gridpath.auxiliary.period_wildcards).
+    """
+    redundant = (
+        conn.cursor()
+        .execute(
+            redundant_period_wildcards_sql(
+                table=table,
+                key_columns=key_columns,
+                row_filter=row_filter,
+                periods_sql=temporal_periods_sql(subscenarios.TEMPORAL_SCENARIO_ID),
+            )
+        )
+        .fetchall()
+    )
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=gridpath_module,
+        db_table=table,
+        severity="Low",
+        errors=[
+            f"{dict(zip(key_columns, series))}: the period 0 rows apply to no "
+            f"period, as every period of the temporal scenario has explicit "
+            f"rows."
+            for series in redundant
+        ],
+    )

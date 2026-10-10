@@ -30,7 +30,12 @@ from pyomo.environ import (
 
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import validate_period_wildcard_rows
 from gridpath.auxiliary.dynamic_components import carbon_tax_cost_components
+from gridpath.auxiliary.period_wildcards import (
+    period_wildcard_rows_sql,
+    temporal_periods_sql,
+)
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.carbon_tax import CARBON_TAX_ZONE_PRD_DF
 
@@ -205,34 +210,40 @@ def get_inputs_from_database(
         ;
         """)
 
+    credit_limits_sql = period_wildcard_rows_sql(
+        table="inputs_project_carbon_credits_purchase_limits",
+        columns=[
+            "project",
+            "period",
+            "purchase_credit_min_fraction",
+            "purchase_credit_max_fraction",
+        ],
+        key_columns=[
+            "project",
+            "project_carbon_credits_purchase_limits_scenario_id",
+        ],
+        row_filter=f"""project_carbon_credits_purchase_limits_scenario_id =
+            {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_LIMITS_SCENARIO_ID}
+            AND project in (
+                SELECT project
+                FROM inputs_project_carbon_credits_purchase_zones
+                WHERE project_carbon_credits_purchase_zone_scenario_id =
+                {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_ZONE_SCENARIO_ID}
+            )
+            AND project in (
+                SELECT project
+                FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )""",
+        periods_sql=temporal_periods_sql(subscenarios.TEMPORAL_SCENARIO_ID),
+    )
     c2 = conn.cursor()
     credit_limits = c2.execute(
         f"""SELECT project, carbon_tax_zone, period, purchase_credit_min_fraction, purchase_credit_max_fraction
         FROM
-        (SELECT  project, period, purchase_credit_min_fraction, purchase_credit_max_fraction
-        FROM inputs_project_carbon_credits_purchase_limits
-        WHERE project_carbon_credits_purchase_limits_scenario_id = 
-        {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_LIMITS_SCENARIO_ID}
-        AND (
-            period in (
-            SELECT DISTINCT period
-            FROM inputs_temporal_periods
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            )
-            OR period = 0 -- for all periods
-            )
-        AND project in (
-            SELECT project
-            FROM inputs_project_carbon_credits_purchase_zones
-            WHERE project_carbon_credits_purchase_zone_scenario_id = 
-            {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_ZONE_SCENARIO_ID}
-        )   
-        AND project in (
-            SELECT project
-            FROM inputs_project_portfolios
-            WHERE project_portfolio_scenario_id = 
-            {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-            )) as prj_cc_limits_tbl
+        -- period = 0 rows apply to every period without explicit rows
+        ({credit_limits_sql}) as prj_cc_limits_tbl
         LEFT OUTER JOIN
             -- Add project carbon tax zone based on project_carbon_tax_zone_scenario_id
             (SELECT project, carbon_tax_zone
@@ -406,3 +417,42 @@ def export_results(
     )
 
     update_results_df(getattr(d, CARBON_TAX_ZONE_PRD_DF), results_df)
+
+
+# Validation
+###############################################################################
+
+
+def validate_inputs(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    Flag period wildcard rows that apply to no period.
+    """
+    validate_period_wildcard_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        gridpath_module=__name__,
+        table="inputs_project_carbon_credits_purchase_limits",
+        key_columns=["project", "project_carbon_credits_purchase_limits_scenario_id"],
+        row_filter=f"""project_carbon_credits_purchase_limits_scenario_id =
+            {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_LIMITS_SCENARIO_ID}
+            AND project IN (
+                SELECT project FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )""",
+    )

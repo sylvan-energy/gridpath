@@ -27,6 +27,7 @@ from pyomo.environ import (
     Reals,
 )
 
+from gridpath.auxiliary.period_wildcards import expand_period_wildcard_rows
 from gridpath.auxiliary.auxiliary import (
     cursor_to_df,
     subset_init_by_param_value,
@@ -323,6 +324,9 @@ def load_model_data(
         cta_df = cta_df[cta_df["project"].isin(projects)]
 
         periods = set(periods_df["period"])
+        hr_df = expand_period_wildcard_rows(
+            hr_df, key_columns=["project"], periods=periods
+        )
         cta_projects = cta_df["project"].unique()
 
         average_heat_rate_curves_dict = {}
@@ -331,31 +335,20 @@ def load_model_data(
             df_slice = hr_df[hr_df["project"] == project]
             slice_periods = set(df_slice["period"])
 
-            if slice_periods == set([0]):
-                p_iterable = [0]
-            elif periods.issubset(slice_periods):
-                p_iterable = periods
-            else:
-                raise ValueError("""{} for project '{}' isn't specified for all 
-                    modelled periods. Set period to 0 if inputs are the 
-                    same for each period or make sure all modelled periods 
-                    are included.""".format(input_col, project))
+            if not periods.issubset(slice_periods):
+                raise ValueError(
+                    f"{input_col} for project '{project}' isn't specified for "
+                    f"all modeled periods. Give the curve for period 0 to apply "
+                    f"it to every period without its own curve, or include all "
+                    f"modeled periods."
+                )
 
-            for period in p_iterable:
+            for period in periods:
                 df_slice_p = df_slice[df_slice["period"] == period]
                 df_slice_p = df_slice_p.sort_values(by=["load_point_fraction"])
                 average_heat_rate = df_slice_p[input_col].values[-1]
 
-                # If period is 0, create same inputs for all periods
-                if period == 0:
-                    average_heat_rate_curves_dict.update(
-                        {(project, p): average_heat_rate for p in periods}
-                    )
-                # If not, create inputs for just this period
-                else:
-                    average_heat_rate_curves_dict.update(
-                        {(project, period): average_heat_rate}
-                    )
+                average_heat_rate_curves_dict[project, period] = average_heat_rate
 
         data_portal.data()[
             "carbon_tax_allowance_average_heat_rate"

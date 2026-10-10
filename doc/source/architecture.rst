@@ -30,6 +30,13 @@ gridpath.auxiliary.calendar_rows
     :members: calendar_row_sql, bt_hrz_calendar_index_sql,
         calendar_join_sql, calendar_rows_sql, calendar_index_cte_sql
 
+gridpath.auxiliary.period_wildcards
+***********************************
+.. automodule:: gridpath.auxiliary.period_wildcards
+    :members: period_wildcard_rows_sql, expand_period_wildcard_rows,
+        redundant_period_wildcards_sql, subproblem_periods_sql,
+        temporal_periods_sql
+
 
 ================
 Running GridPath
