@@ -13,19 +13,15 @@
 # limitations under the License.
 
 """
-The shared period wildcard (period = 0) resolution: the SQL used when
-writing the inputs, the same rule for input files, and the check for series
-mixing wildcard and explicit rows.
+The shared period wildcard (period = 0) resolution used when writing the
+inputs, and the check for series mixing wildcard and explicit rows.
 """
 
 import os.path
 import sqlite3
 import unittest
 
-import pandas as pd
-
 from gridpath.auxiliary.period_wildcards import (
-    expand_period_wildcard_rows,
     mixed_period_wildcard_series_sql,
     period_wildcard_rows_sql,
     require_period_wildcard_only_rows,
@@ -176,38 +172,6 @@ class TestPeriodWildcards(unittest.TestCase):
                 key_columns=key_columns,
                 row_filter=row_filter,
             )
-
-    def test_input_file_rows_resolve_the_same_way(self):
-        """
-        The input file resolution gives the same rows as the database
-        resolution (selected series only, as the input files carry no
-        subscenario IDs).
-        """
-        df = pd.read_sql(
-            f"""SELECT project, period, curtailment_cost_per_powerunithour
-            FROM inputs_project_curtailment_cost
-            WHERE {UNMIXED_FILTER}""",
-            self.conn,
-        )
-        resolved = expand_period_wildcard_rows(
-            df, key_columns=["project"], periods={2030, 2035}
-        )
-        resolved = resolved[resolved["period"].isin([2030, 2035])]
-        self.assertListEqual(
-            self.curtailment_rows(subproblem=1),
-            sorted(resolved.itertuples(index=False, name=None)),
-        )
-
-    def test_input_file_mixing_wildcard_and_explicit_rows_is_an_error(self):
-        df = pd.DataFrame(
-            {"project": ["A", "A", "B"], "period": [0, 2030, 0], "value": [1, 2, 3]}
-        )
-        with self.assertRaisesRegex(ValueError, "costs.tab: .*'project': 'A'"):
-            expand_period_wildcard_rows(df, ["project"], {2030}, "costs.tab")
-
-    def test_input_file_without_wildcards_is_unchanged(self):
-        df = pd.DataFrame({"project": ["A"], "period": [2030], "value": [1.0]})
-        self.assertIs(df, expand_period_wildcard_rows(df, ["project"], {2030}))
 
 
 if __name__ == "__main__":

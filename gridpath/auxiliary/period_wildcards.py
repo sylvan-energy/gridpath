@@ -25,11 +25,9 @@ model inputs are written), so a wildcard never quietly fills a period that
 was left out on purpose (e.g. a retired project's periods in the specified
 capacity inputs): to vary by period, give every period explicitly.
 
-The rows are resolved when the model inputs are written
-(:code:`period_wildcard_rows_sql`), so the input files written from the
-database carry real periods only; input files written by other means may
-still contain period 0 rows, which the model data loaders resolve the same
-way (:code:`expand_period_wildcard_rows`). (The market volume period
+Period 0 rows are a database input feature: they are resolved when the
+model inputs are written (:code:`period_wildcard_rows_sql`), so the input
+files carry the data for each modeled period. (The market volume period
 profiles, whose NULL cells fall through to the next layer, combine their
 wildcard rows with explicit rows per column instead; see
 :code:`gridpath.system.markets.volume`.)
@@ -37,8 +35,6 @@ wildcard rows with explicit rows per column instead; see
 This module imports nothing from the rest of GridPath, so any module can
 use it.
 """
-
-import pandas as pd
 
 
 def subproblem_periods_sql(temporal_scenario_id, subproblem):
@@ -170,37 +166,3 @@ def require_period_wildcard_only_rows(conn, table, key_columns, row_filter):
                 table, [dict(zip(key_columns, series)) for series in mixed]
             )
         )
-
-
-def expand_period_wildcard_rows(df, key_columns, periods, filename="input file"):
-    """
-    The same resolution for an input file's rows: replace the period 0 rows
-    of *df* with a copy for each of *periods*; explicit rows are kept as
-    they are.
-
-    :param df: DataFrame with a period column and *key_columns*
-    :param key_columns: the columns identifying a series
-    :param periods: the modeling periods
-    :param filename: the input file, for the error message
-    :return: the DataFrame with the wildcard rows resolved
-    :raises ValueError: if a series has both wildcard and explicit rows
-    """
-    is_wildcard = df["period"] == 0
-    if not is_wildcard.any():
-        return df
-    explicit = df[~is_wildcard]
-    wildcard = df[is_wildcard]
-    explicit_series = set(explicit[key_columns].itertuples(index=False, name=None))
-    mixed = sorted(
-        set(wildcard[key_columns].itertuples(index=False, name=None)) & explicit_series
-    )
-    if mixed:
-        raise ValueError(
-            mixed_period_wildcards_error(
-                filename, [dict(zip(key_columns, series)) for series in mixed]
-            )
-        )
-    return pd.concat(
-        [explicit] + [wildcard.assign(period=period) for period in sorted(periods)],
-        ignore_index=True,
-    )

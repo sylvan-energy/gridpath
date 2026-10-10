@@ -27,7 +27,6 @@ from pyomo.environ import (
     Reals,
 )
 
-from gridpath.auxiliary.period_wildcards import expand_period_wildcard_rows
 from gridpath.auxiliary.auxiliary import (
     cursor_to_df,
     subset_init_by_param_value,
@@ -324,9 +323,6 @@ def load_model_data(
         cta_df = cta_df[cta_df["project"].isin(projects)]
 
         periods = set(periods_df["period"])
-        hr_df = expand_period_wildcard_rows(
-            hr_df, key_columns=["project"], periods=periods
-        )
         cta_projects = cta_df["project"].unique()
 
         average_heat_rate_curves_dict = {}
@@ -338,9 +334,9 @@ def load_model_data(
             if not periods.issubset(slice_periods):
                 raise ValueError(
                     f"{input_col} for project '{project}' isn't specified for "
-                    f"all modeled periods. Give the curve for period 0 to apply "
-                    f"it to every period, or give a curve for every modeled "
-                    f"period."
+                    f"all modeled periods. Give a curve for every modeled period "
+                    f"(in the database, a period 0 curve applies to every "
+                    f"period)."
                 )
 
             for period in periods:

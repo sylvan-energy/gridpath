@@ -36,7 +36,6 @@ from gridpath.auxiliary.auxiliary import (
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import validate_period_wildcard_rows
 from gridpath.auxiliary.period_wildcards import (
-    expand_period_wildcard_rows,
     period_wildcard_rows_sql,
     require_period_wildcard_only_rows,
     subproblem_periods_sql,
@@ -225,22 +224,9 @@ def load_model_data(
         "transmission_curtailment_cost.tab",
     )
     if os.path.exists(tx_curtailment_cost_file):
-        periods_file = os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "periods.tab",
+        curtailment_df = pd.read_csv(tx_curtailment_cost_file, sep="\t").set_index(
+            ["transmission_line", "period"]
         )
-        curtailment_df = expand_period_wildcard_rows(
-            pd.read_csv(tx_curtailment_cost_file, sep="\t"),
-            key_columns=["transmission_line"],
-            periods=set(pd.read_csv(periods_file, sep="\t")["period"]),
-            filename=tx_curtailment_cost_file,
-        ).set_index(["transmission_line", "period"])
         curtailment_tx_idx_list = []
         curtailment_by_idx_dict = {}
 

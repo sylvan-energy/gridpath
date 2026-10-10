@@ -46,7 +46,6 @@ from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.db_interface import import_csv, directories_to_db_values
 from gridpath.auxiliary.dynamic_components import headroom_variables, footroom_variables
 from gridpath.auxiliary.period_wildcards import (
-    expand_period_wildcard_rows,
     period_wildcard_rows_sql,
     require_period_wildcard_only_rows,
     subproblem_periods_sql,
@@ -735,13 +734,6 @@ def load_model_data(
         )
         if os.path.exists(project_var_om_file):
             var_om_df = pd.read_csv(project_var_om_file, sep="\t")
-            if prd_or_tmp_str == "period":
-                var_om_df = expand_period_wildcard_rows(
-                    var_om_df,
-                    key_columns=["project"],
-                    periods=prd_set,
-                    filename=project_var_om_file,
-                )
             var_om_df = var_om_df.set_index(["project", prd_or_tmp_str])
             var_om_prj_idx_list = []
             var_om_by_idx_dict = {}
@@ -830,12 +822,9 @@ def load_model_data(
         "project_curtailment_cost.tab",
     )
     if os.path.exists(project_curtailment_cost_file):
-        curtailment_df = expand_period_wildcard_rows(
-            pd.read_csv(project_curtailment_cost_file, sep="\t"),
-            key_columns=["project"],
-            periods=prd_set,
-            filename=project_curtailment_cost_file,
-        ).set_index(["project", "period"])
+        curtailment_df = pd.read_csv(project_curtailment_cost_file, sep="\t").set_index(
+            ["project", "period"]
+        )
         curtailment_prj_idx_list = []
         curtailment_by_idx_dict = {}
 
@@ -2135,8 +2124,9 @@ def get_slopes_intercept_by_project_period_segment(df, input_col, projects, peri
     Given a DataFrame with the average heat rates or variable O&M curves by
     load point fraction for each project in each period, calculate the slope
     and intercept for the fuel burn or variable O&M cost curves for the
-    segments defined by the load points (for each project and period). A
-    project's period 0 rows give its curve for every period (see
+    segments defined by the load points (for each project and period). The
+    input files give the curves by modeled period (period 0 rows in the
+    database are resolved when the inputs are written; see
     gridpath.auxiliary.period_wildcards).
 
     :param df: DataFrame with columns [project, period, load_point_fraction,
@@ -2154,7 +2144,6 @@ def get_slopes_intercept_by_project_period_segment(df, input_col, projects, peri
     slope_dict = {}
     intercept_dict = {}
 
-    df = expand_period_wildcard_rows(df, key_columns=["project"], periods=periods)
     for project in projects:
         df_slice = df[df["project"] == project]
         slice_periods = set(df_slice["period"])
@@ -2162,8 +2151,8 @@ def get_slopes_intercept_by_project_period_segment(df, input_col, projects, peri
         if not periods.issubset(slice_periods):
             raise ValueError(
                 f"{input_col} for project '{project}' isn't specified for all "
-                f"modeled periods. Give the curve for period 0 to apply it to "
-                f"every period, or give a curve for every modeled period."
+                f"modeled periods. Give a curve for every modeled period (in "
+                f"the database, a period 0 curve applies to every period)."
             )
 
         for period in periods:
