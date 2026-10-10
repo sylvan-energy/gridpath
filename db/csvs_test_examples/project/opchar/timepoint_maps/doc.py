@@ -46,8 +46,13 @@ then serves every period of any temporal scenario, whatever its timepoint
 numbering; use the hour convention (0-23 or 1-24) of the temporal
 scenarios. Every timepoint needs a month, day of month, and whole-hour
 :code:`hour_of_day`, or validation and the input writing fail. February 29
-timepoints read the data at :code:`229HH`, which must exist, like any data
-a map points to. See the
+timepoints read the data at :code:`229HH`.
+
+With any timepoint map, every operational timepoint of a mapped project
+must find data at the timepoint it reads: mapped timepoints don't fall back
+to their own data, and validation and the input writing report the
+timepoints without data (e.g. February 29 timepoints when the calendar-hour
+data has no :code:`229HH` rows). See the
 :code:`2periods_new_build_w_var_profile_calendar_hour_map` example, the
 same scenario as :code:`2periods_new_build` with Wind's profile stored at
 calendar hours 10101 and 10102.

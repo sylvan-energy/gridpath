@@ -30,6 +30,7 @@ from gridpath.project.operations import (
 )
 from gridpath.project.operations.operational_types.common_functions import (
     get_prj_temporal_index_opr_inputs_from_db,
+    validate_var_profiles,
     BT_HRZ_INDEX_QUERY_PARAMS,
 )
 
@@ -42,6 +43,8 @@ class SubScenariosStub:
     PROJECT_PORTFOLIO_SCENARIO_ID = 1
     PROJECT_OPERATIONAL_CHARS_SCENARIO_ID = 1
     TEMPORAL_SCENARIO_ID = 1
+    PROJECT_SPECIFIED_CAPACITY_SCENARIO_ID = 1
+    PROJECT_NEW_COST_SCENARIO_ID = "NULL"
 
 
 def get_var_profile_inputs(conn, weather_iteration=0, hydro_iteration=0):
@@ -121,10 +124,19 @@ class TestOpcharTemporalMaps(unittest.TestCase):
                 (tmp, hrz),
             )
 
+        c.execute("""INSERT INTO inputs_temporal_periods
+            (temporal_scenario_id, period) VALUES (1, 2020), (1, 2030)""")
+
         c.execute("""INSERT INTO inputs_project_portfolios
             (project_portfolio_scenario_id, project, capacity_type)
             VALUES (1, 'Wind', 'gen_spec'), (1, 'Solar', 'gen_spec'),
             (1, 'Solar_Rep_Day', 'gen_spec'), (1, 'Hydro', 'gen_spec')""")
+        # Every project is operational in both periods
+        c.execute("""INSERT INTO inputs_project_specified_capacity
+            (project_specified_capacity_scenario_id, project, period,
+            specified_capacity_mw)
+            VALUES (1, 'Wind', 0, 1), (1, 'Solar', 0, 1),
+            (1, 'Solar_Rep_Day', 0, 1), (1, 'Hydro', 0, 1)""")
 
         # Wind uses timepoint map 1 (2030 --> 2020); Solar_Rep_Day uses
         # timepoint map 2 (everything --> the first 2020 timepoint); Solar
@@ -464,6 +476,46 @@ class TestCalendarHourMap(unittest.TestCase):
         self.conn.execute("""UPDATE inputs_temporal SET month = 2, day_of_month = 29
             WHERE timepoint = 2030010102""")
         self.assertIn(("Solar_Rep_Day", 2030010102, 0.4), self.solar_rep_day())
+
+    def test_mapped_timepoints_without_data(self):
+        """
+        A February 29 timepoint without data at 229HH doesn't fall back to
+        other data: writing the inputs fails and validation reports it. A
+        project that isn't operational in the period isn't checked there.
+        """
+        self.conn.execute("""UPDATE inputs_temporal SET month = 2, day_of_month = 29
+            WHERE timepoint = 2030010102""")
+        self.conn.execute("""DELETE FROM inputs_project_variable_generator_profiles
+            WHERE project = 'Solar_Rep_Day' AND timepoint = 22902""")
+        with self.assertRaisesRegex(
+            ValueError, r"\('Solar_Rep_Day', 2030010102, 22902\)"
+        ):
+            get_var_profile_inputs(self.conn)
+
+        validate_var_profiles(
+            scenario_id=1,
+            subscenarios=SubScenariosStub(),
+            weather_iteration=0,
+            hydro_iteration=0,
+            availability_iteration=0,
+            subproblem=1,
+            stage=1,
+            conn=self.conn,
+            op_type="gen_var",
+        )
+        errors = [
+            description
+            for (description,) in self.conn.execute(
+                "SELECT description FROM status_validation"
+            )
+        ]
+        self.assertEqual(1, len(errors))
+        self.assertIn("('Solar_Rep_Day', 2030010102, 22902)", errors[0])
+
+        # Solar_Rep_Day retired in 2030
+        self.conn.execute("""UPDATE inputs_project_specified_capacity
+            SET period = 2020 WHERE project = 'Solar_Rep_Day'""")
+        self.assertNotIn(2030010102, [r[1] for r in self.solar_rep_day()])
 
     def test_validation(self):
         """
