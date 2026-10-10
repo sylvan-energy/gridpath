@@ -1256,6 +1256,18 @@ class TestExamples(unittest.TestCase):
         scenario_name = "multi_stage_prod_cost_linked_subproblems"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_gen_lin_econ_retirement_w_period_wildcards(self):
+        """
+        Check validation and objective function value of
+        "2periods_gen_lin_econ_retirement_w_period_wildcards" example: as
+        "2periods_gen_lin_econ_retirement" (same objective and inputs), with
+        the specified capacity and Clunky_Old_Gen's fixed cost given as
+        period = 0 rows
+        :return:
+        """
+        scenario_name = "2periods_gen_lin_econ_retirement_w_period_wildcards"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_gen_lin_econ_retirement(self):
         """
         Check validation and objective function value of
@@ -2041,6 +2053,18 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "test_new_solar_w_relative_capacity_instead_of_potential"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_transmission_w_period_wildcards(self):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_transmission_w_period_wildcards" example: as
+        "2periods_new_build_2zones_transmission_w_hurdle_rates" (same
+        objective and inputs), with the project and transmission specified
+        capacities and Tx1's hurdle rates given as period = 0 rows
+        :return:
+        """
+        scenario_name = "2periods_new_build_2zones_transmission_w_period_wildcards"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_example_2periods_new_build_2zones_transmission_w_hurdle_rates(self):

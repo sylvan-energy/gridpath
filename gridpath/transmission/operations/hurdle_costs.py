@@ -25,10 +25,16 @@ from pyomo.environ import Param, Var, Constraint, NonNegativeReals, Expression, 
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import cursor_to_df
+from gridpath.auxiliary.period_wildcards import (
+    period_wildcard_rows_sql,
+    require_period_wildcard_only_rows,
+    temporal_periods_sql,
+)
 from gridpath.auxiliary.db_interface import (
     directories_to_db_values,
 )
 from gridpath.auxiliary.validations import (
+    validate_period_wildcard_rows,
     write_validation_to_database,
     get_expected_dtypes,
     validate_dtypes,
@@ -281,6 +287,24 @@ def export_results(
 ###############################################################################
 
 
+TABLE = "inputs_transmission_hurdle_rates"
+KEY_COLUMNS = ["transmission_line", "transmission_hurdle_rate_scenario_id"]
+
+
+def get_row_filter(subscenarios):
+    """
+    :return: SQL condition selecting the hurdle rate rows of the portfolio's
+        lines in the hurdle rate subscenario
+    """
+    return f"""transmission_hurdle_rate_scenario_id =
+            {subscenarios.TRANSMISSION_HURDLE_RATE_SCENARIO_ID}
+            AND transmission_line IN (
+                SELECT transmission_line FROM inputs_transmission_portfolios
+                WHERE transmission_portfolio_scenario_id =
+                {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
+            )"""
+
+
 def get_inputs_from_database(
     scenario_id,
     subscenarios,
@@ -310,16 +334,24 @@ def get_inputs_from_database(
             FROM inputs_temporal_periods
             WHERE temporal_scenario_id = {}) AS relevant_periods 
         LEFT OUTER JOIN
-            (SELECT transmission_line, period, 
-            hurdle_rate_positive_direction_per_mwh,
-            hurdle_rate_negative_direction_per_mwh
-            FROM inputs_transmission_hurdle_rates
-            WHERE transmission_hurdle_rate_scenario_id = {}) AS relevant_hrs
+            ({}) AS relevant_hrs
         USING (transmission_line, period)
         WHERE transmission_portfolio_scenario_id = {};
         """.format(
             subscenarios.TEMPORAL_SCENARIO_ID,
-            subscenarios.TRANSMISSION_HURDLE_RATE_SCENARIO_ID,
+            # Hurdle rates with period = 0 rows applying to every period
+            period_wildcard_rows_sql(
+                table=TABLE,
+                columns=[
+                    "transmission_line",
+                    "period",
+                    "hurdle_rate_positive_direction_per_mwh",
+                    "hurdle_rate_negative_direction_per_mwh",
+                ],
+                key_columns=KEY_COLUMNS,
+                row_filter=get_row_filter(subscenarios),
+                periods_sql=temporal_periods_sql(subscenarios.TEMPORAL_SCENARIO_ID),
+            ),
             subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID,
         )
     )
@@ -368,6 +400,13 @@ def write_model_inputs(
         db_subproblem,
         db_stage,
         conn,
+    )
+
+    require_period_wildcard_only_rows(
+        conn=conn,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
     )
 
     with open(
@@ -489,6 +528,22 @@ def validate_inputs(
     :param conn: database connection
     :return:
     """
+
+    # Series mixing period wildcard rows and explicit rows
+    validate_period_wildcard_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        gridpath_module=__name__,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
+    )
 
     hurdle_rates = get_inputs_from_database(
         scenario_id,

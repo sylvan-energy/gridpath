@@ -23,6 +23,10 @@ import pandas as pd
 
 from db.common_functions import spin_on_database_lock
 from gridpath.auxiliary.auxiliary import cursor_to_df
+from gridpath.auxiliary.period_wildcards import (
+    mixed_period_wildcard_series_sql,
+    mixed_period_wildcards_error,
+)
 
 
 def _get_idx_col(df):
@@ -1022,3 +1026,54 @@ def warn_on_unknown_balancing_types(
             f"them.",
             stacklevel=2,
         )
+
+
+def validate_period_wildcard_rows(
+    conn,
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    gridpath_module,
+    table,
+    key_columns,
+    row_filter,
+):
+    """
+    Flag (High severity) series of *table* (identified by *key_columns*,
+    selected by *row_filter*) with both period = 0 rows and rows for
+    explicit periods (see gridpath.auxiliary.period_wildcards).
+    """
+    mixed = (
+        conn.cursor()
+        .execute(
+            mixed_period_wildcard_series_sql(
+                table=table, key_columns=key_columns, row_filter=row_filter
+            )
+        )
+        .fetchall()
+    )
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=gridpath_module,
+        db_table=table,
+        severity="High",
+        errors=(
+            [
+                mixed_period_wildcards_error(
+                    table, [dict(zip(key_columns, series)) for series in mixed]
+                )
+            ]
+            if mixed
+            else []
+        ),
+    )

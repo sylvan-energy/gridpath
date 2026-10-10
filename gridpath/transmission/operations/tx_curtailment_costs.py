@@ -34,6 +34,12 @@ from gridpath.auxiliary.auxiliary import (
     subset_init_by_set_membership,
 )
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import validate_period_wildcard_rows
+from gridpath.auxiliary.period_wildcards import (
+    period_wildcard_rows_sql,
+    require_period_wildcard_only_rows,
+    subproblem_periods_sql,
+)
 from gridpath.project.operations.operational_types.common_functions import (
     write_tab_file_model_inputs,
 )
@@ -218,19 +224,6 @@ def load_model_data(
         "transmission_curtailment_cost.tab",
     )
     if os.path.exists(tx_curtailment_cost_file):
-        periods_file = os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "periods.tab",
-        )
-        periods_df = pd.read_csv(periods_file, sep="\t")
-        prd_set = set(periods_df["period"])
-
         curtailment_df = pd.read_csv(tx_curtailment_cost_file, sep="\t").set_index(
             ["transmission_line", "period"]
         )
@@ -239,17 +232,10 @@ def load_model_data(
 
         for idx, val in curtailment_df.iterrows():
             tx, prd = idx
-            if prd == 0:
-                for _prd in sorted(list(prd_set)):
-                    curtailment_tx_idx_list.append((tx, _prd))
-                    curtailment_by_idx_dict[tx, _prd] = curtailment_df.loc[tx, prd][
-                        "tx_curtailment_cost_per_powerunithour"
-                    ]
-            else:
-                curtailment_tx_idx_list.append((tx, prd))
-                curtailment_by_idx_dict[tx, prd] = curtailment_df.loc[tx, prd][
-                    "tx_curtailment_cost_per_powerunithour"
-                ]
+            curtailment_tx_idx_list.append((tx, prd))
+            curtailment_by_idx_dict[tx, prd] = val[
+                "tx_curtailment_cost_per_powerunithour"
+            ]
         data_portal.data()["TX_CURTAILMENT_COST_TX_LINE_PRDS"] = {
             None: curtailment_tx_idx_list
         }
@@ -260,6 +246,28 @@ def load_model_data(
 
 # Database
 ###############################################################################
+
+
+TABLE = "inputs_transmission_curtailment_cost"
+KEY_COLUMNS = ["transmission_line", "tx_curtailment_cost_scenario_id"]
+
+
+def get_row_filter(subscenarios):
+    """
+    :return: SQL condition selecting the curtailment cost rows of the
+        portfolio's lines with their subscenario IDs
+    """
+    return f"""(transmission_line, tx_curtailment_cost_scenario_id) IN (
+            SELECT transmission_line, tx_curtailment_cost_scenario_id
+            FROM inputs_transmission_operational_chars
+            WHERE transmission_operational_chars_scenario_id =
+            {subscenarios.TRANSMISSION_OPERATIONAL_CHARS_SCENARIO_ID}
+            AND transmission_line IN (
+                SELECT transmission_line FROM inputs_transmission_portfolios
+                WHERE transmission_portfolio_scenario_id =
+                {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
+            )
+        )"""
 
 
 def get_inputs_from_database(
@@ -281,39 +289,21 @@ def get_inputs_from_database(
     """
 
     c = conn.cursor()
-    tx_curtailment_cost = c.execute(f"""
-        SELECT transmission_line, period, tx_curtailment_cost_per_powerunithour
-        FROM inputs_transmission_portfolios
-        -- select the correct operational characteristics subscenario
-        INNER JOIN
-        (SELECT transmission_line, tx_curtailment_cost_scenario_id
-        FROM inputs_transmission_operational_chars
-        WHERE transmission_operational_chars_scenario_id = {subscenarios.TRANSMISSION_OPERATIONAL_CHARS_SCENARIO_ID}
-        ) AS op_char
-        USING (transmission_line)
-        -- select only matching transmission lines
-        INNER JOIN
-        inputs_transmission_curtailment_cost
-        USING (transmission_line, tx_curtailment_cost_scenario_id)
-        -- Get only the subset of transmission lines in the portfolio based
-        -- on the transmission_portfolio_scenario_id
-        WHERE transmission_portfolio_scenario_id = {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
-        AND ((
-            period in (
-            SELECT DISTINCT period
-            FROM inputs_temporal_periods
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            )
-            AND period in (
-                  SELECT DISTINCT period
-                  FROM inputs_temporal
-                  WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-                  AND subproblem_id = {subproblem}
-               )
-            )
-            OR period = 0 -- for all periods
-            )
-        """)
+    tx_curtailment_cost = c.execute(
+        period_wildcard_rows_sql(
+            table=TABLE,
+            columns=[
+                "transmission_line",
+                "period",
+                "tx_curtailment_cost_per_powerunithour",
+            ],
+            key_columns=KEY_COLUMNS,
+            row_filter=get_row_filter(subscenarios),
+            periods_sql=subproblem_periods_sql(
+                subscenarios.TEMPORAL_SCENARIO_ID, subproblem
+            ),
+        )
+    )
 
     return tx_curtailment_cost
 
@@ -361,6 +351,13 @@ def write_model_inputs(
         conn,
     )
 
+    require_period_wildcard_only_rows(
+        conn=conn,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
+    )
+
     write_tab_file_model_inputs(
         scenario_directory=scenario_directory,
         weather_iteration=weather_iteration,
@@ -371,4 +368,37 @@ def write_model_inputs(
         fname="transmission_curtailment_cost.tab",
         data=tx_curtailment_cost,
         replace_nulls=True,
+    )
+
+
+# Validation
+###############################################################################
+
+
+def validate_inputs(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    Flag series mixing period wildcard rows and explicit rows.
+    """
+    validate_period_wildcard_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        gridpath_module=__name__,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
     )

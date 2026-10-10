@@ -1,5 +1,6 @@
 project	period	curtailment_cost_per_powerunithour
-Wind	0	10
+Wind	2020	10
+Wind	2030	10
 Battery	2020	10
 Battery	2030	0
 Wind_Battery_Hybrid	2020	0

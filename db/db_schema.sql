@@ -9852,6 +9852,18 @@ FROM (
                 project,
                 period
          FROM inputs_project_specified_capacity
+         WHERE period != 0
+         -- A period 0 row applies to every period
+         UNION ALL
+         SELECT project_specified_capacity_scenario_id,
+                NULL AS project_new_cost_scenario_id,
+                project,
+                all_periods.period
+         FROM inputs_project_specified_capacity
+                  CROSS JOIN
+              (SELECT DISTINCT period
+               FROM inputs_temporal_periods) AS all_periods
+         WHERE inputs_project_specified_capacity.period = 0
          -- Add operational periods of new projects
          UNION ALL
          SELECT NULL AS project_specified_capacity_scenario_id,
@@ -9884,6 +9896,18 @@ FROM (
                 transmission_line,
                 period
          FROM inputs_transmission_specified_capacity
+         WHERE period != 0
+         -- A period 0 row applies to every period
+         UNION ALL
+         SELECT transmission_specified_capacity_scenario_id,
+                NULL AS transmission_new_cost_scenario_id,
+                transmission_line,
+                all_periods.period
+         FROM inputs_transmission_specified_capacity
+                  CROSS JOIN
+              (SELECT DISTINCT period
+               FROM inputs_temporal_periods) AS all_periods
+         WHERE inputs_transmission_specified_capacity.period = 0
          -- Add operational periods of new projects
          UNION ALL
          SELECT NULL AS transmission_specified_capacity_scenario_id,

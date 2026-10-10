@@ -30,7 +30,13 @@ from pyomo.environ import (
 
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import validate_period_wildcard_rows
 from gridpath.auxiliary.dynamic_components import carbon_tax_cost_components
+from gridpath.auxiliary.period_wildcards import (
+    period_wildcard_rows_sql,
+    require_period_wildcard_only_rows,
+    temporal_periods_sql,
+)
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.carbon_tax import CARBON_TAX_ZONE_PRD_DF
 
@@ -168,6 +174,31 @@ def record_dynamic_components(dynamic_components):
     )
 
 
+TABLE = "inputs_project_carbon_credits_purchase_limits"
+KEY_COLUMNS = ["project", "project_carbon_credits_purchase_limits_scenario_id"]
+
+
+def get_row_filter(subscenarios):
+    """
+    :return: SQL condition selecting the purchase limit rows of the
+        portfolio's projects with carbon credits purchase zones
+    """
+    return f"""project_carbon_credits_purchase_limits_scenario_id =
+            {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_LIMITS_SCENARIO_ID}
+            AND project in (
+                SELECT project
+                FROM inputs_project_carbon_credits_purchase_zones
+                WHERE project_carbon_credits_purchase_zone_scenario_id =
+                {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_ZONE_SCENARIO_ID}
+            )
+            AND project in (
+                SELECT project
+                FROM inputs_project_portfolios
+                WHERE project_portfolio_scenario_id =
+                {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
+            )"""
+
+
 def get_inputs_from_database(
     scenario_id,
     subscenarios,
@@ -205,34 +236,24 @@ def get_inputs_from_database(
         ;
         """)
 
+    credit_limits_sql = period_wildcard_rows_sql(
+        table=TABLE,
+        columns=[
+            "project",
+            "period",
+            "purchase_credit_min_fraction",
+            "purchase_credit_max_fraction",
+        ],
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
+        periods_sql=temporal_periods_sql(subscenarios.TEMPORAL_SCENARIO_ID),
+    )
     c2 = conn.cursor()
     credit_limits = c2.execute(
         f"""SELECT project, carbon_tax_zone, period, purchase_credit_min_fraction, purchase_credit_max_fraction
         FROM
-        (SELECT  project, period, purchase_credit_min_fraction, purchase_credit_max_fraction
-        FROM inputs_project_carbon_credits_purchase_limits
-        WHERE project_carbon_credits_purchase_limits_scenario_id = 
-        {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_LIMITS_SCENARIO_ID}
-        AND (
-            period in (
-            SELECT DISTINCT period
-            FROM inputs_temporal_periods
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            )
-            OR period = 0 -- for all periods
-            )
-        AND project in (
-            SELECT project
-            FROM inputs_project_carbon_credits_purchase_zones
-            WHERE project_carbon_credits_purchase_zone_scenario_id = 
-            {subscenarios.PROJECT_CARBON_CREDITS_PURCHASE_ZONE_SCENARIO_ID}
-        )   
-        AND project in (
-            SELECT project
-            FROM inputs_project_portfolios
-            WHERE project_portfolio_scenario_id = 
-            {subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID}
-            )) as prj_cc_limits_tbl
+        -- period = 0 rows apply to every period without explicit rows
+        ({credit_limits_sql}) as prj_cc_limits_tbl
         LEFT OUTER JOIN
             -- Add project carbon tax zone based on project_carbon_tax_zone_scenario_id
             (SELECT project, carbon_tax_zone
@@ -275,6 +296,12 @@ def write_model_inputs(
         db_subproblem,
         db_stage,
         conn,
+    )
+    require_period_wildcard_only_rows(
+        conn=conn,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
     )
     # carbon_tax_zones_carbon_credits_zone_mapping.tab
     df = cursor_to_df(mapping)
@@ -406,3 +433,36 @@ def export_results(
     )
 
     update_results_df(getattr(d, CARBON_TAX_ZONE_PRD_DF), results_df)
+
+
+# Validation
+###############################################################################
+
+
+def validate_inputs(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    Flag series mixing period wildcard rows and explicit rows.
+    """
+    validate_period_wildcard_rows(
+        conn=conn,
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        gridpath_module=__name__,
+        table=TABLE,
+        key_columns=KEY_COLUMNS,
+        row_filter=get_row_filter(subscenarios),
+    )
