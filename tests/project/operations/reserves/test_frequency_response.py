@@ -16,14 +16,24 @@
 from collections import OrderedDict
 from importlib import import_module
 import os.path
+import sqlite3
 import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
 
+import pandas as pd
+
+from gridpath.auxiliary.db_interface import import_csv
+from gridpath.project import PROJECT_TIMEPOINT_DF
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 from tests.project.operations.common_functions import get_project_operational_timepoints
 
 TEST_DATA_DIRECTORY = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "test_data"
+)
+DB_SCHEMA_FILE = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "..", "db", "db_schema.sql"
 )
 
 # Import prerequisite modules
@@ -205,6 +215,88 @@ class TestProjFrequencyResponse(unittest.TestCase):
             )
         )
         self.assertDictEqual(expected_adjustment, actual_adjustment)
+
+    def test_export_results_import_into_database(self):
+        """
+        Test that the project-timepoint results exported by this module can
+        be imported into the results_project_timepoint table
+        :return:
+        """
+        m, data = add_components_and_load_data(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=TEST_DATA_DIRECTORY,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        instance = m.create_instance(data)
+        for var in instance.Provide_Frequency_Response_MW.values():
+            var.set_value(1.5)
+
+        prj_tmps = sorted(instance.FREQUENCY_RESPONSE_PRJ_OPR_TMPS)
+        d = SimpleNamespace()
+        setattr(
+            d,
+            PROJECT_TIMEPOINT_DF,
+            pd.DataFrame(
+                index=pd.MultiIndex.from_tuples(
+                    prj_tmps, names=["project", "timepoint"]
+                )
+            ),
+        )
+        MODULE_BEING_TESTED.export_results(
+            scenario_directory="",
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+            m=instance,
+            d=d,
+        )
+
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        with open(DB_SCHEMA_FILE) as f:
+            conn.executescript(f.read())
+
+        with tempfile.TemporaryDirectory() as results_directory:
+            getattr(d, PROJECT_TIMEPOINT_DF).to_csv(
+                os.path.join(results_directory, "project_timepoint.csv")
+            )
+            import_csv(
+                conn=conn,
+                cursor=conn.cursor(),
+                scenario_id=1,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+                quiet=True,
+                results_directory=results_directory,
+                which_results="project_timepoint",
+            )
+
+        expected_rows = [
+            (
+                prj,
+                tmp,
+                instance.frequency_response_ba[prj],
+                1.5,
+                1 if prj in instance.FREQUENCY_RESPONSE_PARTIAL_PROJECTS else 0,
+            )
+            for (prj, tmp) in prj_tmps
+        ]
+        actual_rows = conn.execute("""SELECT project, timepoint, frequency_response_ba,
+            frequency_response_reserve_provision_mw,
+            frequency_response_partial_reserve_provision
+            FROM results_project_timepoint
+            ORDER BY project, timepoint""").fetchall()
+        self.assertListEqual(expected_rows, actual_rows)
 
 
 if __name__ == "__main__":

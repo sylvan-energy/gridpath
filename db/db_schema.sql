@@ -7196,7 +7196,7 @@ CREATE TABLE results_project_timepoint
     regulation_up_reserve_provision_mw              FLOAT,
     frequency_response_ba                           VARCHAR(32),
     frequency_response_reserve_provision_mw         FLOAT,
-    frequency_response_partial_reserve_provision_mw FLOAT,
+    frequency_response_partial_reserve_provision    INTEGER,
     inertia_reserves_ba                             VARCHAR(32),
     inertia_reserves_reserve_provision_mws          FLOAT,
     availability_derate                             FLOAT,
