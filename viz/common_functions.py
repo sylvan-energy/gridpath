@@ -101,6 +101,7 @@ def get_parent_parser():
     parser = ArgumentParser(add_help=False)
     parser.add_argument(
         "--database",
+        default="../db/io.db",
         help="The database file path relative to the current "
         "working directory. Defaults to ../db/io.db",
     )

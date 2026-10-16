@@ -302,3 +302,15 @@ class TestViz(unittest.TestCase):
             temp_file = "{}{}".format(DB_PATH, temp_file_ext)
             if os.path.exists(temp_file):
                 os.remove(temp_file)
+
+
+class TestVizArguments(unittest.TestCase):
+    def test_database_default(self):
+        """
+        Without --database, the plots use ../db/io.db, as the help text says
+        :return:
+        """
+        parsed_args = capacity_total_plot.parse_arguments(
+            ["--scenario", "test", "--load_zone", "Zone1"]
+        )
+        self.assertEqual("../db/io.db", parsed_args.database)
