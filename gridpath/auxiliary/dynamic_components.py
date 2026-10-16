@@ -56,6 +56,8 @@ carbon_tax_import_emission_components = "carbon_tax_import_emission_components"
 carbon_tax_signed_import_emission_components = (
     "carbon_tax_signed_import_emission_components"
 )
+policy_import_emission_components = "policy_import_emission_components"
+policy_signed_import_emission_components = "policy_signed_import_emission_components"
 
 performance_standard_balance_emission_components = (
     "performance_standard_balance_emission_components"
@@ -79,6 +81,7 @@ local_capacity_balance_provision_components = (
 fuel_burn_balance_components = "fuel_burn_balance_components"
 
 policy_balance_contribution_components = "policy_balance_contribution_components"
+policy_balance_base_components = "policy_balance_base_components"
 
 period_energy_target_balance_contribution_components = (
     "period_energy_target_balance_contribution_components"
@@ -164,6 +167,8 @@ class DynamicComponents(object):
         setattr(self, carbon_cap_signed_import_emission_components, list())
         setattr(self, carbon_tax_import_emission_components, list())
         setattr(self, carbon_tax_signed_import_emission_components, list())
+        setattr(self, policy_import_emission_components, list())
+        setattr(self, policy_signed_import_emission_components, list())
 
         # Performance standard constraint
         setattr(self, performance_standard_balance_emission_components, list())
@@ -187,8 +192,12 @@ class DynamicComponents(object):
         setattr(self, fuel_burn_balance_components, list())
 
         # Generic policy constraint
-        # Modules will add component names to this list
+        # Modules will add component names to these lists: the contributions
+        # toward the requirement and the base quantities the requirement can
+        # scale with (e.g. the mapped projects' output for an intensity
+        # target)
         setattr(self, policy_balance_contribution_components, list())
+        setattr(self, policy_balance_base_components, list())
 
         # Energy target constraints
         # Modules will add component names to these lists

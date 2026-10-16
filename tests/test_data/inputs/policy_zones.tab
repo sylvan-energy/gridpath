@@ -1,4 +1,5 @@
-policy_name	policy_zone	allow_violation	violation_penalty_per_unit
-RPS	RPSZone1	0	0
-Carbon	CarbonZone1	1	100
-SLICE_OF_DAY	SODZone1	0	0
+policy_name	policy_zone	allow_violation	violation_penalty_per_unit	import_emissions_basis
+RPS	RPSZone1	0	0	.
+Carbon	CarbonZone1	1	100	gross
+Carbon	CarbonZone2	0	0	net_prd
+SLICE_OF_DAY	SODZone1	0	0	.

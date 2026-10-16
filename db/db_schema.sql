@@ -911,6 +911,32 @@ CREATE TABLE inputs_system_performance_standard_zones_carbon_credits_zones
             (performance_standard_zones_carbon_credits_zones_scenario_id)
 );
 
+-- Generic policy zone <--> carbon credit zone mapping: the credits the
+-- projects mapped to the policy zone purchase from the mapped credit zones
+-- reduce the policy's contributions
+DROP TABLE IF EXISTS subscenarios_system_policy_zones_carbon_credits_zones;
+CREATE TABLE subscenarios_system_policy_zones_carbon_credits_zones
+(
+    policy_zones_carbon_credits_zones_scenario_id INTEGER PRIMARY KEY
+        AUTOINCREMENT,
+    name                                          VARCHAR(32),
+    description                                   VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_system_policy_zones_carbon_credits_zones;
+CREATE TABLE inputs_system_policy_zones_carbon_credits_zones
+(
+    policy_zones_carbon_credits_zones_scenario_id INTEGER,
+    policy_name                                   TEXT,
+    policy_zone                                   TEXT,
+    carbon_credits_zone                           VARCHAR(32),
+    PRIMARY KEY (policy_zones_carbon_credits_zones_scenario_id,
+                 policy_name, policy_zone, carbon_credits_zone),
+    FOREIGN KEY (policy_zones_carbon_credits_zones_scenario_id) REFERENCES
+        subscenarios_system_policy_zones_carbon_credits_zones
+            (policy_zones_carbon_credits_zones_scenario_id)
+);
+
 -- Carbon tax zone <--> carbon credit zone mapping
 DROP TABLE IF EXISTS subscenarios_system_carbon_tax_zones_carbon_credits_zones;
 CREATE TABLE subscenarios_system_carbon_tax_zones_carbon_credits_zones
@@ -981,6 +1007,12 @@ CREATE TABLE inputs_geography_policy_zones
     policy_zone                TEXT,
     allow_violation            INTEGER DEFAULT 0, -- constraint is hard by default
     violation_penalty_per_unit FLOAT   DEFAULT 0,
+    -- How emissions imported over transmission lines and purchased from
+    -- markets (the 'import_emissions' compliance type) count toward the
+    -- policy zone; see inputs_geography_carbon_cap_zones.import_emissions_basis.
+    -- NULL means 'gross'.
+    import_emissions_basis     VARCHAR(8) DEFAULT 'gross'
+        CHECK (import_emissions_basis IN ('gross', 'net_prd')),
     PRIMARY KEY (policy_zone_scenario_id, policy_name, policy_zone),
     FOREIGN KEY (policy_zone_scenario_id) REFERENCES
         subscenarios_geography_policy_zones (policy_zone_scenario_id)
@@ -6173,6 +6205,11 @@ CREATE TABLE inputs_system_policy_requirements
     -- exceed it). NULL means 'min'.
     policy_requirement_sense        VARCHAR(3) DEFAULT 'min'
         CHECK (policy_requirement_sense IN ('min', 'max')),
+    -- The requirement per unit of the requirement's base, i.e. the output or
+    -- capacity of the projects in
+    -- inputs_system_policy_requirements_base_projects, e.g. an emissions
+    -- intensity per MWh of those projects' output
+    policy_requirement_f_base_coeff FLOAT,
     PRIMARY KEY (policy_requirement_scenario_id, policy_name, policy_zone,
                  subproblem_id, stage_id, balancing_type_horizon, horizon)
 );
@@ -6204,6 +6241,29 @@ CREATE TABLE inputs_system_policy_requirements_load_zone_map
     load_zone                      TEXT,
     PRIMARY KEY (policy_requirement_scenario_id, policy_name, policy_zone,
                  load_zone)
+);
+
+-- If the policy requirement is specified as a function of a base (via
+-- policy_requirement_f_base_coeff), we need to also specify the base: the
+-- projects whose output (energy over the requirement horizon) or capacity
+-- (in the horizon's period) the requirement scales with, e.g. the
+-- generation an emissions intensity standard applies to. Which projects
+-- drive the requirement is part of the requirement's definition and is
+-- independent of which projects count toward meeting it
+-- (inputs_project_policy_zones); a project may do either or both. Each
+-- project's base quantity is weighted by base_multiplier (NULL = 1).
+DROP TABLE IF EXISTS inputs_system_policy_requirements_base_projects;
+CREATE TABLE inputs_system_policy_requirements_base_projects
+(
+    policy_requirement_scenario_id INTEGER,
+    policy_name                    TEXT,
+    policy_zone                    TEXT,
+    project                        VARCHAR(64),
+    base_type                      VARCHAR(8) NOT NULL
+        CHECK (base_type IN ('output', 'capacity')),
+    base_multiplier                FLOAT,
+    PRIMARY KEY (policy_requirement_scenario_id, policy_name, policy_zone,
+                 project, base_type)
 );
 
 -- Project, policy, zones
@@ -6255,11 +6315,98 @@ CREATE TABLE inputs_transmission_policy_zones
     policy_name                          TEXT,
     policy_zone                          TEXT,
     compliance_type                      TEXT,
+    -- The 'import_emissions' compliance type's parameters (see
+    -- inputs_transmission_carbon_cap_zones); NULL for other types
+    import_direction                     VARCHAR(8),
+    tmp_import_emissions_scenario_id     INTEGER,
+    tx_co2_intensity_tons_per_mwh        FLOAT,
+    tx_export_co2_intensity_tons_per_mwh FLOAT,
     PRIMARY KEY (transmission_policy_zone_scenario_id, transmission_line,
                  policy_name, policy_zone),
     FOREIGN KEY (transmission_policy_zone_scenario_id) REFERENCES
         subscenarios_transmission_policy_zones
             (transmission_policy_zone_scenario_id)
+);
+
+-- Timepoint-varying import/export intensity adders of lines mapped to
+-- policies with the 'import_emissions' compliance type
+DROP TABLE IF EXISTS subscenarios_transmission_policy_timepoint_emissions;
+CREATE TABLE subscenarios_transmission_policy_timepoint_emissions
+(
+    transmission_line                VARCHAR(64),
+    tmp_import_emissions_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (transmission_line, tmp_import_emissions_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_transmission_policy_timepoint_emissions;
+CREATE TABLE inputs_transmission_policy_timepoint_emissions
+(
+    transmission_line                           VARCHAR(64),
+    tmp_import_emissions_scenario_id            INTEGER,
+    timepoint                                   INTEGER,
+    tx_co2_intensity_tons_per_mwh_hourly        FLOAT,
+    tx_export_co2_intensity_tons_per_mwh_hourly FLOAT,
+    PRIMARY KEY (transmission_line, tmp_import_emissions_scenario_id,
+                 timepoint),
+    FOREIGN KEY (transmission_line, tmp_import_emissions_scenario_id) REFERENCES
+        subscenarios_transmission_policy_timepoint_emissions
+            (transmission_line, tmp_import_emissions_scenario_id)
+);
+
+-- Markets, policy, zones
+-- Which (load zone, market) pairs count toward which policies and zones;
+-- the only compliance type is 'import_emissions' (see
+-- inputs_market_carbon_cap_zones for the parameters)
+DROP TABLE IF EXISTS subscenarios_market_policy_zones;
+CREATE TABLE subscenarios_market_policy_zones
+(
+    market_policy_zone_scenario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                           VARCHAR(32),
+    description                    VARCHAR(128)
+);
+
+DROP TABLE IF EXISTS inputs_market_policy_zones;
+CREATE TABLE inputs_market_policy_zones
+(
+    market_policy_zone_scenario_id    INTEGER,
+    load_zone                         VARCHAR(32),
+    market                            VARCHAR(32),
+    policy_name                       TEXT,
+    policy_zone                       TEXT,
+    compliance_type                   TEXT,
+    tmp_import_emissions_scenario_id  INTEGER, -- determines timepoint emissions scenario
+    co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh FLOAT,
+    PRIMARY KEY (market_policy_zone_scenario_id, load_zone, market,
+                 policy_name, policy_zone),
+    FOREIGN KEY (market_policy_zone_scenario_id) REFERENCES
+        subscenarios_market_policy_zones (market_policy_zone_scenario_id)
+);
+
+DROP TABLE IF EXISTS subscenarios_market_policy_timepoint_emissions;
+CREATE TABLE subscenarios_market_policy_timepoint_emissions
+(
+    market                           VARCHAR(32),
+    tmp_import_emissions_scenario_id INTEGER,
+    name                             VARCHAR(32),
+    description                      VARCHAR(128),
+    PRIMARY KEY (market, tmp_import_emissions_scenario_id)
+);
+
+DROP TABLE IF EXISTS inputs_market_policy_timepoint_emissions;
+CREATE TABLE inputs_market_policy_timepoint_emissions
+(
+    market                                   VARCHAR(32),
+    tmp_import_emissions_scenario_id         INTEGER,
+    timepoint                                INTEGER,
+    co2_intensity_tons_per_mwh_hourly        FLOAT,
+    export_co2_intensity_tons_per_mwh_hourly FLOAT,
+    PRIMARY KEY (market, tmp_import_emissions_scenario_id, timepoint),
+    FOREIGN KEY (market, tmp_import_emissions_scenario_id) REFERENCES
+        subscenarios_market_policy_timepoint_emissions
+            (market, tmp_import_emissions_scenario_id)
 );
 
 DROP TABLE IF EXISTS subscenarios_project_policy_exceedance_values;
@@ -6496,6 +6643,7 @@ CREATE TABLE scenarios
     carbon_credits_zone_scenario_id                             INTEGER,
     carbon_cap_zones_carbon_credits_zones_scenario_id           INTEGER,
     performance_standard_zones_carbon_credits_zones_scenario_id INTEGER,
+    policy_zones_carbon_credits_zones_scenario_id               INTEGER,
     carbon_tax_zones_carbon_credits_zones_scenario_id           INTEGER,
     carbon_credits_params_scenario_id                           INTEGER,
     fuel_burn_limit_ba_scenario_id                              INTEGER,
@@ -6533,6 +6681,7 @@ CREATE TABLE scenarios
     fuel_fuel_burn_limit_ba_scenario_id                         INTEGER,
     project_policy_zone_scenario_id                             INTEGER,
     transmission_policy_zone_scenario_id                        INTEGER,
+    market_policy_zone_scenario_id                              INTEGER,
     project_prm_zone_scenario_id                                INTEGER,
     prm_capacity_transfer_scenario_id                           INTEGER,
     prm_capacity_transfer_params_scenario_id                    INTEGER,
@@ -6649,6 +6798,9 @@ CREATE TABLE scenarios
     FOREIGN KEY (performance_standard_zones_carbon_credits_zones_scenario_id) REFERENCES
         subscenarios_system_performance_standard_zones_carbon_credits_zones
             (performance_standard_zones_carbon_credits_zones_scenario_id),
+    FOREIGN KEY (policy_zones_carbon_credits_zones_scenario_id) REFERENCES
+        subscenarios_system_policy_zones_carbon_credits_zones
+            (policy_zones_carbon_credits_zones_scenario_id),
     FOREIGN KEY (carbon_tax_zones_carbon_credits_zones_scenario_id) REFERENCES
         subscenarios_system_carbon_tax_zones_carbon_credits_zones
             (carbon_tax_zones_carbon_credits_zones_scenario_id),
@@ -6750,6 +6902,8 @@ CREATE TABLE scenarios
     FOREIGN KEY (transmission_policy_zone_scenario_id) REFERENCES
         subscenarios_transmission_policy_zones
             (transmission_policy_zone_scenario_id),
+    FOREIGN KEY (market_policy_zone_scenario_id) REFERENCES
+        subscenarios_market_policy_zones (market_policy_zone_scenario_id),
     FOREIGN KEY (project_prm_zone_scenario_id) REFERENCES
         subscenarios_project_prm_zones (project_prm_zone_scenario_id),
     FOREIGN KEY (transmission_prm_zone_scenario_id) REFERENCES
@@ -8885,15 +9039,115 @@ CREATE TABLE results_system_policy_requirements
     policy_requirement                        FLOAT,
     pre_load_modifier_load_in_hrz             FLOAT,
     post_load_modifier_load_in_hrz            FLOAT,
+    policy_requirement_base_in_hrz            FLOAT,
     policy_requirement_calculated_in_horizon  FLOAT,
     policy_requirement_sense                  TEXT,
     policy_requirement_shortage               FLOAT,
     policy_requirement_overage                FLOAT,
     dual                                      FLOAT,
     policy_requirement_marginal_cost_per_unit FLOAT,
+    -- Import emissions counted toward the policy ('import_emissions'
+    -- compliance type on transmission lines and markets)
+    import_emissions_basis                    TEXT,
+    import_emissions                          FLOAT,
+    import_emissions_degen                    FLOAT,
+    export_credits                            FLOAT,
+    market_import_emissions                   FLOAT,
+    market_import_emissions_degen             FLOAT,
+    market_export_credits                     FLOAT,
+    total_import_emissions                    FLOAT,
+    total_import_emissions_degen              FLOAT,
+    -- Carbon credits purchased by the mapped projects, which reduce the
+    -- policy's contributions
+    carbon_credits                            FLOAT,
     PRIMARY KEY (scenario_id, policy_name, policy_zone, weather_iteration,
                  hydro_iteration, availability_iteration, subproblem_id,
                  stage_id, balancing_type_horizon, horizon)
+);
+
+-- The base projects' quantities in each requirement horizon (energy in MWh
+-- for the output base, capacity in MW for the capacity base), before and
+-- after the project's multiplier
+DROP TABLE IF EXISTS results_project_policy_requirement_base;
+CREATE TABLE results_project_policy_requirement_base
+(
+    scenario_id            INTEGER,
+    weather_iteration      INTEGER,
+    hydro_iteration        INTEGER,
+    availability_iteration INTEGER,
+    subproblem_id          INTEGER,
+    stage_id               INTEGER,
+    policy_name            TEXT,
+    policy_zone            TEXT,
+    balancing_type_horizon VARCHAR(64),
+    horizon                INTEGER,
+    project                VARCHAR(64),
+    base_type              TEXT,
+    base_multiplier        FLOAT,
+    base_in_hrz            FLOAT,
+    weighted_base_in_hrz   FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 policy_name, policy_zone, balancing_type_horizon, horizon,
+                 project, base_type)
+);
+
+DROP TABLE IF EXISTS results_transmission_policy_imports;
+CREATE TABLE results_transmission_policy_imports
+(
+    scenario_id                              INTEGER,
+    weather_iteration                        INTEGER,
+    hydro_iteration                          INTEGER,
+    availability_iteration                   INTEGER,
+    subproblem_id                            INTEGER,
+    stage_id                                 INTEGER,
+    transmission_line                        VARCHAR(64),
+    policy_name                              TEXT,
+    policy_zone                              TEXT,
+    timepoint                                INTEGER,
+    period                                   INTEGER,
+    timepoint_weight                         FLOAT,
+    number_of_hours_in_timepoint             FLOAT,
+    import_direction                         VARCHAR(8),
+    import_co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh        FLOAT,
+    import_mw                                FLOAT,
+    export_mw                                FLOAT,
+    import_emissions_tons                    FLOAT,
+    import_emissions_tons_degen              FLOAT,
+    export_credits_tons                      FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 transmission_line, policy_name, policy_zone, timepoint)
+);
+
+DROP TABLE IF EXISTS results_system_market_policy_imports;
+CREATE TABLE results_system_market_policy_imports
+(
+    scenario_id                              INTEGER,
+    weather_iteration                        INTEGER,
+    hydro_iteration                          INTEGER,
+    availability_iteration                   INTEGER,
+    subproblem_id                            INTEGER,
+    stage_id                                 INTEGER,
+    load_zone                                VARCHAR(32),
+    market                                   VARCHAR(32),
+    policy_name                              TEXT,
+    policy_zone                              TEXT,
+    timepoint                                INTEGER,
+    period                                   INTEGER,
+    timepoint_weight                         FLOAT,
+    number_of_hours_in_timepoint             FLOAT,
+    import_co2_intensity_tons_per_mwh        FLOAT,
+    export_co2_intensity_tons_per_mwh        FLOAT,
+    purchase_mw                              FLOAT,
+    sale_mw                                  FLOAT,
+    import_emissions_tons                    FLOAT,
+    import_emissions_tons_degen              FLOAT,
+    export_credits_tons                      FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 load_zone, market, policy_name, policy_zone, timepoint)
 );
 
 
@@ -9365,6 +9619,10 @@ SELECT scenario_id,
         WHERE performance_standard_zones_carbon_credits_zones_scenario_id =
               scenarios.performance_standard_zones_carbon_credits_zones_scenario_id) AS performance_standard_zones_carbon_credits_zones,
        (SELECT name
+        FROM subscenarios_system_policy_zones_carbon_credits_zones
+        WHERE policy_zones_carbon_credits_zones_scenario_id =
+              scenarios.policy_zones_carbon_credits_zones_scenario_id)               AS policy_zones_carbon_credits_zones,
+       (SELECT name
         FROM subscenarios_system_carbon_tax_zones_carbon_credits_zones
         WHERE carbon_tax_zones_carbon_credits_zones_scenario_id =
               scenarios.carbon_tax_zones_carbon_credits_zones_scenario_id)           AS carbon_tax_zones_carbon_credits_zones,
@@ -9511,6 +9769,10 @@ SELECT scenario_id,
         FROM subscenarios_transmission_policy_zones
         WHERE transmission_policy_zone_scenario_id =
               scenarios.transmission_policy_zone_scenario_id)                        AS transmission_policy_zones,
+       (SELECT name
+        FROM subscenarios_market_policy_zones
+        WHERE market_policy_zone_scenario_id =
+              scenarios.market_policy_zone_scenario_id)                              AS market_policy_zones,
        (SELECT name
         FROM subscenarios_project_prm_zones
         WHERE project_prm_zone_scenario_id =

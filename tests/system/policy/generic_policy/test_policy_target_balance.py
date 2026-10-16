@@ -57,6 +57,7 @@ PREREQUISITE_MODULE_NAMES = [
     "project.operations.fuel_burn",
     "project.operations.carbon_emissions",
     "project.policy.policy_contribution",
+    "system.policy.generic_policy.policy_requirement_base",
     "system.policy.generic_policy.aggregate_project_policy_contributions",
 ]
 NAME_OF_MODULE_BEING_TESTED = "system.policy.generic_policy.policy_target_balance"
@@ -135,14 +136,21 @@ class TestAggregateProjectPolicyContributions(unittest.TestCase):
         # does not allow violations, so no shortage variable enters) and
         # 'contributions - overage - requirement' for the Carbon policy
         # (whose zone does allow violations).
+        # The Carbon 2020 requirement also scales with its base projects'
+        # quantities (Gas_CT's and Wind's output and half of Coal's capacity)
+        # through the base coefficient; the other requirements have no base
+        # term.
         constraint = instance.Policy_Requirement_Constraint
         contributions = (
             instance.Total_Policy_Zone_Tmp_Contributions_from_All_Sources_Expression
         )
         requirement = instance.Policy_Zone_Horizon_Requirement
+        base = instance.Total_Policy_Zone_Base_from_All_Sources_Expression
+        base_coeff = instance.policy_requirement_f_base_coeff
         for h in [2020, 2030]:
             rps = ("RPS", "RPSZone1", "year", h)
             self.assertTrue(linear_coefficients_by_var(contributions[rps]))
+            self.assertEqual(0, base_coeff[rps])
             self.assertEqual(
                 linear_repn(requirement[rps] - contributions[rps]),
                 linear_repn(constraint[rps].body),
@@ -155,9 +163,18 @@ class TestAggregateProjectPolicyContributions(unittest.TestCase):
                     contributions[carbon]
                     - instance.Policy_Target_Overage[carbon]
                     - requirement[carbon]
+                    - base_coeff[carbon] * base[carbon]
                 ),
                 linear_repn(constraint[carbon].body),
             )
+
+        carbon_2020 = ("Carbon", "CarbonZone1", "year", 2020)
+        self.assertEqual(0.5, base_coeff[carbon_2020])
+        self.assertTrue(linear_coefficients_by_var(base[carbon_2020]))
+        self.assertEqual(
+            linear_repn(instance.Policy_Zone_Horizon_Total_Requirement[carbon_2020]),
+            linear_repn(requirement[carbon_2020] + 0.5 * base[carbon_2020]),
+        )
 
 
 def linear_coefficients_by_var(expr):

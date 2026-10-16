@@ -1,5 +1,5 @@
-policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense
-GasCap	GasCapZone1	year	2020	50000.0	.	max
-GasCap	GasCapZone1	year	2030	50000.0	.	max
-RPS	RPSZone1	year	2020	250000.0	.	min
-RPS	RPSZone1	year	2030	250000.0	.	min
+policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense	policy_requirement_f_base_coeff
+GasCap	GasCapZone1	year	2020	50000.0	.	max	.
+GasCap	GasCapZone1	year	2030	50000.0	.	max	.
+RPS	RPSZone1	year	2020	250000.0	.	min	.
+RPS	RPSZone1	year	2030	250000.0	.	min	.

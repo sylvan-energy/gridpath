@@ -13,7 +13,11 @@
 # limitations under the License.
 
 """
-Policies and "zones" where they will be enforced.
+Policies and "zones" where they will be enforced, with each zone's violation
+settings and its import-emissions basis (how the emissions of imports over
+transmission lines and market purchases mapped to the zone with the
+*import_emissions* compliance type count: ``gross`` or ``net_prd``, see
+:code:`gridpath.system.policy.import_emissions`).
 """
 
 import csv
@@ -21,6 +25,7 @@ import os.path
 from pyomo.environ import Set, Param, Boolean, NonNegativeReals
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.system.policy.import_emissions import GROSS, IMPORT_EMISSIONS_BASES
 
 
 def add_model_components(
@@ -45,6 +50,9 @@ def add_model_components(
     m.policy_zone_allow_violation = Param(m.POLICIES_ZONES, within=Boolean, default=0)
     m.policy_zone_violation_penalty_per_unit = Param(
         m.POLICIES_ZONES, within=NonNegativeReals, default=0
+    )
+    m.policy_import_emissions_basis = Param(
+        m.POLICIES_ZONES, within=IMPORT_EMISSIONS_BASES, default=GROSS
     )
 
 
@@ -74,6 +82,7 @@ def load_model_data(
         param=(
             m.policy_zone_allow_violation,
             m.policy_zone_violation_penalty_per_unit,
+            m.policy_import_emissions_basis,
         ),
     )
 
@@ -98,8 +107,9 @@ def get_inputs_from_database(
     # TODO: add list of policies subscenario and filter by that here
 
     c = conn.cursor()
-    policies_zones = c.execute(f"""SELECT policy_name, policy_zone, allow_violation, 
-        violation_penalty_per_unit
+    policies_zones = c.execute(f"""SELECT policy_name, policy_zone, allow_violation,
+        violation_penalty_per_unit,
+        COALESCE(import_emissions_basis, '{GROSS}') AS import_emissions_basis
         FROM inputs_geography_policy_zones
         WHERE policy_zone_scenario_id = {subscenarios.POLICY_ZONE_SCENARIO_ID};
         """)
@@ -197,6 +207,7 @@ def write_model_inputs(
                 "policy_zone",
                 "allow_violation",
                 "violation_penalty_per_unit",
+                "import_emissions_basis",
             ]
         )
 

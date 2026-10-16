@@ -1,0 +1,3 @@
+carbon_credits_zone	period	allow_carbon_credits_infinite_demand	carbon_credits_demand_tco2	carbon_credits_demand_price	allow_carbon_credits_infinite_supply	carbon_credits_supply_tco2	carbon_credits_supply_price
+Carbon_Credits_Zone1	2020	1	.	100000000.0	0	0.0	.
+Carbon_Credits_Zone1	2030	0	80.0	100000000.0	0	0.0	.

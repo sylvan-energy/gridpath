@@ -46,9 +46,13 @@ from gridpath.project.operations.operational_types.common_functions import (
 from gridpath.system.policy.import_emissions import (
     IMPORT_DIRECTIONS,
     ImportEmissionsSource,
+    get_basis_by_zone,
     is_net_zone,
+    split_index,
     validate_export_intensities,
     validate_single_profile_per_entity,
+    validate_zones,
+    zone_scope_sql,
 )
 
 _NAMES = {}
@@ -79,7 +83,7 @@ def names(policy):
         import_emissions_constraint=f"Tx_{Pc}_Import_Emissions_Constraint",
         import_mw_var=f"Tx_{Pc}_Import_MW",
         import_mw_constraint=f"Tx_{Pc}_Import_MW_Constraint",
-        zones_file=f"transmission_{p}_zones.tab",
+        zones_file=f"transmission_{p}_{policy.zones_file_tag}.tab",
         timepoint_emissions_file=f"transmission_{p}_timepoint_emissions.tab",
         results=f"transmission_{p}_imports",
         zones_table=f"inputs_transmission_{p}_zones",
@@ -101,8 +105,8 @@ def generic_add_model_components(m, d, policy):
     +=========================================================================+
     | | :code:`<P>_TX_LINE_ZONES`                                             |
     |                                                                         |
-    | Two-dimensional set of the transmission lines whose imports or exports  |
-    | count toward a zone and that zone.                                      |
+    | The transmission lines whose imports or exports count toward a zone and |
+    | that zone (one or more elements, per the policy's zone columns).        |
     +-------------------------------------------------------------------------+
     | | :code:`<P>_TX_LINES`                                                  |
     |                                                                         |
@@ -119,7 +123,7 @@ def generic_add_model_components(m, d, policy):
     +-------------------------------------------------------------------------+
     | | :code:`<P>_TX_LINE_ZONE_OPR_TMPS`                                     |
     |                                                                         |
-    | Three-dimensional set of line, zone and operational timepoint; split    |
+    | Line, zone and operational timepoint; split                             |
     | into :code:`GROSS_<P>_TX_LINE_ZONE_OPR_TMPS` and                        |
     | :code:`NET_<P>_TX_LINE_ZONE_OPR_TMPS` by the zone's import-emissions    |
     | basis.                                                                  |
@@ -210,11 +214,14 @@ def generic_add_model_components(m, d, policy):
     """
     n = names(policy)
     zones = getattr(m, policy.zones_set)
+    # The zone is one or more elements of the index tuples (one for the
+    # carbon cap and carbon tax); the helpers below take tuples apart
+    zone_dimen = policy.zone_dimen
 
     # Sets
     ###########################################################################
 
-    setattr(m, n.line_zones, Set(dimen=2, within=m.TX_LINES * zones))
+    setattr(m, n.line_zones, Set(dimen=1 + zone_dimen, within=m.TX_LINES * zones))
 
     setattr(
         m,
@@ -222,7 +229,7 @@ def generic_add_model_components(m, d, policy):
         Set(
             within=m.TX_LINES,
             initialize=lambda mod: sorted(
-                set(tx for (tx, z) in getattr(mod, n.line_zones))
+                set(idx[0] for idx in getattr(mod, n.line_zones))
             ),
         ),
     )
@@ -233,8 +240,8 @@ def generic_add_model_components(m, d, policy):
         Set(
             zones,
             within=m.TX_LINES,
-            initialize=lambda mod, z: [
-                tx for (tx, zone) in getattr(mod, n.line_zones) if zone == z
+            initialize=lambda mod, *z: [
+                idx[0] for idx in getattr(mod, n.line_zones) if idx[1:] == z
             ],
         ),
     )
@@ -258,22 +265,26 @@ def generic_add_model_components(m, d, policy):
         for tx, tmp in getattr(mod, n.opr_tmps):
             tmps_by_line.setdefault(tx, []).append(tmp)
         return [
-            (tx, z, tmp)
-            for (tx, z) in getattr(mod, n.line_zones)
-            for tmp in tmps_by_line.get(tx, [])
+            (*line_zone, tmp)
+            for line_zone in getattr(mod, n.line_zones)
+            for tmp in tmps_by_line.get(line_zone[0], [])
         ]
 
-    setattr(m, n.line_zone_opr_tmps, Set(dimen=3, initialize=line_zone_opr_tmps_init))
+    setattr(
+        m,
+        n.line_zone_opr_tmps,
+        Set(dimen=2 + zone_dimen, initialize=line_zone_opr_tmps_init),
+    )
 
     setattr(
         m,
         n.gross_line_zone_opr_tmps,
         Set(
-            dimen=3,
+            dimen=2 + zone_dimen,
             initialize=lambda mod: [
-                (tx, z, tmp)
-                for (tx, z, tmp) in getattr(mod, n.line_zone_opr_tmps)
-                if not is_net_zone(mod, policy, z)
+                idx
+                for idx in getattr(mod, n.line_zone_opr_tmps)
+                if not is_net_zone(mod, policy, idx[1:-1])
             ],
         ),
     )
@@ -282,11 +293,11 @@ def generic_add_model_components(m, d, policy):
         m,
         n.net_line_zone_opr_tmps,
         Set(
-            dimen=3,
+            dimen=2 + zone_dimen,
             initialize=lambda mod: [
-                (tx, z, tmp)
-                for (tx, z, tmp) in getattr(mod, n.line_zone_opr_tmps)
-                if is_net_zone(mod, policy, z)
+                idx
+                for idx in getattr(mod, n.line_zone_opr_tmps)
+                if is_net_zone(mod, policy, idx[1:-1])
             ],
         ),
     )
@@ -323,8 +334,9 @@ def generic_add_model_components(m, d, policy):
         Var(getattr(m, n.gross_line_zone_opr_tmps), within=NonNegativeReals),
     )
 
-    def import_emissions_rule(mod, tx, z, tmp):
-        return getattr(mod, n.import_emissions_var)[tx, z, tmp] >= import_flow(
+    def import_emissions_rule(mod, *idx):
+        (tx,), z, tmp = split_index(TX_SOURCE, idx)
+        return getattr(mod, n.import_emissions_var)[idx] >= import_flow(
             mod, policy, tx, z, tmp
         ) * import_intensity(mod, policy, tx, z, tmp)
 
@@ -340,8 +352,9 @@ def generic_add_model_components(m, d, policy):
         Var(getattr(m, n.net_line_zone_opr_tmps), within=NonNegativeReals),
     )
 
-    def import_mw_rule(mod, tx, z, tmp):
-        return getattr(mod, n.import_mw_var)[tx, z, tmp] >= import_flow(
+    def import_mw_rule(mod, *idx):
+        (tx,), z, tmp = split_index(TX_SOURCE, idx)
+        return getattr(mod, n.import_mw_var)[idx] >= import_flow(
             mod, policy, tx, z, tmp
         )
 
@@ -359,6 +372,7 @@ def generic_add_model_components(m, d, policy):
 def import_flow(mod, policy, tx, z, tmp):
     """
     The line flow into the zone (an expression; negative when exporting).
+    The zone ``z`` is a tuple (as everywhere below).
     """
     if getattr(mod, names(policy).import_direction)[tx, z] == "positive":
         return mod.Transmit_Power_MW[tx, tmp]
@@ -388,14 +402,14 @@ def import_emissions_tons(mod, policy, idx):
     them: the emissions variable in a gross zone, imported MW times the
     import intensity in a net zone.
     """
-    tx, z, tmp = idx
+    (tx,), z, tmp = split_index(TX_SOURCE, idx)
     n = names(policy)
     if is_net_zone(mod, policy, z):
-        return getattr(mod, n.import_mw_var)[tx, z, tmp] * import_intensity(
+        return getattr(mod, n.import_mw_var)[idx] * import_intensity(
             mod, policy, tx, z, tmp
         )
     else:
-        return getattr(mod, n.import_emissions_var)[tx, z, tmp]
+        return getattr(mod, n.import_emissions_var)[idx]
 
 
 def signed_import_emissions_tons(mod, policy, idx):
@@ -403,32 +417,38 @@ def signed_import_emissions_tons(mod, policy, idx):
     Imports at the import intensity less exports at the export intensity, for
     a net zone; see :code:`gridpath.system.policy.import_emissions`.
     """
-    tx, z, tmp = idx
+    (tx,), z, tmp = split_index(TX_SOURCE, idx)
     i_exp = export_intensity(mod, policy, tx, z, tmp)
     return (import_intensity(mod, policy, tx, z, tmp) - i_exp) * getattr(
         mod, names(policy).import_mw_var
-    )[tx, z, tmp] + i_exp * import_flow(mod, policy, tx, z, tmp)
+    )[idx] + i_exp * import_flow(mod, policy, tx, z, tmp)
 
 
 def realized_import_mw(mod, policy, idx):
-    return max(value(import_flow(mod, policy, *idx)), 0)
+    (tx,), z, tmp = split_index(TX_SOURCE, idx)
+    return max(value(import_flow(mod, policy, tx, z, tmp)), 0)
 
 
 def realized_export_mw(mod, policy, idx):
-    return max(-value(import_flow(mod, policy, *idx)), 0)
+    (tx,), z, tmp = split_index(TX_SOURCE, idx)
+    return max(-value(import_flow(mod, policy, tx, z, tmp)), 0)
 
 
 def realized_import_emissions_tons(mod, policy, idx):
-    return realized_import_mw(mod, policy, idx) * import_intensity(mod, policy, *idx)
+    (tx,), z, tmp = split_index(TX_SOURCE, idx)
+    return realized_import_mw(mod, policy, idx) * import_intensity(
+        mod, policy, tx, z, tmp
+    )
 
 
 def realized_export_credits_tons(mod, policy, idx):
     """
     Exports earn credits only in net zones.
     """
-    if is_net_zone(mod, policy, idx[1]):
+    (tx,), z, tmp = split_index(TX_SOURCE, idx)
+    if is_net_zone(mod, policy, z):
         return realized_export_mw(mod, policy, idx) * export_intensity(
-            mod, policy, *idx
+            mod, policy, tx, z, tmp
         )
     else:
         return 0
@@ -438,7 +458,7 @@ TX_SOURCE = ImportEmissionsSource(
     label="Tx",
     results_prefix="import",
     zone_tmps_set=lambda policy: names(policy).line_zone_opr_tmps,
-    zone_position=1,
+    entity_dimen=1,
     import_emissions_tons=import_emissions_tons,
     signed_import_emissions_tons=signed_import_emissions_tons,
     realized_import_emissions_tons=realized_import_emissions_tons,
@@ -541,7 +561,7 @@ def generic_export_results(
         writer.writerow(
             [
                 "transmission_line",
-                policy.zone_column,
+                *policy.zone_columns,
                 "timepoint",
                 "period",
                 "timepoint_weight",
@@ -556,12 +576,12 @@ def generic_export_results(
                 "export_credits_tons",
             ]
         )
-        for tx, z, tmp in idxs:
-            idx = (tx, z, tmp)
+        for idx in idxs:
+            (tx,), z, tmp = split_index(TX_SOURCE, idx)
             writer.writerow(
                 [
                     tx,
-                    z,
+                    *z,
                     tmp,
                     m.period[tmp],
                     m.tmp_weight[tmp],
@@ -588,20 +608,9 @@ def line_zones_sql(subscenarios, policy, scope_zones=True):
     *scope_zones*, only those to zones in the scenario's zone subscenario.
     """
     n = names(policy)
-    zone_filter = (
-        f"""
-        AND {policy.zone_column} IN (
-            SELECT {policy.zone_column}
-            FROM inputs_geography_{policy.name}_zones
-            WHERE {policy.name}_zone_scenario_id =
-                {getattr(subscenarios, policy.zone_subscenario_attr)}
-        )
-        """
-        if scope_zones
-        else ""
-    )
+    zone_filter = zone_scope_sql(subscenarios, policy) if scope_zones else ""
     return f"""
-        SELECT transmission_line, {policy.zone_column}, import_direction,
+        SELECT transmission_line, {", ".join(policy.zone_columns)}, import_direction,
             tmp_import_emissions_scenario_id,
             tx_co2_intensity_tons_per_mwh, tx_export_co2_intensity_tons_per_mwh
         FROM {n.zones_table}
@@ -612,6 +621,7 @@ def line_zones_sql(subscenarios, policy, scope_zones=True):
             WHERE transmission_portfolio_scenario_id =
                 {subscenarios.TRANSMISSION_PORTFOLIO_SCENARIO_ID}
         )
+        {policy.rows_filter_sql}
         {zone_filter}
     """
 
@@ -634,7 +644,7 @@ def generic_get_inputs_from_database(
     n = names(policy)
     c = conn.cursor()
     line_zones = c.execute(f"""
-        SELECT transmission_line, {policy.zone_column}, import_direction,
+        SELECT transmission_line, {", ".join(policy.zone_columns)}, import_direction,
             tx_co2_intensity_tons_per_mwh, tx_export_co2_intensity_tons_per_mwh
         FROM ({line_zones_sql(subscenarios, policy)})
         """)
@@ -774,13 +784,7 @@ def generic_validate_inputs(
     if df.empty:
         return
 
-    zones_and_bases = c.execute(f"""
-        SELECT {policy.zone_column}, COALESCE(import_emissions_basis, 'gross')
-        FROM inputs_geography_{policy.name}_zones
-        WHERE {policy.name}_zone_scenario_id =
-            {getattr(subscenarios, policy.zone_subscenario_attr)}
-        """).fetchall()
-    basis_by_zone = dict(zones_and_bases)
+    basis_by_zone = get_basis_by_zone(c, subscenarios, policy)
 
     tmp_df = cursor_to_df(c.execute(f"""
             SELECT transmission_line, tmp_import_emissions_scenario_id, timepoint,
@@ -802,19 +806,23 @@ def generic_validate_inputs(
     df["export_intensity"] = df["tx_export_co2_intensity_tons_per_mwh"].fillna(0)
 
     errors = (
-        validate_columns(df, policy.zone_column, valids=list(basis_by_zone.keys()))
+        validate_zones(df, basis_by_zone, ["transmission_line"], policy)
         + validate_columns(df, "import_direction", valids=IMPORT_DIRECTIONS)
         + validate_values(
             df,
             ["import_intensity", "export_intensity"],
-            idx_col=["transmission_line", policy.zone_column],
+            idx_col=["transmission_line", *policy.zone_columns],
             min=0,
         )
         + validate_export_intensities(
-            df, basis_by_zone, tmp_df, ["transmission_line"], policy.zone_column
+            df, basis_by_zone, tmp_df, ["transmission_line"], policy
         )
         + validate_single_profile_per_entity(df, ["transmission_line"])
     )
+    if policy.validate_rows is not None:
+        errors += policy.validate_rows(
+            c, subscenarios, df, ["transmission_line"], policy
+        )
 
     write_validation_to_database(
         conn=conn,

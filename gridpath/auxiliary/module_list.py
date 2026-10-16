@@ -158,6 +158,7 @@ def all_modules_list():
         "system.markets.fix_market_participation",
         "system.markets.carbon_emissions",
         "system.markets.carbon_tax_emissions",
+        "system.markets.policy_import_emissions",
         "system.load_balance.aggregate_market_participation",
         "system.load_balance.load_balance",
         "system.load_balance.consolidate_results",
@@ -179,6 +180,7 @@ def all_modules_list():
         "system.policy.generic_policy.generic_policy_requirements",
         "project.policy.policy_contribution",
         "transmission.policy.policy_contribution",
+        "transmission.policy.import_emissions",
         "system.reliability.prm",
         "system.reliability.prm.prm_requirement",
         "system.reliability.local_capacity",
@@ -245,8 +247,13 @@ def all_modules_list():
         "system.policy.fuel_burn_limits.aggregate_project_fuel_burn",
         "system.policy.fuel_burn_limits.fuel_burn_limit_balance",
         "system.policy.fuel_burn_limits.consolidate_results",
+        "system.policy.generic_policy.policy_requirement_base",
         "system.policy.generic_policy.aggregate_project_policy_contributions",
         "system.policy.generic_policy.aggregate_transmission_policy_contributions",
+        "system.policy.generic_policy.aggregate_transmission_import_emissions",
+        "system.policy.generic_policy.aggregate_market_import_emissions",
+        "system.policy.generic_policy.aggregate_import_emissions",
+        "system.policy.generic_policy.aggregate_project_carbon_credits",
         "system.policy.generic_policy.policy_target_balance",
         "system.policy.generic_policy.consolidate_results",
         "system.reliability.prm.aggregate_project_simple_prm_contribution",
@@ -483,6 +490,7 @@ def optional_modules_list():
             "system.policy.generic_policy",
             "system.policy.generic_policy.generic_policy_requirements",
             "project.policy.policy_contribution",
+            "system.policy.generic_policy.policy_requirement_base",
             "system.policy.generic_policy.aggregate_project_policy_contributions",
             "system.policy.generic_policy.policy_target_balance",
             "objective.system.policy.aggregate_policy_target_violation_penalties",
@@ -580,6 +588,14 @@ def cross_feature_modules_list():
         ("transmission", "policy"): [
             "transmission.policy.policy_contribution",
             "system.policy.generic_policy.aggregate_transmission_policy_contributions",
+            "transmission.policy.import_emissions",
+            "system.policy.generic_policy.aggregate_transmission_import_emissions",
+            "system.policy.generic_policy.aggregate_import_emissions",
+        ],
+        ("markets", "policy"): [
+            "system.markets.policy_import_emissions",
+            "system.policy.generic_policy.aggregate_market_import_emissions",
+            "system.policy.generic_policy.aggregate_import_emissions",
         ],
         ("transmission", "period_energy_target"): [
             "transmission.operations.energy_target_contributions",
@@ -607,6 +623,9 @@ def cross_feature_modules_list():
         ],
         ("performance_standard", "carbon_credits"): [
             "system.policy.performance_standard.aggregate_project_carbon_credits",
+        ],
+        ("policy", "carbon_credits"): [
+            "system.policy.generic_policy.aggregate_project_carbon_credits",
         ],
         ("carbon_tax", "carbon_credits"): [
             "system.policy.carbon_tax.aggregate_project_carbon_credits",

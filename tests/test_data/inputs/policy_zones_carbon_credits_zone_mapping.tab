@@ -1,0 +1,4 @@
+policy_name	policy_zone	carbon_credits_zone
+Carbon	CarbonZone1	Carbon_Credits_Zone1
+Carbon	CarbonZone1	Carbon_Credits_Zone2
+Carbon	CarbonZone2	Carbon_Credits_Zone1

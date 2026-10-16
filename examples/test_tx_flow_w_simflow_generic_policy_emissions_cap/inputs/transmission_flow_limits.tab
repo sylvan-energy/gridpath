@@ -1,0 +1,5 @@
+transmission_line	timepoint	min_flow_mw	max_flow_mw
+Tx1	20200101	-10.0	-0.1
+Tx1	20200102	2.0	.
+Tx2	20200101	.	-4.0
+Tx2	20200102	2.0	.

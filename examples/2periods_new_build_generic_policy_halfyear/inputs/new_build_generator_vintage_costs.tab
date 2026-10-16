@@ -1,0 +1,6 @@
+project	vintage	operational_lifetime_yrs	fixed_cost_per_mw_yr	financial_lifetime_yrs	annualized_real_cost_per_mw_yr
+Gas_CCGT_new	2020	30.0	0.0	30.0	200000.0
+Gas_CCGT_new	2030	30.0	0.0	30.0	180000.0
+Gas_CT_new	2030	30.0	0.0	30.0	140000.0
+Wind_new	2020	30.0	0.0	30.0	1000000.0
+Wind_new	2030	30.0	0.0	30.0	1000000.0

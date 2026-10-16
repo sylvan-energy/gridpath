@@ -1,0 +1,3 @@
+transmission_target_zone	balancing_type	horizon	transmission_target_pos_dir_min_mwh	transmission_target_pos_dir_max_mwh	transmission_target_neg_dir_min_mwh	transmission_target_neg_dir_max_mwh
+TxTargetZone1	period	2020	.	.	.	0.01
+TxTargetZone2	period	2020	.	.	.	4.0

@@ -1,0 +1,3 @@
+policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense	policy_requirement_f_base_coeff
+PS_Power	PS_Zone1	day	202001	.	.	max	876.0
+PS_Power	PS_Zone2	day	202001	.	.	max	876.0

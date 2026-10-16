@@ -1,0 +1,5 @@
+policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense	policy_requirement_f_base_coeff
+RPS	RPSZone1	halfyear	20201	125000.0	.	min	.
+RPS	RPSZone1	halfyear	20202	125000.0	.	min	.
+RPS	RPSZone1	halfyear	20301	125000.0	.	min	.
+RPS	RPSZone1	halfyear	20302	125000.0	.	min	.

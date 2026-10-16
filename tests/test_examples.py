@@ -1988,6 +1988,364 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_new_solar_generic_policy_load_emissions_intensity"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_generic_policy_percent_req(self):
+        """
+        Check validation and objective function value of "2periods_new_build_generic_policy_percent_req" example: the
+        "2periods_new_build_rps_percent_target" example with its energy target expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_percent_req"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_generic_policy_variable_reserves(self):
+        """
+        Check validation and objective function value of "2periods_new_build_generic_policy_variable_reserves" example: the
+        "2periods_new_build_rps_variable_reserves" example with its energy target expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_variable_reserves"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_generic_policy_w_rps_eligible_storage(self):
+        """
+        Check validation and objective function value of "2periods_new_build_generic_policy_w_rps_eligible_storage" example: the
+        "2periods_new_build_rps_w_rps_eligible_storage" example with its energy target expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_w_rps_eligible_storage"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_generic_policy_w_rps_ineligible_storage(self):
+        """
+        Check validation and objective function value of "2periods_new_build_generic_policy_w_rps_ineligible_storage" example: the
+        "2periods_new_build_rps_w_rps_ineligible_storage" example with its energy target expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_w_rps_ineligible_storage"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_generic_policy_halfyear(self):
+        """
+        Check validation and objective function value of "2periods_new_build_generic_policy_halfyear" example: the
+        "2periods_new_build_horizon_energy_target_halfyear" example with its energy target expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "2periods_new_build_generic_policy_halfyear"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_carbon_credits(self):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_carbon_credits" example: the
+        "test_new_solar_carbon_credits" example with its carbon cap and purchased carbon credits expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_new_solar_generic_policy_emissions_cap_carbon_credits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_carbon_credits_w_sell(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_carbon_credits_w_sell" example: the
+        "test_new_solar_carbon_credits_w_sell" example with its carbon cap and purchased carbon credits expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = (
+            "test_new_solar_generic_policy_emissions_cap_carbon_credits_w_sell"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_carbon_credits_w_buy(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_carbon_credits_w_buy" example: the
+        "test_new_solar_carbon_credits_w_buy" example with its carbon cap and purchased carbon credits expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = (
+            "test_new_solar_generic_policy_emissions_cap_carbon_credits_w_buy"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_carbon_credits_w_buy_and_sell(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_carbon_credits_w_buy_and_sell" example: the
+        "test_new_solar_carbon_credits_w_buy_and_sell" example with its carbon cap and purchased carbon credits expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = (
+            "test_new_solar_generic_policy_emissions_cap_carbon_credits_w_buy_and_sell"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_generic_policy_performance_standard_carbon_credits(self):
+        """
+        Check validation and objective function value of "test_generic_policy_performance_standard_carbon_credits" example: the
+        "test_performance_standard_carbon_credits" example with its performance standard and purchased carbon credits expressed as a generic policy; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_generic_policy_performance_standard_carbon_credits"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_2zones_tx(self):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_2zones_tx" example: the
+        "test_new_solar_carbon_cap_2zones_tx" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_new_solar_generic_policy_emissions_cap_2zones_tx"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_simple_generic_policy_emissions_cap" example: the
+        "test_tx_simple" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_simple_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_tmp_emissions_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_simple_tmp_emissions_generic_policy_emissions_cap" example: the
+        "test_tx_simple_tmp_emissions" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_simple_tmp_emissions_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_additive_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_simple_additive_generic_policy_emissions_cap" example: the
+        "test_tx_simple_additive" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_simple_additive_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_dcopf_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_dcopf_generic_policy_emissions_cap" example: the
+        "test_tx_dcopf" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_dcopf_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_2zones_tx_low_carbon_fuel_blend(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_2zones_tx_low_carbon_fuel_blend" example: the
+        "test_new_solar_carbon_cap_2zones_tx_low_carbon_fuel_blend" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_new_solar_generic_policy_emissions_cap_2zones_tx_low_carbon_fuel_blend"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_flow_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_flow_generic_policy_emissions_cap" example: the
+        "test_tx_flow" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_flow_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_2zones_tx_hydrogen_prod(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_2zones_tx_hydrogen_prod" example: the
+        "test_new_solar_carbon_cap_2zones_tx_hydrogen_prod" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = (
+            "test_new_solar_generic_policy_emissions_cap_2zones_tx_hydrogen_prod"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_2zones_tx_hydrogen_prod_new(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_2zones_tx_hydrogen_prod_new" example: the
+        "test_new_solar_carbon_cap_2zones_tx_hydrogen_prod_new" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = (
+            "test_new_solar_generic_policy_emissions_cap_2zones_tx_hydrogen_prod_new"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_targets_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_targets_generic_policy_emissions_cap" example: the
+        "test_tx_targets" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_targets_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_targets_max_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_targets_max_generic_policy_emissions_cap" example: the
+        "test_tx_targets_max" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_targets_max_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_flow_w_simflow_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_flow_w_simflow_generic_policy_emissions_cap" example: the
+        "test_tx_flow_w_simflow" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_flow_w_simflow_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_generic_policy_emissions_cap_imports(self):
+        """
+        Check validation and objective function value of "test_markets_w_generic_policy_emissions_cap_imports" example: the
+        "test_markets_w_carbon_cap_imports" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_emissions_cap_imports"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_generic_policy_emissions_cap_imports_net_prd(self):
+        """
+        Check validation and objective function value of "test_markets_w_generic_policy_emissions_cap_imports_net_prd" example: the
+        "test_markets_w_carbon_cap_imports_net_prd" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_emissions_cap_imports_net_prd"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_generic_policy_emissions_cap_imports_net_prd_no_export_credit(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_markets_w_generic_policy_emissions_cap_imports_net_prd_no_export_credit" example: the
+        "test_markets_w_carbon_cap_imports_net_prd_no_export_credit" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_emissions_cap_imports_net_prd_no_export_credit"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_generic_policy_emissions_cap_imports_hourly(self):
+        """
+        Check validation and objective function value of "test_markets_w_generic_policy_emissions_cap_imports_hourly" example: the
+        "test_markets_w_carbon_cap_imports_hourly" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_emissions_cap_imports_hourly"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_net_prd_imports_generic_policy_emissions_cap(self):
+        """
+        Check validation and objective function value of "test_tx_simple_net_prd_imports_generic_policy_emissions_cap" example: the
+        "test_tx_simple_net_prd_imports" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_simple_net_prd_imports_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_tx_simple_carbon_tax_imports_generic_policy_emissions_cap(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_tx_simple_carbon_tax_imports_generic_policy_emissions_cap" example: the
+        "test_tx_simple_carbon_tax_imports" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_tx_simple_carbon_tax_imports_generic_policy_emissions_cap"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_new_solar_generic_policy_emissions_cap_2zones_tx_both_zones_capped(
+        self,
+    ):
+        """
+        Check validation and objective function value of "test_new_solar_generic_policy_emissions_cap_2zones_tx_both_zones_capped" example: the
+        "test_new_solar_carbon_cap_2zones_tx_both_zones_capped" example with its carbon cap and tracked imports expressed as
+        a 'max' generic policy over the projects' emissions and the
+        'import_emissions' compliance type on the lines and/or markets; the
+        objective is the same as the original's.
+        :return:
+        """
+        scenario_name = (
+            "test_new_solar_generic_policy_emissions_cap_2zones_tx_both_zones_capped"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_cap_factor_limits(self):
         """
         Check validation and objective function value of "test" example
@@ -2409,6 +2767,41 @@ class TestExamples(unittest.TestCase):
         :return:
         """
         scenario_name = "test_performance_standard_both"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_generic_policy_performance_standard(self):
+        """
+        Check validation and objective function value of
+        "test_generic_policy_performance_standard" example: the
+        "test_performance_standard" tCO2/MWh standard expressed as a 'max'
+        generic policy on emissions with the projects' output as the base;
+        the objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_generic_policy_performance_standard"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_generic_policy_performance_standard_power(self):
+        """
+        Check validation and objective function value of
+        "test_generic_policy_performance_standard_power" example: the
+        "test_performance_standard_power" tCO2/MW standard expressed as a
+        'max' generic policy on emissions with the projects' capacity as the
+        base; the objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_generic_policy_performance_standard_power"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_generic_policy_performance_standard_both(self):
+        """
+        Check validation and objective function value of
+        "test_generic_policy_performance_standard_both" example, the generic
+        policy twin of "test_performance_standard_both" (one policy per
+        standard); the objective is the same as the original's.
+        :return:
+        """
+        scenario_name = "test_generic_policy_performance_standard_both"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
     def test_test_new_instantaneous_penetration(self):

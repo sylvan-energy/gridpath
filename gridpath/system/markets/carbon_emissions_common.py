@@ -41,9 +41,13 @@ from gridpath.project.operations.operational_types.common_functions import (
 )
 from gridpath.system.policy.import_emissions import (
     ImportEmissionsSource,
+    get_basis_by_zone,
     is_net_zone,
+    split_index,
     validate_export_intensities,
     validate_single_profile_per_entity,
+    validate_zones,
+    zone_scope_sql,
 )
 
 _NAMES = {}
@@ -72,7 +76,7 @@ def names(policy):
         import_emissions_constraint=f"Market_{Pc}_Import_Emissions_Constraint",
         import_mw_var=f"Market_{Pc}_Import_MW",
         import_mw_constraint=f"Market_{Pc}_Import_MW_Constraint",
-        zones_file=f"market_{p}_zones.tab",
+        zones_file=f"market_{p}_{policy.zones_file_tag}.tab",
         timepoint_emissions_file=f"market_{p}_timepoint_emissions.tab",
         results=f"system_market_{p}_imports",
         zones_table=f"inputs_market_{p}_zones",
@@ -94,8 +98,9 @@ def generic_add_model_components(m, d, policy):
     +=========================================================================+
     | | :code:`<P>_LZ_MARKET_ZONES`                                           |
     |                                                                         |
-    | Three-dimensional set of the (load zone, market) pairs whose purchases  |
-    | or sales count toward a zone and that zone.                             |
+    | The (load zone, market) pairs whose purchases or sales count toward a   |
+    | zone and that zone (one or more elements, per the policy's zone         |
+    | columns).                                                               |
     +-------------------------------------------------------------------------+
     | | :code:`<P>_MARKETS`                                                   |
     |                                                                         |
@@ -108,7 +113,7 @@ def generic_add_model_components(m, d, policy):
     +-------------------------------------------------------------------------+
     | | :code:`<P>_LZ_MARKET_ZONE_TMPS`                                       |
     |                                                                         |
-    | Four-dimensional set of load zone, market, zone and timepoint; split    |
+    | Load zone, market, zone and timepoint; split                            |
     | into :code:`GROSS_<P>_LZ_MARKET_ZONE_TMPS` and                          |
     | :code:`NET_<P>_LZ_MARKET_ZONE_TMPS` by the zone's import-emissions      |
     | basis.                                                                  |
@@ -186,11 +191,16 @@ def generic_add_model_components(m, d, policy):
     """
     n = names(policy)
     zones = getattr(m, policy.zones_set)
+    # The zone is one or more elements of the index tuples (one for the
+    # carbon cap and carbon tax); the helpers below take tuples apart
+    zone_dimen = policy.zone_dimen
 
     # Sets
     ###########################################################################
 
-    setattr(m, n.lz_market_zones, Set(dimen=3, within=m.LZ_MARKETS * zones))
+    setattr(
+        m, n.lz_market_zones, Set(dimen=2 + zone_dimen, within=m.LZ_MARKETS * zones)
+    )
 
     setattr(
         m,
@@ -198,7 +208,7 @@ def generic_add_model_components(m, d, policy):
         Set(
             within=m.MARKETS,
             initialize=lambda mod: sorted(
-                set(mrkt for (lz, mrkt, z) in getattr(mod, n.lz_market_zones))
+                set(idx[1] for idx in getattr(mod, n.lz_market_zones))
             ),
         ),
     )
@@ -218,10 +228,10 @@ def generic_add_model_components(m, d, policy):
         m,
         n.lz_market_zone_tmps,
         Set(
-            dimen=4,
+            dimen=3 + zone_dimen,
             initialize=lambda mod: [
-                (lz, mrkt, z, tmp)
-                for (lz, mrkt, z) in getattr(mod, n.lz_market_zones)
+                (*lz_market_zone, tmp)
+                for lz_market_zone in getattr(mod, n.lz_market_zones)
                 for tmp in mod.TMPS
             ],
         ),
@@ -231,11 +241,11 @@ def generic_add_model_components(m, d, policy):
         m,
         n.gross_lz_market_zone_tmps,
         Set(
-            dimen=4,
+            dimen=3 + zone_dimen,
             initialize=lambda mod: [
-                (lz, mrkt, z, tmp)
-                for (lz, mrkt, z, tmp) in getattr(mod, n.lz_market_zone_tmps)
-                if not is_net_zone(mod, policy, z)
+                idx
+                for idx in getattr(mod, n.lz_market_zone_tmps)
+                if not is_net_zone(mod, policy, idx[2:-1])
             ],
         ),
     )
@@ -244,11 +254,11 @@ def generic_add_model_components(m, d, policy):
         m,
         n.net_lz_market_zone_tmps,
         Set(
-            dimen=4,
+            dimen=3 + zone_dimen,
             initialize=lambda mod: [
-                (lz, mrkt, z, tmp)
-                for (lz, mrkt, z, tmp) in getattr(mod, n.lz_market_zone_tmps)
-                if is_net_zone(mod, policy, z)
+                idx
+                for idx in getattr(mod, n.lz_market_zone_tmps)
+                if is_net_zone(mod, policy, idx[2:-1])
             ],
         ),
     )
@@ -279,12 +289,11 @@ def generic_add_model_components(m, d, policy):
         Var(getattr(m, n.gross_lz_market_zone_tmps), within=NonNegativeReals),
     )
 
-    def import_emissions_rule(mod, lz, mrkt, z, tmp):
-        return getattr(mod, n.import_emissions_var)[
-            lz, mrkt, z, tmp
-        ] >= purchased_power(mod, lz, mrkt, tmp) * import_intensity(
-            mod, policy, lz, mrkt, z, tmp
-        )
+    def import_emissions_rule(mod, *idx):
+        (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
+        return getattr(mod, n.import_emissions_var)[idx] >= purchased_power(
+            mod, lz, mrkt, tmp
+        ) * import_intensity(mod, policy, lz, mrkt, z, tmp)
 
     setattr(
         m,
@@ -298,10 +307,9 @@ def generic_add_model_components(m, d, policy):
         Var(getattr(m, n.net_lz_market_zone_tmps), within=NonNegativeReals),
     )
 
-    def import_mw_rule(mod, lz, mrkt, z, tmp):
-        return getattr(mod, n.import_mw_var)[lz, mrkt, z, tmp] >= purchased_power(
-            mod, lz, mrkt, tmp
-        )
+    def import_mw_rule(mod, *idx):
+        (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
+        return getattr(mod, n.import_mw_var)[idx] >= purchased_power(mod, lz, mrkt, tmp)
 
     setattr(
         m,
@@ -343,14 +351,14 @@ def import_emissions_tons(mod, policy, idx):
     counts them: the emissions variable in a gross zone, imported MW times
     the import intensity in a net zone.
     """
-    lz, mrkt, z, tmp = idx
+    (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
     n = names(policy)
     if is_net_zone(mod, policy, z):
-        return getattr(mod, n.import_mw_var)[lz, mrkt, z, tmp] * import_intensity(
+        return getattr(mod, n.import_mw_var)[idx] * import_intensity(
             mod, policy, lz, mrkt, z, tmp
         )
     else:
-        return getattr(mod, n.import_emissions_var)[lz, mrkt, z, tmp]
+        return getattr(mod, n.import_emissions_var)[idx]
 
 
 def signed_import_emissions_tons(mod, policy, idx):
@@ -358,33 +366,39 @@ def signed_import_emissions_tons(mod, policy, idx):
     Purchases at the import intensity less sales at the export intensity,
     for a net zone; see :code:`gridpath.system.policy.import_emissions`.
     """
-    lz, mrkt, z, tmp = idx
+    (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
     i_exp = export_intensity(mod, policy, lz, mrkt, z, tmp)
     return (import_intensity(mod, policy, lz, mrkt, z, tmp) - i_exp) * getattr(
         mod, names(policy).import_mw_var
-    )[lz, mrkt, z, tmp] + i_exp * purchased_power(mod, lz, mrkt, tmp)
+    )[idx] + i_exp * purchased_power(mod, lz, mrkt, tmp)
 
 
 def realized_purchase_mw(mod, policy, idx):
-    lz, mrkt, z, tmp = idx
+    (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
     return max(value(purchased_power(mod, lz, mrkt, tmp)), 0)
 
 
 def realized_sale_mw(mod, policy, idx):
-    lz, mrkt, z, tmp = idx
+    (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
     return max(-value(purchased_power(mod, lz, mrkt, tmp)), 0)
 
 
 def realized_import_emissions_tons(mod, policy, idx):
-    return realized_purchase_mw(mod, policy, idx) * import_intensity(mod, policy, *idx)
+    (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
+    return realized_purchase_mw(mod, policy, idx) * import_intensity(
+        mod, policy, lz, mrkt, z, tmp
+    )
 
 
 def realized_export_credits_tons(mod, policy, idx):
     """
     Sales earn credits only in net zones.
     """
-    if is_net_zone(mod, policy, idx[2]):
-        return realized_sale_mw(mod, policy, idx) * export_intensity(mod, policy, *idx)
+    (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
+    if is_net_zone(mod, policy, z):
+        return realized_sale_mw(mod, policy, idx) * export_intensity(
+            mod, policy, lz, mrkt, z, tmp
+        )
     else:
         return 0
 
@@ -393,7 +407,7 @@ MARKET_SOURCE = ImportEmissionsSource(
     label="Market",
     results_prefix="market_import",
     zone_tmps_set=lambda policy: names(policy).lz_market_zone_tmps,
-    zone_position=2,
+    entity_dimen=2,
     import_emissions_tons=import_emissions_tons,
     signed_import_emissions_tons=signed_import_emissions_tons,
     realized_import_emissions_tons=realized_import_emissions_tons,
@@ -496,7 +510,7 @@ def generic_export_results(
             [
                 "load_zone",
                 "market",
-                policy.zone_column,
+                *policy.zone_columns,
                 "timepoint",
                 "period",
                 "timepoint_weight",
@@ -510,19 +524,19 @@ def generic_export_results(
                 "export_credits_tons",
             ]
         )
-        for lz, mrkt, z, tmp in idxs:
-            idx = (lz, mrkt, z, tmp)
+        for idx in idxs:
+            (lz, mrkt), z, tmp = split_index(MARKET_SOURCE, idx)
             writer.writerow(
                 [
                     lz,
                     mrkt,
-                    z,
+                    *z,
                     tmp,
                     m.period[tmp],
                     m.tmp_weight[tmp],
                     m.hrs_in_tmp[tmp],
-                    import_intensity(m, policy, *idx),
-                    export_intensity(m, policy, *idx),
+                    import_intensity(m, policy, lz, mrkt, z, tmp),
+                    export_intensity(m, policy, lz, mrkt, z, tmp),
                     realized_purchase_mw(m, policy, idx),
                     realized_sale_mw(m, policy, idx),
                     value(import_emissions_tons(m, policy, idx)),
@@ -542,20 +556,9 @@ def lz_market_zones_sql(subscenarios, policy, scope_zones=True):
     *scope_zones*, only those to zones in the scenario's zone subscenario.
     """
     n = names(policy)
-    zone_filter = (
-        f"""
-        AND {policy.zone_column} IN (
-            SELECT {policy.zone_column}
-            FROM inputs_geography_{policy.name}_zones
-            WHERE {policy.name}_zone_scenario_id =
-                {getattr(subscenarios, policy.zone_subscenario_attr)}
-        )
-        """
-        if scope_zones
-        else ""
-    )
+    zone_filter = zone_scope_sql(subscenarios, policy) if scope_zones else ""
     return f"""
-        SELECT load_zone, market, {policy.zone_column},
+        SELECT load_zone, market, {", ".join(policy.zone_columns)},
             tmp_import_emissions_scenario_id,
             co2_intensity_tons_per_mwh, export_co2_intensity_tons_per_mwh
         FROM {n.zones_table}
@@ -576,6 +579,7 @@ def lz_market_zones_sql(subscenarios, policy, scope_zones=True):
                 WHERE market_scenario_id = {subscenarios.MARKET_SCENARIO_ID}
             )
         )
+        {policy.rows_filter_sql}
         {zone_filter}
     """
 
@@ -598,7 +602,7 @@ def generic_get_inputs_from_database(
     n = names(policy)
     c = conn.cursor()
     lz_market_zones = c.execute(f"""
-        SELECT load_zone, market, {policy.zone_column},
+        SELECT load_zone, market, {", ".join(policy.zone_columns)},
             co2_intensity_tons_per_mwh, export_co2_intensity_tons_per_mwh
         FROM ({lz_market_zones_sql(subscenarios, policy)})
         """)
@@ -738,13 +742,7 @@ def generic_validate_inputs(
     if df.empty:
         return
 
-    zones_and_bases = c.execute(f"""
-        SELECT {policy.zone_column}, COALESCE(import_emissions_basis, 'gross')
-        FROM inputs_geography_{policy.name}_zones
-        WHERE {policy.name}_zone_scenario_id =
-            {getattr(subscenarios, policy.zone_subscenario_attr)}
-        """).fetchall()
-    basis_by_zone = dict(zones_and_bases)
+    basis_by_zone = get_basis_by_zone(c, subscenarios, policy)
 
     tmp_df = cursor_to_df(c.execute(f"""
             SELECT market, tmp_import_emissions_scenario_id, timepoint,
@@ -765,31 +763,24 @@ def generic_validate_inputs(
     df["import_intensity"] = df["co2_intensity_tons_per_mwh"].fillna(0)
     df["export_intensity"] = df["export_co2_intensity_tons_per_mwh"].fillna(0)
     pair_cols = ["load_zone", "market"]
+    label_cols = pair_cols + policy.zone_columns
 
     def labels(rows):
         return ", ".join(
-            "-".join(str(row[c]) for c in pair_cols + [policy.zone_column])
-            for _, row in rows.iterrows()
+            "-".join(str(row[c]) for c in label_cols) for _, row in rows.iterrows()
         )
 
-    errors = []
-    unknown_zones = df[~df[policy.zone_column].isin(basis_by_zone.keys())]
-    if not unknown_zones.empty:
-        errors.append(
-            f"load_zone-market-{policy.zone_column}(s) '{labels(unknown_zones)}': "
-            f"{policy.zone_column} not in the scenario's zones "
-            f"{sorted(basis_by_zone.keys())}."
-        )
+    errors = validate_zones(df, basis_by_zone, pair_cols, policy)
     negative = df[(df["import_intensity"] < 0) | (df["export_intensity"] < 0)]
     if not negative.empty:
         errors.append(
-            f"load_zone-market-{policy.zone_column}(s) '{labels(negative)}': "
+            f"{'-'.join(label_cols)}(s) '{labels(negative)}': "
             "intensities must be non-negative."
         )
-    errors += validate_export_intensities(
-        df, basis_by_zone, tmp_df, ["market"], policy.zone_column
-    )
+    errors += validate_export_intensities(df, basis_by_zone, tmp_df, ["market"], policy)
     errors += validate_single_profile_per_entity(df, ["market"])
+    if policy.validate_rows is not None:
+        errors += policy.validate_rows(c, subscenarios, df, pair_cols, policy)
 
     write_validation_to_database(
         conn=conn,

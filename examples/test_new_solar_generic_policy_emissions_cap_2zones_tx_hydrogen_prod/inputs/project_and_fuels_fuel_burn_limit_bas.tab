@@ -1,0 +1,6 @@
+project	fuel	fuel_burn_limit_ba
+Coal	Coal	Coal_Burn_BA
+Gas_CCGT	Gas	Gas_Burn_BA
+Gas_CT	Gas	Gas_Burn_BA
+Hydrogen_Plant	Hydrogen	Hydrogen_Burn_BA
+Hydrogen_Prod	Hydrogen	Hydrogen_Burn_BA

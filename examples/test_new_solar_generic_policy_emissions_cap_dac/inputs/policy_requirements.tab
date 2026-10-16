@@ -1,2 +1,2 @@
-policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense
-CarbonCap	Zone1	day	202001	300.0	.	max
+policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense	policy_requirement_f_base_coeff
+CarbonCap	Zone1	day	202001	300.0	.	max	.

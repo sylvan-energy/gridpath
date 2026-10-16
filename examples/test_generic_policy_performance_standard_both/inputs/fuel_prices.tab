@@ -1,0 +1,5 @@
+fuel	period	month	fuel_price_per_mmbtu
+Coal	2020	1	4.0
+Gas	2020	1	5.0
+Negative_Carbon_Fuel	2020	1	6.0
+Uranium	2020	1	2.0

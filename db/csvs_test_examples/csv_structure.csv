@@ -239,6 +239,11 @@ policy/generic/geography,policy,policy_zone_scenario_id,geography_policy_zones,s
 policy/generic/requirements,policy,policy_requirement_scenario_id,system_policy_requirements,dir_main,,0,,requirements.csv,,,
 policy/generic/requirements,policy,policy_requirement_scenario_id,system_policy_requirements_load_zone_map,dir_aux,,0,,load_zone_mapping.csv,,,
 policy/generic/requirements,policy,policy_requirement_scenario_id,system_policy_month_hour_requirements,dir_aux,,0,,month_hour_requirements.csv,,,
+policy/generic/requirements,policy,policy_requirement_scenario_id,system_policy_requirements_base_projects,dir_aux,,0,,base_projects.csv,,,
 policy/generic/project_policy_zones,policy,project_policy_zone_scenario_id,project_policy_zones,simple,,0,,,,,
 policy/generic/project_policy_zones/exceedance_values,policy,exceedance_values_scenario_id,project_policy_exceedance_values,simple,,1,project,,,inputs_project_policy_zones,project_policy_zone_scenario_id
 policy/generic/transmission_policy_zones,policy,transmission_policy_zone_scenario_id,transmission_policy_zones,simple,,0,,,,,
+policy/generic/transmission_policy_zones/transmission_emissions_profiles,policy,tmp_import_emissions_scenario_id,transmission_policy_timepoint_emissions,simple,,1,transmission_line,,,,
+policy/generic/market_policy_zones,policy,market_policy_zone_scenario_id,market_policy_zones,simple,,0,,,,,
+policy/generic/market_policy_zones/market_emissions_profiles,policy,tmp_import_emissions_scenario_id,market_policy_timepoint_emissions,simple,,1,market,,,,
+policy/generic/carbon_credits,carbon_credits,policy_zones_carbon_credits_zones_scenario_id,system_policy_zones_carbon_credits_zones,simple,,0,,,,,

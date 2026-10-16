@@ -1,0 +1,2 @@
+policy_name,policy_zone,subproblem_id,stage_id,balancing_type_horizon,horizon,policy_requirement,policy_requirement_f_load_coeff,policy_requirement_sense,policy_requirement_f_base_coeff
+CarbonCap,Zone1,1,1,day,202001,2100000,,max,

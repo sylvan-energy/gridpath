@@ -88,6 +88,7 @@ class TestGeographyGenericPolicy(unittest.TestCase):
             [
                 ("RPS", "RPSZone1"),
                 ("Carbon", "CarbonZone1"),
+                ("Carbon", "CarbonZone2"),
                 ("SLICE_OF_DAY", "SODZone1"),
             ]
         )
@@ -102,6 +103,7 @@ class TestGeographyGenericPolicy(unittest.TestCase):
                 {
                     ("RPS", "RPSZone1"): 0,
                     ("Carbon", "CarbonZone1"): 1,
+                    ("Carbon", "CarbonZone2"): 0,
                     ("SLICE_OF_DAY", "SODZone1"): 0,
                 }.items()
             )
@@ -122,6 +124,7 @@ class TestGeographyGenericPolicy(unittest.TestCase):
                 {
                     ("RPS", "RPSZone1"): 0,
                     ("Carbon", "CarbonZone1"): 100,
+                    ("Carbon", "CarbonZone2"): 0,
                     ("SLICE_OF_DAY", "SODZone1"): 0,
                 }.items()
             )
@@ -135,6 +138,20 @@ class TestGeographyGenericPolicy(unittest.TestCase):
             )
         )
         self.assertDictEqual(expected_overgen_penalty, actual_overgen_penalty)
+
+        # Param: policy_import_emissions_basis (unspecified defaults to gross)
+        self.assertDictEqual(
+            {
+                ("RPS", "RPSZone1"): "gross",
+                ("Carbon", "CarbonZone1"): "gross",
+                ("Carbon", "CarbonZone2"): "net_prd",
+                ("SLICE_OF_DAY", "SODZone1"): "gross",
+            },
+            {
+                (p, z): instance.policy_import_emissions_basis[p, z]
+                for (p, z) in instance.POLICIES_ZONES
+            },
+        )
 
 
 if __name__ == "__main__":

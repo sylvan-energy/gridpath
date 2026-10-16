@@ -93,6 +93,16 @@ def add_model_components(
     | at least the requirement) or a ceiling (``max``: the contributions may  |
     | not exceed the requirement).                                            |
     +-------------------------------------------------------------------------+
+    | | :code:`policy_requirement_f_base_coeff`                               |
+    | | *Defined over*: :code:`POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ`          |
+    | | *Within*: :code:`NonNegativeReals`                                    |
+    | | *Default*: :code:`0`                                                  |
+    |                                                                         |
+    | The requirement per unit of the requirement's base (the output or       |
+    | capacity of its base projects, see the policy requirement base module), |
+    | e.g. an emissions intensity per MWh of those projects' output; applied  |
+    | in the policy target balance.                                           |
+    +-------------------------------------------------------------------------+
 
     |
 
@@ -136,6 +146,14 @@ def add_model_components(
         m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ,
         within=REQUIREMENT_SENSES,
         default=MIN,
+    )
+
+    # Target specified as a function of the requirement's base (the base
+    # projects' output or capacity)
+    m.policy_requirement_f_base_coeff = Param(
+        m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ,
+        within=NonNegativeReals,
+        default=0,
     )
 
     # Load zones included in the function of load policy requirement
@@ -243,6 +261,7 @@ def load_model_data(
                 m.policy_requirement,
                 m.policy_requirement_f_load_coeff,
                 m.policy_requirement_sense,
+                m.policy_requirement_f_base_coeff,
             ),
             select=(
                 "policy_name",
@@ -252,6 +271,7 @@ def load_model_data(
                 "policy_requirement",
                 "policy_requirement_f_load_coeff",
                 "policy_requirement_sense",
+                "policy_requirement_f_base_coeff",
             ),
         )
         with open(policy_requirements_file, "r") as f:
@@ -336,7 +356,8 @@ def get_inputs_from_database(
     policy_requirements = c.execute(
         """SELECT policy_name, policy_zone, balancing_type_horizon, horizon,
         policy_requirement, policy_requirement_f_load_coeff,
-        COALESCE(policy_requirement_sense, 'min') AS policy_requirement_sense
+        COALESCE(policy_requirement_sense, 'min') AS policy_requirement_sense,
+        policy_requirement_f_base_coeff
         FROM inputs_system_policy_requirements
         JOIN
         (SELECT balancing_type_horizon, horizon
@@ -439,7 +460,9 @@ def validate_inputs(
 
     bad_rows = [
         (policy, zone, bt, h, sense)
-        for (policy, zone, bt, h, _req, _coeff, sense) in policy_requirements
+        for (policy, zone, bt, h, _req, _coeff, sense, _base_coeff) in (
+            policy_requirements
+        )
         if sense not in REQUIREMENT_SENSES
     ]
     errors = [
@@ -543,6 +566,7 @@ def write_model_inputs(
                     "policy_requirement",
                     "policy_requirement_f_load_coeff",
                     "policy_requirement_sense",
+                    "policy_requirement_f_base_coeff",
                 ]
             )
 

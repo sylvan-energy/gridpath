@@ -1,5 +1,5 @@
-policy_name,policy_zone,subproblem_id,stage_id,balancing_type_horizon,horizon,policy_requirement,policy_requirement_f_load_coeff,policy_requirement_sense
-RPS,RPSZone1,1,1,year,2020,250000,,min
-RPS,RPSZone1,1,1,year,2030,250000,,min
-GasCap,GasCapZone1,1,1,year,2020,50000,,max
-GasCap,GasCapZone1,1,1,year,2030,50000,,max
+policy_name,policy_zone,subproblem_id,stage_id,balancing_type_horizon,horizon,policy_requirement,policy_requirement_f_load_coeff,policy_requirement_sense,policy_requirement_f_base_coeff
+RPS,RPSZone1,1,1,year,2020,250000,,min,
+RPS,RPSZone1,1,1,year,2030,250000,,min,
+GasCap,GasCapZone1,1,1,year,2020,50000,,max,
+GasCap,GasCapZone1,1,1,year,2030,50000,,max,

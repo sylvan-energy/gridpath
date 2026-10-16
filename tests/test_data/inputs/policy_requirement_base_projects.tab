@@ -1,0 +1,4 @@
+policy_name	policy_zone	project	base_type	base_multiplier
+Carbon	CarbonZone1	Gas_CT	output	.
+Carbon	CarbonZone1	Coal	capacity	0.5
+Carbon	CarbonZone1	Wind	output	.

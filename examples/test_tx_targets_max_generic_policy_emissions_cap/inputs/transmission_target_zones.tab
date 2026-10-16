@@ -1,0 +1,3 @@
+transmission_target_zone	allow_violation	violation_penalty_per_mwh
+TxTargetZone1	0	0.0
+TxTargetZone2	0	0.0

@@ -1,0 +1,5 @@
+simultaneous_flow_limit	transmission_line	simultaneous_flow_coefficient
+From_Zone1	Tx1	1
+From_Zone1	Tx3	1
+To_Zone1	Tx1	-1
+To_Zone1	Tx3	-1

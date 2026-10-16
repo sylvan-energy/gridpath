@@ -491,10 +491,20 @@ gridpath.system.policy.generic_policy.generic_policy_requirements
 
 .. automodule:: gridpath.system.policy.generic_policy.generic_policy_requirements
 
+gridpath.system.policy.generic_policy.policy_requirement_base
+-------------------------------------------------------------
+
+.. automodule:: gridpath.system.policy.generic_policy.policy_requirement_base
+
 gridpath.system.policy.generic_policy.policy_target_balance
 -----------------------------------------------------------
 
 .. automodule:: gridpath.system.policy.generic_policy.policy_target_balance
+
+gridpath.system.policy.generic_policy.aggregate_import_emissions
+----------------------------------------------------------------
+
+.. automodule:: gridpath.system.policy.generic_policy.aggregate_import_emissions
 
 
 Markets

@@ -868,6 +868,8 @@ Performance Standard
 GridPath can optionally impose a performance standard requirement, i.e. limiting the
 emissions intensity of energy produced by a set of projects.
 
+.. _generic-policy-section-ref:
+
 Generic Policy
 --------------
 
@@ -877,12 +879,30 @@ slices of day). Each project or transmission line mapped to a policy zone
 contributes to the policy through a *compliance type*, e.g. a linear function
 of its output and capacity (``f_output``), its carbon emissions
 (``emissions``), a flat horizon amount, or its transmission losses. The
-requirement is the sum of a scalar and a coefficient
-times the load in the policy zone's mapped load zones. A horizon requirement is
-a floor by default (the contributions must be at least the requirement) and can
-be declared a ceiling instead (``policy_requirement_sense`` = ``max``), e.g. a
-cap on the generation of the mapped projects. Each policy zone can allow
-violations of its requirements at a penalty per unit.
+requirement is the sum of a scalar, a coefficient times the load in the policy
+zone's mapped load zones, and a coefficient times the requirement's *base*: the
+output over the horizon or the capacity in the horizon's period of the
+requirement's *base projects*, each weighted by a multiplier. Like the reserve
+requirements, which can be a percentage of load plus a percentage of selected
+projects' output or capacity, the base is part of the requirement's definition
+and is specified separately from the project contributions: a project can
+drive the requirement without counting toward meeting it and vice versa. A
+horizon requirement is a floor by default (the contributions must be at least
+the requirement) and can be declared a ceiling instead
+(``policy_requirement_sense`` = ``max``), e.g. a cap on the generation of the
+mapped projects, or an emissions intensity standard (``emissions``
+contributions from the emitting projects, a ``max`` requirement scaling with
+the ``output`` base of the projects the standard applies to). Transmission
+lines and market purchases mapped to a policy zone with the
+``import_emissions`` compliance type add the emissions of the power they
+import into the zone to the policy's contributions, at an import intensity
+and, in a zone with the ``net_prd`` import-emissions basis, less a credit for
+exports at an export intensity (the same accounting as the carbon cap's
+tracked imports); since the imported-power variables are bounded from below
+only, this is available for ``max`` requirements. Carbon credits purchased by
+the mapped projects from the carbon credits zones mapped to the policy zone
+reduce the policy's contributions, as for the carbon cap. Each policy zone can
+allow violations of its requirements at a penalty per unit.
 
 .. _custom-modules-section-ref:
 

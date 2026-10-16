@@ -1,0 +1,5 @@
+policy_name,policy_zone,subproblem_id,stage_id,balancing_type_horizon,horizon,policy_requirement,policy_requirement_f_load_coeff,policy_requirement_sense,policy_requirement_f_base_coeff
+PS_Energy,PS_Zone1,1,1,day,202001,,,max,0.1
+PS_Energy,PS_Zone2,1,1,day,202001,,,max,0.1
+PS_Power,PS_Zone1,1,1,day,202001,,,max,876
+PS_Power,PS_Zone2,1,1,day,202001,,,max,876

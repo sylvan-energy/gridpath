@@ -1,5 +1,5 @@
-policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense
-RPS	RPSZone1	year	2020	250000	.	min
-RPS	RPSZone1	year	2030	.	0.8	.
-Carbon	CarbonZone1	year	2020	.	0.9	max
-Carbon	CarbonZone1	year	2030	200000	.	max
+policy_name	policy_zone	balancing_type	horizon	policy_requirement	policy_requirement_f_load_coeff	policy_requirement_sense	policy_requirement_f_base_coeff
+RPS	RPSZone1	year	2020	250000	.	min	.
+RPS	RPSZone1	year	2030	.	0.8	.	.
+Carbon	CarbonZone1	year	2020	.	0.9	max	0.5
+Carbon	CarbonZone1	year	2030	200000	.	max	.

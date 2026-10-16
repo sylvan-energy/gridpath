@@ -16,14 +16,18 @@
 """
 Enforce the policy requirements: the contributions from all sources
 (projects, transmission lines) must be at least the requirement of a ``min``
-policy and may not exceed the requirement of a ``max`` policy. Where the
-policy zone allows violations, a shortage (``min``) or overage (``max``)
-variable relaxes the constraint at the zone's penalty.
+policy and may not exceed the requirement of a ``max`` policy. The
+requirement is the horizon requirement (scalar plus load term) plus the base
+coefficient times the requirement's base (e.g. an emissions intensity times
+the output of the requirement's base projects). Where the policy zone allows
+violations, a shortage (``min``) or overage (``max``) variable relaxes the
+constraint at the zone's penalty.
 """
 
 from pyomo.environ import Var, Constraint, NonNegativeReals, Expression, value
 
 from gridpath.auxiliary.dynamic_components import (
+    policy_balance_base_components,
     policy_balance_contribution_components,
 )
 from gridpath.common_functions import (
@@ -70,14 +74,31 @@ def add_model_components(
     |
 
     +-------------------------------------------------------------------------+
+    | Expressions                                                             |
+    +=========================================================================+
+    | | :code:`Total_Policy_Zone_Base_from_All_Sources_Expression`            |
+    | | *Defined over*: :code:`POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ`          |
+    |                                                                         |
+    | The requirement's base over the horizon (the base projects' output or   |
+    | capacity, see the policy requirement base module).                      |
+    +-------------------------------------------------------------------------+
+    | | :code:`Policy_Zone_Horizon_Total_Requirement`                         |
+    | | *Defined over*: :code:`POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ`          |
+    |                                                                         |
+    | The horizon requirement plus the base coefficient times the base.       |
+    +-------------------------------------------------------------------------+
+
+    |
+
+    +-------------------------------------------------------------------------+
     | Constraints                                                             |
     +=========================================================================+
     | | :code:`Policy_Requirement_Constraint`                                 |
     | | *Enforced over*: :code:`POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ`         |
     |                                                                         |
     | For a ``min`` policy, the contributions plus the shortage are at least  |
-    | the requirement; for a ``max`` policy, the contributions less the       |
-    | overage are at most the requirement.                                    |
+    | the total requirement; for a ``max`` policy, the contributions less the |
+    | overage are at most the total requirement.                              |
     +-------------------------------------------------------------------------+
 
     :param m:
@@ -146,6 +167,36 @@ def add_model_components(
         ),
     )
 
+    m.Total_Policy_Zone_Base_from_All_Sources_Expression = Expression(
+        m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ,
+        rule=lambda mod, policy, zone, bt, h: sum(
+            getattr(mod, component)[policy, zone, bt, h]
+            for component in getattr(d, policy_balance_base_components)
+        ),
+    )
+
+    def total_requirement_rule(mod, policy, zone, bt, h):
+        """
+        The horizon requirement plus the base coefficient times the base (the
+        term is dropped where the coefficient is zero)
+        """
+        base_coeff = mod.policy_requirement_f_base_coeff[policy, zone, bt, h]
+        requirement = mod.Policy_Zone_Horizon_Requirement[policy, zone, bt, h]
+        if base_coeff == 0:
+            return requirement
+        else:
+            return (
+                requirement
+                + base_coeff
+                * mod.Total_Policy_Zone_Base_from_All_Sources_Expression[
+                    policy, zone, bt, h
+                ]
+            )
+
+    m.Policy_Zone_Horizon_Total_Requirement = Expression(
+        m.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ, rule=total_requirement_rule
+    )
+
     def meet_policy_target_constraint_rule(mod, policy, zone, bt, h):
         """
         Total contributions from all sources (projects, transmission lines)
@@ -163,7 +214,7 @@ def add_model_components(
                 policy, zone, bt, h
             ]
         )
-        requirement = mod.Policy_Zone_Horizon_Requirement[policy, zone, bt, h]
+        requirement = mod.Policy_Zone_Horizon_Total_Requirement[policy, zone, bt, h]
         if is_max_policy(mod, policy, zone, bt, h):
             return (
                 contributions
@@ -235,6 +286,7 @@ def export_horizon_results(m, d):
     results_columns = [
         "pre_load_modifier_load_in_hrz",
         "post_load_modifier_load_in_hrz",
+        "policy_requirement_base_in_hrz",
         "policy_requirement_calculated_in_horizon",
         "policy_requirement_shortage",
         "policy_requirement_overage",
@@ -273,7 +325,8 @@ def export_horizon_results(m, d):
                 for tmp in m.TMPS
                 if tmp in m.TMPS_BY_BLN_TYPE_HRZ[bt, h]
             ),
-            value(m.Policy_Zone_Horizon_Requirement[p, z, bt, h]),
+            value(m.Total_Policy_Zone_Base_from_All_Sources_Expression[p, z, bt, h]),
+            value(m.Policy_Zone_Horizon_Total_Requirement[p, z, bt, h]),
             value(m.Policy_Requirement_Shortage_Expression[p, z, bt, h]),
             value(m.Policy_Requirement_Overage_Expression[p, z, bt, h]),
             (

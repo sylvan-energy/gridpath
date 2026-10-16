@@ -204,6 +204,32 @@ class TestHorizonEnergyTarget(unittest.TestCase):
         )
         self.assertDictEqual(expected_sense, actual_sense)
 
+        # Param: policy_requirement_f_base_coeff (defaults to 0)
+        expected_base_coeff = OrderedDict(
+            sorted(
+                {
+                    ("RPS", "RPSZone1", "year", 2020): 0,
+                    ("RPS", "RPSZone1", "year", 2030): 0,
+                    ("Carbon", "CarbonZone1", "year", 2020): 0.5,
+                    ("Carbon", "CarbonZone1", "year", 2030): 0,
+                }.items()
+            )
+        )
+        actual_base_coeff = OrderedDict(
+            sorted(
+                {
+                    (p, z, bt, h): instance.policy_requirement_f_base_coeff[p, z, bt, h]
+                    for (
+                        p,
+                        z,
+                        bt,
+                        h,
+                    ) in instance.POLICIES_ZONE_BLN_TYPE_HRZS_WITH_REQ
+                }.items()
+            )
+        )
+        self.assertDictEqual(expected_base_coeff, actual_base_coeff)
+
         # Set: POLICIES_ZONE_PRDS_MONTH_HOURS_WITH_REQ
         expected_p_zone_prd_mh = sorted(
             [

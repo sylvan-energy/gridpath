@@ -1,0 +1,3 @@
+project	down_time_cutoff_hours	startup_plus_ramp_up_rate	startup_cost_per_mw
+Coal	0.0	1.0	1.0
+Gas_CCGT	0.0	1.0	1.0

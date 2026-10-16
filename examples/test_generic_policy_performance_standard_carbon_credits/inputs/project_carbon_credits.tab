@@ -1,0 +1,4 @@
+project	period	intensity_threshold_emissions_toCO2_per_MWh	absolute_threshold_emissions_toCO2
+Coal	2020	.	2000000.0
+Gas_CCGT	2020	.	0.0
+Gas_CT	2020	.	0.0

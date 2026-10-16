@@ -1,0 +1,3 @@
+fuel_burn_limit_ba	balancing_type	horizon	fuel_burn_min_unit	fuel_burn_max_unit	relative_fuel_burn_max_ba	fraction_of_relative_fuel_burn_max_fuel_ba
+Hydrogen_Burn_BA	timepoint	20200101	0.0	0.0	.	.
+Hydrogen_Burn_BA	timepoint	20200102	0.0	0.0	.	.

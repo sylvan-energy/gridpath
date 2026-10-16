@@ -1,0 +1,2 @@
+load_zone,market,policy_name,policy_zone,compliance_type,tmp_import_emissions_scenario_id,co2_intensity_tons_per_mwh,export_co2_intensity_tons_per_mwh
+Zone1,Market_Hub,CarbonCap,Zone1,import_emissions,,0.5,0.5

@@ -39,6 +39,7 @@ import gridpath.transmission.policy.compliance_types as compliance_type_init
 
 SUPPORTED_COMPLIANCE_TYPES = [
     "tx_losses",
+    "import_emissions",
 ]
 
 

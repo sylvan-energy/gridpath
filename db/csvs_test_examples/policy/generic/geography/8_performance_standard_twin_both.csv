@@ -1,0 +1,5 @@
+policy_name,policy_zone,allow_violation,violation_penalty_per_unit,import_emissions_basis
+PS_Energy,PS_Zone1,0,0,
+PS_Energy,PS_Zone2,0,0,
+PS_Power,PS_Zone1,0,0,
+PS_Power,PS_Zone2,0,0,

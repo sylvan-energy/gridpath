@@ -1,0 +1,5 @@
+project	timepoint	cap_factor
+Solar	20200101	0.05
+Solar	20200102	1.0
+Wind	20200101	0.9
+Wind	20200102	0.5

@@ -22,12 +22,17 @@ import pandas as pd
 from pyomo.environ import Param, Set, Expression, value, Reals
 
 from gridpath.auxiliary.auxiliary import (
+    cursor_to_df,
     get_required_subtype_modules,
     load_subtype_modules,
 )
 from gridpath.auxiliary.db_interface import (
     directories_to_db_values,
     import_csv,
+)
+from gridpath.auxiliary.validations import (
+    validate_columns,
+    write_validation_to_database,
 )
 from gridpath.common_functions import create_results_df
 import gridpath.project.policy.compliance_types as compliance_type_init
@@ -54,7 +59,49 @@ def add_model_components(
     subproblem,
     stage,
 ):
-    """ """
+    """
+    The following Pyomo model components are defined in this module (the
+    compliance-type modules add their own):
+
+    +-------------------------------------------------------------------------+
+    | Sets                                                                    |
+    +=========================================================================+
+    | | :code:`PROJECT_POLICY_ZONES`                                          |
+    |                                                                         |
+    | Three-dimensional set of the projects mapped to each policy and policy  |
+    | zone.                                                                   |
+    +-------------------------------------------------------------------------+
+    | | :code:`PRJ_POLICY_ZONE_OPR_TMPS`                                      |
+    |                                                                         |
+    | The project-policy-zone mappings and the projects' operational          |
+    | timepoints.                                                             |
+    +-------------------------------------------------------------------------+
+    +-------------------------------------------------------------------------+
+
+    |
+
+    +-------------------------------------------------------------------------+
+    | Required Input Params                                                   |
+    +=========================================================================+
+    | | :code:`compliance_type`                                               |
+    | | *Defined over*: :code:`PROJECT_POLICY_ZONES`                          |
+    |                                                                         |
+    | How the project contributes toward the policy requirement.              |
+    +-------------------------------------------------------------------------+
+
+    |
+
+    +-------------------------------------------------------------------------+
+    | Expressions                                                             |
+    +=========================================================================+
+    | | :code:`Policy_Contribution_in_Timepoint`                              |
+    | | *Defined over*: :code:`PRJ_POLICY_ZONE_OPR_TMPS`                      |
+    |                                                                         |
+    | The project's contribution toward the policy in the timepoint, per its  |
+    | compliance type.                                                        |
+    +-------------------------------------------------------------------------+
+    +-------------------------------------------------------------------------+
+    """
 
     # Dynamic Inputs
     ###########################################################################
@@ -227,12 +274,7 @@ def load_model_data(
             "project_policy_zones.tab",
         ),
         index=m.PROJECT_POLICY_ZONES,
-        select=(
-            "project",
-            "policy_name",
-            "policy_zone",
-            "compliance_type",
-        ),
+        select=("project", "policy_name", "policy_zone", "compliance_type"),
         param=m.compliance_type,
     )
 
@@ -300,9 +342,7 @@ def export_results(
     )
 
     if m.PRJ_POLICY_ZONE_OPR_TMPS and horizon_policies:
-        results_columns = [
-            "policy_contribution",
-        ]
+        results_columns = ["policy_contribution"]
         data = [
             [
                 prj,
@@ -444,6 +484,56 @@ def get_inputs_from_database(
     )
 
     return project_policy_zones
+
+
+def validate_inputs(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+):
+    """
+    Get inputs from database and validate the inputs: the compliance type
+    must be supported.
+    :param subscenarios: SubScenarios object with all subscenario info
+    :param subproblem:
+    :param stage:
+    :param conn: database connection
+    :return:
+    """
+    project_policy_zones = get_inputs_from_database(
+        scenario_id,
+        subscenarios,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        conn,
+    )
+    df = cursor_to_df(project_policy_zones)
+    if df.empty:
+        return
+
+    errors = validate_columns(df, "compliance_type", valids=SUPPORTED_COMPLIANCE_TYPES)
+
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_project_policy_zones",
+        severity="High",
+        errors=errors,
+    )
 
 
 def write_model_inputs(

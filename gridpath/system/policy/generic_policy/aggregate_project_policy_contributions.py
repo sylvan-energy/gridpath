@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" """
+"""
+Aggregate the projects' contributions toward each policy requirement to the
+policy-zone-horizon level, and add them to the policy requirement constraint.
+"""
 
 from pyomo.environ import Expression, Set, value
 
