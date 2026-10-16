@@ -291,25 +291,15 @@ def export_results(
     """
 
     results_columns = [
-        "actual_flow_positive_direction",
-        "actual_flow_negative_direction",
-        "tx_flow_positive_direction",
-        "tx_flow_negative_direction",
+        "transmission_target_zone",
+        "transmission_target_energy_positive_direction_mw",
+        "transmission_target_energy_negative_direction_mw",
     ]
     data = [
         [
             tx,
             tmp,
-            (
-                value(m.TxSimpleBinary_Transmit_Power_Positive_Direction_MW[tx, tmp])
-                if float(m.contributes_net_flow_to_tx_target[tx]) == 0
-                else value(m.TxSimple_Transmit_Power_MW[tx, tmp])
-            ),
-            (
-                value(m.TxSimpleBinary_Transmit_Power_Negative_Direction_MW[tx, tmp])
-                if float(m.contributes_net_flow_to_tx_target[tx]) == 0
-                else value(-m.TxSimple_Transmit_Power_MW[tx, tmp])
-            ),
+            m.transmission_target_zone[tx],
             (
                 value(m.Transmission_Target_Energy_MW_Pos_Dir[tx, tmp])
                 if float(m.contributes_net_flow_to_tx_target[tx]) == 0

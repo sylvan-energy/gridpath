@@ -270,8 +270,8 @@ def export_results(
         [
             tx,
             tmp,
-            m.Hurdle_Cost_By_Tmp_Pos_Dir[tx, tmp],
-            m.Hurdle_Cost_By_Tmp_Neg_Dir[tx, tmp],
+            value(m.Hurdle_Cost_By_Tmp_Pos_Dir[tx, tmp]),
+            value(m.Hurdle_Cost_By_Tmp_Neg_Dir[tx, tmp]),
         ]
         for (tx, tmp) in m.TX_OPR_TMPS
     ]

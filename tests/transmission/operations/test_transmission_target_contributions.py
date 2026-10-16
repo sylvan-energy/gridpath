@@ -16,12 +16,22 @@
 from collections import OrderedDict
 from importlib import import_module
 import os.path
+import sqlite3
 import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
 
+import pandas as pd
+
+from gridpath.auxiliary.db_interface import import_csv
+from gridpath.transmission import TX_TIMEPOINT_DF
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 
 TEST_DATA_DIRECTORY = os.path.join(os.path.dirname(__file__), "..", "..", "test_data")
+DB_SCHEMA_FILE = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "db", "db_schema.sql"
+)
 
 # Import prerequisite modules
 PREREQUISITE_MODULE_NAMES = [
@@ -245,6 +255,96 @@ class TestTxTargetContributions(unittest.TestCase):
             [(tx, tmp) for (tx, tmp) in instance.TRANSMISSION_TARGET_TX_OPR_TMPS]
         )
         self.assertListEqual(expect_tx_op_tmp, actual_tx_op_tmp)
+
+    def test_export_results_import_into_database(self):
+        """
+        Test that the transmission-timepoint results exported by this module
+        can be imported into the results_transmission_timepoint table
+        :return:
+        """
+        m, data = add_components_and_load_data(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=TEST_DATA_DIRECTORY,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        instance = m.create_instance(data)
+        for var, val in (
+            (instance.Transmission_Target_Energy_MW_Pos_Dir, 1.0),
+            (instance.Transmission_Target_Energy_MW_Neg_Dir, 2.0),
+            (instance.Transmission_Target_Net_Energy_MW_Pos_Dir, 3.0),
+            (instance.Transmission_Target_Net_Energy_MW_Neg_Dir, 4.0),
+        ):
+            for v in var.values():
+                v.set_value(val)
+
+        tx_tmps = sorted(instance.TRANSMISSION_TARGET_TX_OPR_TMPS)
+        d = SimpleNamespace()
+        setattr(
+            d,
+            TX_TIMEPOINT_DF,
+            pd.DataFrame(
+                index=pd.MultiIndex.from_tuples(
+                    tx_tmps, names=["transmission_line", "timepoint"]
+                )
+            ),
+        )
+        MODULE_BEING_TESTED.export_results(
+            scenario_directory="",
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+            m=instance,
+            d=d,
+        )
+
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        with open(DB_SCHEMA_FILE) as f:
+            conn.executescript(f.read())
+
+        with tempfile.TemporaryDirectory() as results_directory:
+            getattr(d, TX_TIMEPOINT_DF).to_csv(
+                os.path.join(results_directory, "transmission_timepoint.csv")
+            )
+            import_csv(
+                conn=conn,
+                cursor=conn.cursor(),
+                scenario_id=1,
+                weather_iteration="",
+                hydro_iteration="",
+                availability_iteration="",
+                subproblem="",
+                stage="",
+                quiet=True,
+                results_directory=results_directory,
+                which_results="transmission_timepoint",
+            )
+
+        # Lines that contribute net flows report the net energy variables
+        expected_rows = [
+            (
+                tx,
+                tmp,
+                instance.transmission_target_zone[tx],
+                3.0 if instance.contributes_net_flow_to_tx_target[tx] else 1.0,
+                4.0 if instance.contributes_net_flow_to_tx_target[tx] else 2.0,
+            )
+            for (tx, tmp) in tx_tmps
+        ]
+        actual_rows = conn.execute("""SELECT transmission_line, timepoint,
+            transmission_target_zone,
+            transmission_target_energy_positive_direction_mw,
+            transmission_target_energy_negative_direction_mw
+            FROM results_transmission_timepoint
+            ORDER BY transmission_line, timepoint""").fetchall()
+        self.assertListEqual(expected_rows, actual_rows)
 
 
 if __name__ == "__main__":
