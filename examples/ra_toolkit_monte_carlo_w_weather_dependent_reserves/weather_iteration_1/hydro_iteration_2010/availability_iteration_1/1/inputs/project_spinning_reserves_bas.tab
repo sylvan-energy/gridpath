@@ -1,0 +1,4 @@
+project	spinning_reserves_ba	max_fraction_of_provision
+Batteries	RSG1	.
+Gas	RSG1	.
+Hydro	RSG1	.

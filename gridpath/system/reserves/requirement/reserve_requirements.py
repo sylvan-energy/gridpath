@@ -24,6 +24,7 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.auxiliary.validations import write_validation_to_database
 
 
 def generic_add_model_components(
@@ -281,29 +282,23 @@ def generic_get_inputs_from_database(
         else ""
     )
 
+    # By-timepoint requirement, read at the run's weather iteration for the
+    # BAs whose requirement varies by it and at weather_iteration 0 otherwise
+    check_requirement_iteration_config(
+        weather_iteration=weather_iteration,
+        conn=conn,
+        reserve_type=reserve_type,
+        reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
+        reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
+    )
     tmp_req = c.execute(
-        """SELECT {reserve_type}_ba, timepoint, {reserve_type}_mw{partial_freq_resp_extra_column}
-        FROM inputs_system_{reserve_type}
-        INNER JOIN
-        (SELECT stage_id, timepoint
-        FROM inputs_temporal
-        WHERE temporal_scenario_id = {temporal_scenario_id}
-        AND subproblem_id = {subproblem}
-        AND stage_id = {stage}) as relevant_timepoints
-        USING (stage_id, timepoint)
-        INNER JOIN
-        (SELECT {reserve_type}_ba
-        FROM inputs_geography_{reserve_type}_bas
-        WHERE {reserve_type}_ba_scenario_id = {reserve_type_ba_subscenario_id}) as relevant_bas
-        USING ({reserve_type}_ba)
-        WHERE {reserve_type}_scenario_id = {reserve_type_req_subscenario_id}
-        AND stage_id = {stage}
-        """.format(
-            reserve_type=reserve_type,
-            partial_freq_resp_extra_column=partial_freq_resp_extra_column,
-            temporal_scenario_id=subscenarios.TEMPORAL_SCENARIO_ID,
+        get_tmp_requirement_sql(
+            subscenarios=subscenarios,
+            weather_iteration=weather_iteration,
             subproblem=subproblem,
             stage=stage,
+            reserve_type=reserve_type,
+            value_columns=f"{reserve_type}_mw{partial_freq_resp_extra_column}",
             reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
             reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
         )
@@ -390,6 +385,273 @@ def generic_get_inputs_from_database(
     )
 
     return tmp_req, percentage_req, lz_mapping, project_contributions
+
+
+def get_requirement_iteration_config_sql(
+    reserve_type, reserve_type_ba_subscenario_id, reserve_type_req_subscenario_id
+):
+    """
+    :return: SQL selecting ({reserve_type}_ba, varies_by_weather_iteration)
+        for the BAs of the scenario's reserve BA subscenario
+
+    Whether a BA's by-timepoint requirement varies by weather iteration
+    comes from inputs_system_{reserve_type}_iterations; a BA without a row
+    does not, i.e. its rows sit at weather_iteration 0.
+    """
+    return f"""
+        SELECT ba.{reserve_type}_ba,
+        COALESCE(it.varies_by_weather_iteration, 0)
+            AS varies_by_weather_iteration
+        FROM inputs_geography_{reserve_type}_bas AS ba
+        LEFT JOIN inputs_system_{reserve_type}_iterations AS it
+        ON it.{reserve_type}_ba = ba.{reserve_type}_ba
+        AND it.{reserve_type}_scenario_id = {reserve_type_req_subscenario_id}
+        WHERE ba.{reserve_type}_ba_scenario_id = {reserve_type_ba_subscenario_id}
+    """
+
+
+def get_tmp_requirement_sql(
+    subscenarios,
+    weather_iteration,
+    subproblem,
+    stage,
+    reserve_type,
+    value_columns,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    :param value_columns: str, the comma-separated requirement columns to
+        select after the BA and timepoint
+    :return: SQL selecting the by-timepoint requirement of the scenario's
+        BAs for the subproblem and stage's timepoints, at the run's weather
+        iteration for the BAs whose requirement varies by it and at
+        weather_iteration 0 otherwise
+    """
+    return f"""
+        SELECT {reserve_type}_ba, timepoint, {value_columns}
+        FROM inputs_system_{reserve_type}
+        JOIN ({get_requirement_iteration_config_sql(
+            reserve_type,
+            reserve_type_ba_subscenario_id,
+            reserve_type_req_subscenario_id,
+        )}) AS cfg
+        USING ({reserve_type}_ba)
+        INNER JOIN
+        (SELECT stage_id, timepoint
+        FROM inputs_temporal
+        WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+        AND subproblem_id = {subproblem}
+        AND stage_id = {stage}) as relevant_timepoints
+        USING (stage_id, timepoint)
+        WHERE {reserve_type}_scenario_id = {reserve_type_req_subscenario_id}
+        AND weather_iteration = CASE WHEN cfg.varies_by_weather_iteration
+            THEN {weather_iteration} ELSE 0 END
+        AND stage_id = {stage}
+        """
+
+
+def get_bas_varying_by_weather(
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    :return: sorted list of the scenario's BAs whose by-timepoint
+        requirement is flagged to vary by weather iteration
+    """
+    return [ba for (ba,) in conn.execute(f"""
+            SELECT {reserve_type}_ba
+            FROM ({get_requirement_iteration_config_sql(
+                reserve_type,
+                reserve_type_ba_subscenario_id,
+                reserve_type_req_subscenario_id,
+            )})
+            WHERE varies_by_weather_iteration
+            ORDER BY {reserve_type}_ba
+            ;""").fetchall()]
+
+
+def check_requirement_iteration_config(
+    weather_iteration,
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    Raise if a BA's requirement varies by weather iteration but the run has
+    none (weather_iteration 0), the same guard the outage availability
+    derates apply.
+    """
+    if weather_iteration != 0:
+        return
+
+    offending = get_bas_varying_by_weather(
+        conn=conn,
+        reserve_type=reserve_type,
+        reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
+        reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
+    )
+    if offending:
+        raise ValueError(
+            f"The {reserve_type} requirements of BAs {offending} vary by "
+            f"weather iteration but the run has weather_iteration=0. BAs "
+            f"should not vary by weather iteration when the scenario has none."
+        )
+
+
+def get_unread_requirement_rows(
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    :return: list of (BA, weather_iteration) of by-timepoint requirement
+        rows at a non-zero weather iteration of BAs whose requirement is not
+        flagged to vary by it; such rows are never read
+    """
+    return conn.execute(f"""
+        SELECT DISTINCT {reserve_type}_ba, weather_iteration
+        FROM inputs_system_{reserve_type}
+        JOIN ({get_requirement_iteration_config_sql(
+            reserve_type,
+            reserve_type_ba_subscenario_id,
+            reserve_type_req_subscenario_id,
+        )}) AS cfg
+        USING ({reserve_type}_ba)
+        WHERE {reserve_type}_scenario_id = {reserve_type_req_subscenario_id}
+        AND NOT cfg.varies_by_weather_iteration AND weather_iteration != 0
+        ORDER BY {reserve_type}_ba, weather_iteration
+        ;""").fetchall()
+
+
+def get_bas_missing_weather_slice(
+    subscenarios,
+    weather_iteration,
+    subproblem,
+    stage,
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    :return: sorted list of the BAs flagged to vary by weather iteration
+        that have no by-timepoint requirement rows at the run's weather
+        iteration in the subproblem and stage; their requirement would
+        silently be 0 (the parameter default) in every timepoint
+    """
+    if weather_iteration == 0:
+        return []
+
+    flagged = get_bas_varying_by_weather(
+        conn=conn,
+        reserve_type=reserve_type,
+        reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
+        reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
+    )
+    with_rows = set(
+        ba
+        for (ba, *_) in conn.execute(
+            get_tmp_requirement_sql(
+                subscenarios=subscenarios,
+                weather_iteration=weather_iteration,
+                subproblem=subproblem,
+                stage=stage,
+                reserve_type=reserve_type,
+                value_columns="1",
+                reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
+                reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
+            )
+        ).fetchall()
+    )
+    return [ba for ba in flagged if ba not in with_rows]
+
+
+def generic_validate_inputs(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+    gridpath_module,
+):
+    """
+    Validate the weather iteration keying of the by-timepoint requirement:
+    BAs flagged to vary by weather iteration in a run without weather
+    iterations, BAs flagged to vary that have no rows at the run's weather
+    iteration, and rows at a non-zero weather iteration of BAs not flagged
+    to vary by it (never read).
+    """
+    db_table = f"inputs_system_{reserve_type}"
+    common_kwargs = dict(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=gridpath_module,
+        db_table=db_table,
+        severity="High",
+    )
+    req_kwargs = dict(
+        conn=conn,
+        reserve_type=reserve_type,
+        reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
+        reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
+    )
+
+    if weather_iteration == 0:
+        flagged = get_bas_varying_by_weather(**req_kwargs)
+        no_iterations_errors = (
+            [
+                f"BAs {flagged} are flagged in {db_table}_iterations to vary "
+                f"by weather iteration but the scenario has no weather "
+                f"iterations."
+            ]
+            if flagged
+            else []
+        )
+    else:
+        no_iterations_errors = []
+    write_validation_to_database(errors=no_iterations_errors, **common_kwargs)
+
+    write_validation_to_database(
+        errors=[
+            f"BA {ba} is flagged to vary by weather iteration but has no "
+            f"{db_table} rows at weather_iteration {weather_iteration}, so "
+            f"its requirement would be 0 in every timepoint."
+            for ba in get_bas_missing_weather_slice(
+                subscenarios=subscenarios,
+                weather_iteration=weather_iteration,
+                subproblem=subproblem,
+                stage=stage,
+                **req_kwargs,
+            )
+        ],
+        **common_kwargs,
+    )
+
+    write_validation_to_database(
+        errors=[
+            f"BA {ba} has rows at weather_iteration {w} but is not flagged "
+            f"to vary by weather iteration in {db_table}_iterations, so they "
+            f"are never read."
+            for ba, w in get_unread_requirement_rows(**req_kwargs)
+        ],
+        **common_kwargs,
+    )
 
 
 def generic_write_model_inputs(
