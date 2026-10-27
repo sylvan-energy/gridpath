@@ -25,6 +25,17 @@ from pyomo.environ import (
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import write_validation_to_database
+from gridpath.system.load_balance.static_load_requirement import (
+    component_bulk_static_load_mw,
+)
+
+
+def load_component_set_name(reserve_zone_load_zone_set):
+    """
+    :return: the name of the set of (reserve zone, load zone, load component)
+        whose static load is included in the reserve percentage requirement
+    """
+    return f"{reserve_zone_load_zone_set}_LOAD_CMPNTS"
 
 
 def generic_add_model_components(
@@ -56,7 +67,10 @@ def generic_add_model_components(
     related to a particular reserve requirement, including
     1) the reserve requirement by zone and timepoint, if any
     2) the reserve requirement as a percent of load and map for which load
-    zones' load to consider
+    to consider: a load zone's whole load (net of load modifiers) or one of
+    its load components' static load (adjusted for distribution losses; load
+    modifiers, including the load_component_modifier operational type, are
+    not netted out of a load component's load)
     3) the contributions to the reserve requirement from projects: there are two
     types of these contributions, those based on the power output in the timepoint
     and those based on the project capacity.
@@ -83,6 +97,17 @@ def generic_add_model_components(
         m,
         reserve_zone_load_zone_set,
         Set(dimen=2, within=getattr(m, reserve_zone_set) * m.LOAD_ZONES),
+    )
+
+    # Load zone-load components whose static load is included in the reserve
+    # percentage requirement
+    setattr(
+        m,
+        load_component_set_name(reserve_zone_load_zone_set),
+        Set(
+            dimen=3,
+            within=getattr(m, reserve_zone_set) * m.LOAD_ZONE_LOAD_CMPNTS_ALL,
+        ),
     )
 
     # Projects contributing to BA requirement based on power output in the timepoint
@@ -117,6 +142,17 @@ def generic_add_model_components(
             )
         else:
             percentage_target = 0
+
+        # Load components' static load; load modifiers are not netted out
+        if getattr(mod, load_component_set_name(reserve_zone_load_zone_set)):
+            percentage_target += sum(
+                getattr(mod, reserve_requirement_percent_param)[reserve_zone]
+                * component_bulk_static_load_mw(mod, lz, tmp, cmp)
+                for (_reserve_zone, lz, cmp) in getattr(
+                    mod, load_component_set_name(reserve_zone_load_zone_set)
+                )
+                if _reserve_zone == reserve_zone
+            )
 
         # Project contributions, if any projects in the respective set
         if getattr(mod, ba_prj_req_contribution_set):
@@ -219,22 +255,30 @@ def generic_load_model_data(
         )
         data_portal.load(filename=by_tmp_req_filename, param=tmp_params_to_load)
 
-    # If we have a RPS zone to load zone map input file, load it and the
-    # percent requirement; otherwise, initialize the set as an empty list (
-    # the param defaults to 0)
-    map_filename = os.path.join(input_dir, "{}_percent_map.tab".format(reserve_type))
-    if os.path.exists(map_filename):
-        data_portal.load(
-            filename=map_filename, set=getattr(m, reserve_zone_load_zone_set)
-        )
+    # If we have a reserve zone to load zone (or load zone-load component) map
+    # input file, load it and the percent requirement; otherwise, initialize
+    # the set as an empty list (the param defaults to 0)
+    map_files_exist = False
+    for set_name, map_filename in [
+        (reserve_zone_load_zone_set, f"{reserve_type}_percent_map.tab"),
+        (
+            load_component_set_name(reserve_zone_load_zone_set),
+            f"{reserve_type}_percent_load_component_map.tab",
+        ),
+    ]:
+        map_filename = os.path.join(input_dir, map_filename)
+        if os.path.exists(map_filename):
+            map_files_exist = True
+            data_portal.load(filename=map_filename, set=getattr(m, set_name))
+        else:
+            data_portal.data()[set_name] = {None: []}
+    if map_files_exist:
         data_portal.load(
             filename=os.path.join(
                 input_dir, "{}_percent_requirement.tab".format(reserve_type)
             ),
             param=getattr(m, reserve_requirement_percent_param),
         )
-    else:
-        data_portal.data()[reserve_zone_load_zone_set] = {None: []}
 
     # If we have a project contributions file, load it into the respective
     prj_contr_filename = os.path.join(
@@ -325,28 +369,14 @@ def generic_get_inputs_from_database(
         )
     )
 
-    # Get any reserve zone to load zone mapping for the percent target
+    # Get any reserve zone to load zone (and load component) mapping for the
+    # percent target
     c3 = conn.cursor()
     lz_mapping = c3.execute(
-        """
-        SELECT {}_ba, load_zone
-        FROM inputs_system_{}_percent_lz_map
-        JOIN
-        (SELECT {}_ba
-        FROM inputs_geography_{}_bas
-        WHERE {}_ba_scenario_id = {}) as relevant_bas
-        USING ({}_ba)
-        WHERE {}_scenario_id = {}
-        """.format(
-            reserve_type,
-            reserve_type,
-            reserve_type,
-            reserve_type,
-            reserve_type,
-            reserve_type_ba_subscenario_id,
-            reserve_type,
-            reserve_type,
-            reserve_type_req_subscenario_id,
+        get_percent_map_sql(
+            reserve_type=reserve_type,
+            reserve_type_ba_subscenario_id=reserve_type_ba_subscenario_id,
+            reserve_type_req_subscenario_id=reserve_type_req_subscenario_id,
         )
     )
 
@@ -385,6 +415,87 @@ def generic_get_inputs_from_database(
     )
 
     return tmp_req, percentage_req, lz_mapping, project_contributions
+
+
+def get_percent_map_sql(
+    reserve_type, reserve_type_ba_subscenario_id, reserve_type_req_subscenario_id
+):
+    """
+    :return: SQL selecting the ({reserve_type}_ba, load_zone, load_component)
+        rows of the percent requirement map for the scenario's BAs; a NULL
+        load_component stands for the load zone's whole load
+    """
+    return f"""
+        SELECT DISTINCT {reserve_type}_ba, load_zone, load_component
+        FROM inputs_system_{reserve_type}_percent_lz_map
+        JOIN
+        (SELECT {reserve_type}_ba
+        FROM inputs_geography_{reserve_type}_bas
+        WHERE {reserve_type}_ba_scenario_id = {reserve_type_ba_subscenario_id}
+        ) as relevant_bas
+        USING ({reserve_type}_ba)
+        WHERE {reserve_type}_scenario_id = {reserve_type_req_subscenario_id}
+        """
+
+
+def get_unknown_percent_map_load_components(
+    subscenarios,
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    :return: list of (BA, load_zone, load_component) of percent map rows
+        naming a load component that is not among the scenario's load
+        components for that load zone
+    """
+    return conn.execute(f"""
+        SELECT {reserve_type}_ba, load_zone, load_component
+        FROM ({get_percent_map_sql(
+            reserve_type,
+            reserve_type_ba_subscenario_id,
+            reserve_type_req_subscenario_id,
+        )})
+        WHERE load_component IS NOT NULL
+        AND (load_zone, load_component) NOT IN (
+            SELECT load_zone, load_component
+            FROM inputs_system_load_components
+            WHERE load_components_scenario_id = (
+                SELECT load_components_scenario_id
+                FROM inputs_system_load
+                WHERE load_scenario_id = {subscenarios.LOAD_SCENARIO_ID}
+                )
+            )
+        ORDER BY {reserve_type}_ba, load_zone, load_component
+        ;""").fetchall()
+
+
+def get_double_counted_percent_map_load_zones(
+    conn,
+    reserve_type,
+    reserve_type_ba_subscenario_id,
+    reserve_type_req_subscenario_id,
+):
+    """
+    :return: list of (BA, load_zone) whose percent map includes both the
+        load zone's whole load and some of its load components, i.e. counts
+        those load components twice
+    """
+    map_sql = get_percent_map_sql(
+        reserve_type, reserve_type_ba_subscenario_id, reserve_type_req_subscenario_id
+    )
+    return conn.execute(f"""
+        SELECT {reserve_type}_ba, load_zone
+        FROM ({map_sql})
+        WHERE load_component IS NULL
+        AND ({reserve_type}_ba, load_zone) IN (
+            SELECT {reserve_type}_ba, load_zone
+            FROM ({map_sql})
+            WHERE load_component IS NOT NULL
+            )
+        ORDER BY {reserve_type}_ba, load_zone
+        ;""").fetchall()
 
 
 def get_requirement_iteration_config_sql(
@@ -590,7 +701,9 @@ def generic_validate_inputs(
     BAs flagged to vary by weather iteration in a run without weather
     iterations, BAs flagged to vary that have no rows at the run's weather
     iteration, and rows at a non-zero weather iteration of BAs not flagged
-    to vary by it (never read).
+    to vary by it (never read). Validate the percent requirement map: load
+    components that are not among the scenario's load components for the
+    load zone, and load zones mapped both whole and by load component.
     """
     db_table = f"inputs_system_{reserve_type}"
     common_kwargs = dict(
@@ -652,6 +765,62 @@ def generic_validate_inputs(
         ],
         **common_kwargs,
     )
+
+    map_table = f"inputs_system_{reserve_type}_percent_lz_map"
+    map_kwargs = dict(common_kwargs, db_table=map_table)
+    write_validation_to_database(
+        errors=[
+            f"BA {ba}'s percent requirement includes load component {cmp} of "
+            f"load zone {lz}, which is not among the scenario's load "
+            f"components for that load zone."
+            for ba, lz, cmp in get_unknown_percent_map_load_components(
+                subscenarios=subscenarios, **req_kwargs
+            )
+        ],
+        **map_kwargs,
+    )
+    write_validation_to_database(
+        errors=[
+            f"BA {ba}'s percent requirement includes both the whole load of "
+            f"load zone {lz} (empty load_component) and some of its load "
+            f"components, so those load components are counted twice."
+            for ba, lz in get_double_counted_percent_map_load_zones(**req_kwargs)
+        ],
+        **map_kwargs,
+    )
+
+
+def write_percent_map_files(inputs_dir, reserve_type, percent_map):
+    """
+    :param percent_map: list of (BA, load_zone, load_component) rows; a None
+        load_component stands for the load zone's whole load
+
+    Write the reserve zone to whole load zone map ({reserve_type}_percent_map.tab)
+    and the reserve zone to load zone-load component map
+    ({reserve_type}_percent_load_component_map.tab), each only if it has rows.
+    """
+    for filename, header, rows in [
+        (
+            f"{reserve_type}_percent_map.tab",
+            ["ba", "load_zone"],
+            [(ba, lz) for (ba, lz, cmp) in percent_map if cmp is None],
+        ),
+        (
+            f"{reserve_type}_percent_load_component_map.tab",
+            ["ba", "load_zone", "load_component"],
+            [(ba, lz, cmp) for (ba, lz, cmp) in percent_map if cmp is not None],
+        ),
+    ]:
+        if rows:
+            with open(
+                os.path.join(inputs_dir, filename), "w", newline=""
+            ) as percent_map_file:
+                writer = csv.writer(
+                    percent_map_file, delimiter="\t", lineterminator="\n"
+                )
+                writer.writerow(header)
+                for row in rows:
+                    writer.writerow(row)
 
 
 def generic_write_model_inputs(
@@ -720,10 +889,10 @@ def generic_write_model_inputs(
             for row in timepoint_req:
                 writer.writerow(row)
 
-    # Write the percent requirement files only if there's a mapping
-    ba_lz_map_list = [row for row in percent_map]
-
-    if ba_lz_map_list:
+    # Write the percent requirement files only if there's a mapping; whole
+    # load zones and load components go in separate map files
+    percent_map = percent_map.fetchall()
+    if percent_map:
         with open(
             os.path.join(inputs_dir, "{}_percent_requirement.tab".format(reserve_type)),
             "w",
@@ -737,18 +906,11 @@ def generic_write_model_inputs(
             for row in percent_req:
                 writer.writerow(row)
 
-        with open(
-            os.path.join(inputs_dir, "{}_percent_map.tab".format(reserve_type)),
-            "w",
-            newline="",
-        ) as percent_map_file:
-            writer = csv.writer(percent_map_file, delimiter="\t", lineterminator="\n")
-
-            # Write header
-            writer.writerow(["ba", "load_zone"])
-
-            for row in ba_lz_map_list:
-                writer.writerow(row)
+        write_percent_map_files(
+            inputs_dir=inputs_dir,
+            reserve_type=reserve_type,
+            percent_map=percent_map,
+        )
 
     # Project contributions to the magnitude requirement
     project_contributions = project_contributions.fetchall()

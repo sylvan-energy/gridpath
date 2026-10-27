@@ -5499,13 +5499,19 @@ CREATE TABLE inputs_system_lf_reserves_up_percent
     PRIMARY KEY (lf_reserves_up_scenario_id, lf_reserves_up_ba, stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_lf_reserves_up_percent_lz_map;
 CREATE TABLE inputs_system_lf_reserves_up_percent_lz_map
 (
     lf_reserves_up_scenario_id INTEGER,
     lf_reserves_up_ba          VARCHAR(32),
     load_zone                  VARCHAR(32),
-    PRIMARY KEY (lf_reserves_up_scenario_id, lf_reserves_up_ba, load_zone)
+    load_component             TEXT,
+    PRIMARY KEY (lf_reserves_up_scenario_id, lf_reserves_up_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their
@@ -5582,13 +5588,19 @@ CREATE TABLE inputs_system_lf_reserves_down_percent
     PRIMARY KEY (lf_reserves_down_scenario_id, lf_reserves_down_ba, stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_lf_reserves_down_percent_lz_map;
 CREATE TABLE inputs_system_lf_reserves_down_percent_lz_map
 (
     lf_reserves_down_scenario_id INTEGER,
     lf_reserves_down_ba          VARCHAR(32),
     load_zone                    VARCHAR(32),
-    PRIMARY KEY (lf_reserves_down_scenario_id, lf_reserves_down_ba, load_zone)
+    load_component               TEXT,
+    PRIMARY KEY (lf_reserves_down_scenario_id, lf_reserves_down_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their
@@ -5665,13 +5677,19 @@ CREATE TABLE inputs_system_regulation_down_percent
     PRIMARY KEY (regulation_down_scenario_id, regulation_down_ba, stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_regulation_down_percent_lz_map;
 CREATE TABLE inputs_system_regulation_down_percent_lz_map
 (
     regulation_down_scenario_id INTEGER,
     regulation_down_ba          VARCHAR(32),
     load_zone                   VARCHAR(32),
-    PRIMARY KEY (regulation_down_scenario_id, regulation_down_ba, load_zone)
+    load_component              TEXT,
+    PRIMARY KEY (regulation_down_scenario_id, regulation_down_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their
@@ -5748,13 +5766,19 @@ CREATE TABLE inputs_system_regulation_up_percent
     PRIMARY KEY (regulation_up_scenario_id, regulation_up_ba, stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_regulation_up_percent_lz_map;
 CREATE TABLE inputs_system_regulation_up_percent_lz_map
 (
     regulation_up_scenario_id INTEGER,
     regulation_up_ba          VARCHAR(32),
     load_zone                 VARCHAR(32),
-    PRIMARY KEY (regulation_up_scenario_id, regulation_up_ba, load_zone)
+    load_component            TEXT,
+    PRIMARY KEY (regulation_up_scenario_id, regulation_up_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their
@@ -5833,14 +5857,19 @@ CREATE TABLE inputs_system_frequency_response_percent
                  stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_frequency_response_percent_lz_map;
 CREATE TABLE inputs_system_frequency_response_percent_lz_map
 (
     frequency_response_scenario_id INTEGER,
     frequency_response_ba          VARCHAR(32),
     load_zone                      VARCHAR(32),
-    PRIMARY KEY (frequency_response_scenario_id, frequency_response_ba,
-                 load_zone)
+    load_component                 TEXT,
+    PRIMARY KEY (frequency_response_scenario_id, frequency_response_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their
@@ -5917,13 +5946,19 @@ CREATE TABLE inputs_system_spinning_reserves_percent
     PRIMARY KEY (spinning_reserves_scenario_id, spinning_reserves_ba, stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_spinning_reserves_percent_lz_map;
 CREATE TABLE inputs_system_spinning_reserves_percent_lz_map
 (
     spinning_reserves_scenario_id INTEGER,
     spinning_reserves_ba          VARCHAR(32),
     load_zone                     VARCHAR(32),
-    PRIMARY KEY (spinning_reserves_scenario_id, spinning_reserves_ba, load_zone)
+    load_component                TEXT,
+    PRIMARY KEY (spinning_reserves_scenario_id, spinning_reserves_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their
@@ -6001,13 +6036,19 @@ CREATE TABLE inputs_system_inertia_reserves_percent
     PRIMARY KEY (inertia_reserves_scenario_id, inertia_reserves_ba, stage_id)
 );
 
+-- Leave load_component empty to include the load zone's whole load (net of
+-- load modifiers); fill it to include only that load component's static load
+-- (adjusted for distribution losses; load modifiers, including the
+-- load_component_modifier operational type, are not netted out)
 DROP TABLE IF EXISTS inputs_system_inertia_reserves_percent_lz_map;
 CREATE TABLE inputs_system_inertia_reserves_percent_lz_map
 (
     inertia_reserves_scenario_id INTEGER,
     inertia_reserves_ba          VARCHAR(32),
     load_zone                    VARCHAR(32),
-    PRIMARY KEY (inertia_reserves_scenario_id, inertia_reserves_ba, load_zone)
+    load_component               TEXT,
+    PRIMARY KEY (inertia_reserves_scenario_id, inertia_reserves_ba, load_zone,
+                 load_component)
 );
 
 -- Projects can also contribute to the requirement, specified as percent of their

@@ -24,10 +24,15 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
+from gridpath.system.load_balance.static_load_requirement import (
+    component_bulk_static_load_mw,
+)
 from gridpath.system.reserves.requirement.reserve_requirements import (
     check_requirement_iteration_config,
     generic_validate_inputs,
+    get_percent_map_sql,
     get_tmp_requirement_sql,
+    write_percent_map_files,
 )
 
 
@@ -47,7 +52,10 @@ def add_model_components(
     related to inartia reserve requirement, including
     1) the reserve requirement by zone and timepoint, if any
     2) the reserve requirement as a percent of load and map for which load
-    zones' load to consider
+    to consider: a load zone's whole load (net of load modifiers) or one of
+    its load components' static load (adjusted for distribution losses; load
+    modifiers, including the load_component_modifier operational type, are
+    not netted out of a load component's load)
     3) the contributions to the reserve requirement from projects: there are two
     types of these contributions, those based on the power output in the timepoint
     and those based on the project capacity.
@@ -75,6 +83,12 @@ def add_model_components(
     # Load zones included in the reserve percentage requirement
     m.INER_BA_LZ = Set(dimen=2, within=m.INERTIA_RESERVES_ZONES * m.LOAD_ZONES)
 
+    # Load zone-load components whose static load is included in the reserve
+    # percentage requirement
+    m.INER_BA_LZ_LOAD_CMPNTS = Set(
+        dimen=3, within=m.INERTIA_RESERVES_ZONES * m.LOAD_ZONE_LOAD_CMPNTS_ALL
+    )
+
     # Projects contributing to BA requirement based on power output in the timepoint
     # and on capacity in the period
     m.INER_BA_PRJ_CONTRIBUTION = Set(
@@ -100,6 +114,15 @@ def add_model_components(
             )
         else:
             percentage_target = 0
+
+        # Load components' static load; load modifiers are not netted out
+        if mod.INER_BA_LZ_LOAD_CMPNTS:
+            percentage_target += sum(
+                mod.iner_per_req[reserve_zone]
+                * component_bulk_static_load_mw(mod, lz, tmp, cmp)
+                for (_reserve_zone, lz, cmp) in mod.INER_BA_LZ_LOAD_CMPNTS
+                if _reserve_zone == reserve_zone
+            )
 
         # Project contributions, if any projects in the respective set
         if mod.INER_BA_PRJ_CONTRIBUTION:
@@ -187,20 +210,27 @@ def load_model_data(
             filename=by_tmp_req_filename, param=m.inertia_reserves_requirement_mw
         )
 
-    # If we have a RPS zone to load zone map input file, load it and the
-    # percent requirement; otherwise, initialize the set as an empty list (
-    # the param defaults to 0)
-    map_filename = os.path.join(input_dir, "inertia_reserves_percent_map.tab")
-    if os.path.exists(map_filename):
-        data_portal.load(filename=map_filename, set=m.INER_BA_LZ)
+    # If we have a reserve zone to load zone (or load zone-load component) map
+    # input file, load it and the percent requirement; otherwise, initialize
+    # the set as an empty list (the param defaults to 0)
+    map_files_exist = False
+    for set_name, map_filename in [
+        ("INER_BA_LZ", "inertia_reserves_percent_map.tab"),
+        ("INER_BA_LZ_LOAD_CMPNTS", "inertia_reserves_percent_load_component_map.tab"),
+    ]:
+        map_filename = os.path.join(input_dir, map_filename)
+        if os.path.exists(map_filename):
+            map_files_exist = True
+            data_portal.load(filename=map_filename, set=getattr(m, set_name))
+        else:
+            data_portal.data()[set_name] = {None: []}
+    if map_files_exist:
         data_portal.load(
             filename=os.path.join(
                 input_dir, "inertia_reserves_percent_requirement.tab"
             ),
             param=m.iner_per_req,
         )
-    else:
-        data_portal.data()["INER_BA_LZ"] = {None: []}
 
     # If we have a project contributions file, load it into the respective
     prj_contr_filename = os.path.join(
@@ -300,19 +330,12 @@ def get_inputs_from_database(
         )
     )
 
-    # Get any reserve zone to load zone mapping for the percent target
+    # Get any reserve zone to load zone (and load component) mapping for the
+    # percent target
     c3 = conn.cursor()
     lz_mapping = c3.execute(
-        """
-        SELECT inertia_reserves_ba, load_zone
-        FROM inputs_system_inertia_reserves_percent_lz_map
-        JOIN
-        (SELECT inertia_reserves_ba
-        FROM inputs_geography_inertia_reserves_bas
-        WHERE inertia_reserves_ba_scenario_id = {reserve_type_ba_subscenario_id}) as relevant_bas
-        USING (inertia_reserves_ba)
-        WHERE inertia_reserves_scenario_id = {reserve_type_req_subscenario_id}
-        """.format(
+        get_percent_map_sql(
+            reserve_type="inertia_reserves",
             reserve_type_ba_subscenario_id=subscenarios.INERTIA_RESERVES_BA_SCENARIO_ID,
             reserve_type_req_subscenario_id=subscenarios.INERTIA_RESERVES_SCENARIO_ID,
         )
@@ -481,10 +504,11 @@ def write_model_inputs(
             for row in timepoint_req:
                 writer.writerow(row)
 
-    # Write the percent requirement files only if there's a mapping
-    ba_lz_map_list = [row for row in percent_map]
+    # Write the percent requirement files only if there's a mapping; whole
+    # load zones and load components go in separate map files
+    percent_map = percent_map.fetchall()
 
-    if ba_lz_map_list:
+    if percent_map:
         with open(
             os.path.join(inputs_dir, "inertia_reserves_percent_requirement.tab"),
             "w",
@@ -498,18 +522,11 @@ def write_model_inputs(
             for row in percent_req:
                 writer.writerow(row)
 
-        with open(
-            os.path.join(inputs_dir, "inertia_reserves_percent_map.tab"),
-            "w",
-            newline="",
-        ) as percent_map_file:
-            writer = csv.writer(percent_map_file, delimiter="\t", lineterminator="\n")
-
-            # Write header
-            writer.writerow(["ba", "load_zone"])
-
-            for row in ba_lz_map_list:
-                writer.writerow(row)
+        write_percent_map_files(
+            inputs_dir=inputs_dir,
+            reserve_type="inertia_reserves",
+            percent_map=percent_map,
+        )
 
     # Project contributions to the magnitude requirement
     project_contributions = project_contributions.fetchall()

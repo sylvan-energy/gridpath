@@ -1,0 +1,7 @@
+project	regulation_up_ba	max_fraction_of_provision
+Coal	Zone1	.
+Coal_z2	Zone2	.
+Gas_CCGT	Zone1	.
+Gas_CCGT_new	Zone1	.
+Gas_CCGT_new_z2	Zone2	.
+Gas_CCGT_z2	Zone2	.

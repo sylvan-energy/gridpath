@@ -761,8 +761,13 @@ regulation up and down, spinning reserves, load-following up and down, inertia r
 frequency response. The implementation of each reserve type is standardized.
 The user must define the reserve balancing areas along with any penalties
 for violation of the reserve-balance constraints. For each balancing area,
-the reserve requirement for each timepoint must be specified. Only
-exogenously-specified reserves are implemented at this stage. Each project
+the reserve requirement for each timepoint must be specified. The
+requirement can also be specified as a percentage of load: of load zones'
+whole load, net of load modifiers, or of individual load components' static
+load, adjusted for distribution losses. Load modifiers, including projects of
+the ``load_component_modifier`` operational type, are not netted out of a
+load component's load. Only exogenously-specified reserves are implemented at
+this stage. Each project
 that can provide the reserve type must then be assigned one or more
 balancing areas to whose reserve-balance constraints it can contribute. The
 project-level reserve-provision variables are dynamically added to the
