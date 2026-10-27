@@ -3246,6 +3246,33 @@ class TestExamples(unittest.TestCase):
         scenario_name = "dsm_examples"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_dsm_load_component_linked_w_lf_up_percent_req(self):
+        """
+        Check validation and objective function value of
+        "dsm_load_component_linked_w_lf_up_percent_req" example: the
+        load-following up requirement is 30% of the zone's whole load, net of
+        a load_component_modifier and a load_component_shift project
+        :return:
+        """
+        scenario_name = "dsm_load_component_linked_w_lf_up_percent_req"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_dsm_load_component_linked_w_lf_up_percent_req_by_load_component_twin(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "dsm_load_component_linked_w_lf_up_percent_req_by_load_component_twin"
+        example: the requirement is 30% of each of the zone's load components,
+        each net of the load modifier project linked to it; shares its
+        objective with the whole-load-zone example
+        :return:
+        """
+        scenario_name = (
+            "dsm_load_component_linked_w_lf_up_percent_req_by_load_component_twin"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_w_hydro_ramp_limits(self):
         """
         Check validation and objective function value of

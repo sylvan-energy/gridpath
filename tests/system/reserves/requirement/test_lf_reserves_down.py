@@ -20,6 +20,12 @@ import pandas as pd
 import sys
 import unittest
 
+from pyomo.core.expr.visitor import identify_variables
+from pyomo.environ import value
+
+from gridpath.system.load_balance.aggregate_load_modifier_power import (
+    get_load_modifier_prjs_by_load_component,
+)
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 
 TEST_DATA_DIRECTORY = os.path.join(
@@ -184,7 +190,14 @@ class TestCosts(unittest.TestCase):
         # Expression: LF_Down_Requirement of Zone2, the by-timepoint
         # requirement plus the percent requirement on load component "all"
         # of Zone1, i.e. its static load adjusted for distribution losses
-        # (factor 0.05)
+        # (factor 0.05) net of the bulk power production of the
+        # load_component_modifier and load_component_shift projects linked to
+        # it; their variables are given arbitrary values to evaluate it
+        linked_prjs = ["DSM_Load_Component_Modifier", "DSM_Load_Component_Shift"]
+        self.assertDictEqual(
+            get_load_modifier_prjs_by_load_component(instance),
+            {("Zone1", "all"): linked_prjs},
+        )
         load_df = pd.read_csv(
             os.path.join(TEST_DATA_DIRECTORY, "inputs", "load_mw.tab"), sep="\t"
         )
@@ -192,9 +205,17 @@ class TestCosts(unittest.TestCase):
             (load_df.LOAD_ZONES == "Zone1") & (load_df.load_component == "all")
         ].set_index("timepoint")["load_mw"]
         for tmp in instance.TMPS:
+            requirement = instance.LF_Down_Requirement["Zone2", tmp]
+            for v in identify_variables(requirement.expr):
+                v.set_value(0.3, skip_validation=True)
+            linked_prjs_bulk_power = sum(
+                value(instance.Bulk_Power_Provision_MW[prj, tmp]) for prj in linked_prjs
+            )
+            self.assertNotAlmostEqual(linked_prjs_bulk_power, 0)
             self.assertAlmostEqual(
-                instance.LF_Down_Requirement["Zone2", tmp].expr(),
-                expected_req[("Zone2", tmp)] + 0.1 * zone1_load[tmp] * 1.05,
+                value(requirement),
+                expected_req[("Zone2", tmp)]
+                + 0.1 * (zone1_load[tmp] * 1.05 - linked_prjs_bulk_power),
             )
 
 

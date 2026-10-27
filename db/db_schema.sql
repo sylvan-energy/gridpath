@@ -5500,9 +5500,9 @@ CREATE TABLE inputs_system_lf_reserves_up_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_lf_reserves_up_percent_lz_map;
 CREATE TABLE inputs_system_lf_reserves_up_percent_lz_map
 (
@@ -5589,9 +5589,9 @@ CREATE TABLE inputs_system_lf_reserves_down_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_lf_reserves_down_percent_lz_map;
 CREATE TABLE inputs_system_lf_reserves_down_percent_lz_map
 (
@@ -5678,9 +5678,9 @@ CREATE TABLE inputs_system_regulation_down_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_regulation_down_percent_lz_map;
 CREATE TABLE inputs_system_regulation_down_percent_lz_map
 (
@@ -5767,9 +5767,9 @@ CREATE TABLE inputs_system_regulation_up_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_regulation_up_percent_lz_map;
 CREATE TABLE inputs_system_regulation_up_percent_lz_map
 (
@@ -5858,9 +5858,9 @@ CREATE TABLE inputs_system_frequency_response_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_frequency_response_percent_lz_map;
 CREATE TABLE inputs_system_frequency_response_percent_lz_map
 (
@@ -5947,9 +5947,9 @@ CREATE TABLE inputs_system_spinning_reserves_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_spinning_reserves_percent_lz_map;
 CREATE TABLE inputs_system_spinning_reserves_percent_lz_map
 (
@@ -6037,9 +6037,9 @@ CREATE TABLE inputs_system_inertia_reserves_percent
 );
 
 -- Leave load_component empty to include the load zone's whole load (net of
--- load modifiers); fill it to include only that load component's static load
--- (adjusted for distribution losses; load modifiers, including the
--- load_component_modifier operational type, are not netted out)
+-- load modifiers); fill it to include only that load component's load: its
+-- static load adjusted for distribution losses, net of the
+-- load_component_modifier and load_component_shift load modifiers linked to it
 DROP TABLE IF EXISTS inputs_system_inertia_reserves_percent_lz_map;
 CREATE TABLE inputs_system_inertia_reserves_percent_lz_map
 (

@@ -262,3 +262,5 @@ ra_toolkit_monte_carlo_w_weather_dependent_reserves_percent_twin,"{('weather_ite
 2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req,"{('', '', '', 1): {1: -23028451119.348}}","{('', '', '', 1): {1: -23028451119.348}}",,,
 2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req_by_load_component_twin,"{('', '', '', 1): {1: -23028451119.348}}","{('', '', '', 1): {1: -23028451119.348}}",,,
 2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req_one_load_component,"{('', '', '', 1): {1: -21195854112.778}}","{('', '', '', 1): {1: -21195854112.778}}",,,
+dsm_load_component_linked_w_lf_up_percent_req,"{('', 'hydro_iteration_1', '', 1): {1: -741436.3538335165}}","{('', 'hydro_iteration_1', '', 1): {1: -741436.3538335165}}",,,
+dsm_load_component_linked_w_lf_up_percent_req_by_load_component_twin,"{('', 'hydro_iteration_1', '', 1): {1: -741436.3538335165}}","{('', 'hydro_iteration_1', '', 1): {1: -741436.3538335165}}",,,

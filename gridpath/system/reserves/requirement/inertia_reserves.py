@@ -24,8 +24,8 @@ from pyomo.environ import (
 )
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.system.load_balance.static_load_requirement import (
-    component_bulk_static_load_mw,
+from gridpath.system.load_balance.aggregate_load_modifier_power import (
+    component_modified_load_mw,
 )
 from gridpath.system.reserves.requirement.reserve_requirements import (
     check_requirement_iteration_config,
@@ -53,9 +53,9 @@ def add_model_components(
     1) the reserve requirement by zone and timepoint, if any
     2) the reserve requirement as a percent of load and map for which load
     to consider: a load zone's whole load (net of load modifiers) or one of
-    its load components' static load (adjusted for distribution losses; load
-    modifiers, including the load_component_modifier operational type, are
-    not netted out of a load component's load)
+    its load components' load (its static load adjusted for distribution
+    losses, net of the load_component_modifier and load_component_shift load
+    modifiers linked to it)
     3) the contributions to the reserve requirement from projects: there are two
     types of these contributions, those based on the power output in the timepoint
     and those based on the project capacity.
@@ -83,7 +83,7 @@ def add_model_components(
     # Load zones included in the reserve percentage requirement
     m.INER_BA_LZ = Set(dimen=2, within=m.INERTIA_RESERVES_ZONES * m.LOAD_ZONES)
 
-    # Load zone-load components whose static load is included in the reserve
+    # Load zone-load components whose load is included in the reserve
     # percentage requirement
     m.INER_BA_LZ_LOAD_CMPNTS = Set(
         dimen=3, within=m.INERTIA_RESERVES_ZONES * m.LOAD_ZONE_LOAD_CMPNTS_ALL
@@ -115,11 +115,11 @@ def add_model_components(
         else:
             percentage_target = 0
 
-        # Load components' static load; load modifiers are not netted out
+        # Load components' load, net of the load modifiers linked to them
         if mod.INER_BA_LZ_LOAD_CMPNTS:
             percentage_target += sum(
                 mod.iner_per_req[reserve_zone]
-                * component_bulk_static_load_mw(mod, lz, tmp, cmp)
+                * component_modified_load_mw(mod, lz, tmp, cmp)
                 for (_reserve_zone, lz, cmp) in mod.INER_BA_LZ_LOAD_CMPNTS
                 if _reserve_zone == reserve_zone
             )
