@@ -220,13 +220,8 @@ def add_model_components(
                 load_zone {load_zone}.
                 """)
             else:
-                distribution_loss_adjusted_load = mod.component_static_load_mw[
-                    load_zone, timepoint, component
-                ] * (
-                    1
-                    + mod.load_component_distribution_loss_adjustment_factor[
-                        load_zone, component
-                    ]
+                distribution_loss_adjusted_load = component_bulk_static_load_mw(
+                    mod, load_zone, timepoint, component
                 )
                 if (load_zone, timepoint) not in lz_load_in_tmp.keys():
                     lz_load_in_tmp[(load_zone, timepoint)] = (
@@ -245,6 +240,19 @@ def add_model_components(
     )
 
     record_dynamic_components(dynamic_components=d)
+
+
+def component_bulk_static_load_mw(mod, load_zone, tmp, load_component):
+    """
+    :return: the load component's static load in the timepoint, adjusted for
+        distribution losses, i.e. its contribution to LZ_Bulk_Static_Load_in_Tmp
+    """
+    return mod.component_static_load_mw[load_zone, tmp, load_component] * (
+        1
+        + mod.load_component_distribution_loss_adjustment_factor[
+            load_zone, load_component
+        ]
+    )
 
 
 def load_model_data(

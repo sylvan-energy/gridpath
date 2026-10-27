@@ -32,6 +32,7 @@ PREREQUISITE_MODULE_NAMES = [
     "temporal.operations.horizons",
     "geography.load_zones",
     "geography.frequency_response_balancing_areas",
+    "system.load_balance.static_load_requirement",
     "project",
     "project.capacity.capacity",
     "project.fuels",

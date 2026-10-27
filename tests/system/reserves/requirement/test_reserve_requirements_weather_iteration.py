@@ -112,6 +112,7 @@ def make_subscenarios(reserve_type):
     return SimpleNamespace(
         TEMPORAL_SCENARIO_ID=1,
         PROJECT_PORTFOLIO_SCENARIO_ID="NULL",
+        LOAD_SCENARIO_ID="NULL",
         **{
             f"{reserve_type.upper()}_BA_SCENARIO_ID": 1,
             f"{reserve_type.upper()}_SCENARIO_ID": 1,

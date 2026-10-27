@@ -1,0 +1,5 @@
+load_zone	load_component	load_level_default	load_component_distribution_loss_adjustment_factor
+Zone1	half1	.	.
+Zone1	half2	.	.
+Zone2	half1	.	.
+Zone2	half2	.	.

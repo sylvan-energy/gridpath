@@ -2904,6 +2904,52 @@ class TestExamples(unittest.TestCase):
         scenario_name = "2periods_new_build_2zones_loadcomponents"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req"
+        example: each zone's load-following up requirement is 15% of the
+        zone's whole load
+        :return:
+        """
+        scenario_name = "2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req_by_load_component_twin(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req_by_load_component_twin"
+        example: the requirement is 15% of each of the zone's load components;
+        the zones have no load modifiers, so it shares its objective with the
+        whole-load-zone example
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req"
+            "_by_load_component_twin"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req_one_load_component(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req_one_load_component"
+        example: the requirement is 15% of one of the zone's two load
+        components
+        :return:
+        """
+        scenario_name = (
+            "2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req"
+            "_one_load_component"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_2periods_nuclear_var_cost_by_timepoint_same(self):
         """
         Check validation and objective function value of

@@ -36,6 +36,18 @@ never read, and flagged BAs with no rows at the run's weather iteration, whose
 requirement would otherwise be 0. The percent-of-load requirement needs no
 weather key: it applies to each weather iteration's own load.
 
+The percent-of-load requirement
+(:code:`inputs_system_spinning_reserves_percent`) applies to the load listed
+for the BA in :code:`inputs_system_spinning_reserves_percent_lz_map`. A row
+with an empty :code:`load_component` includes the load zone's whole load, net
+of load modifiers. A row naming a load component includes only that load
+component's static load, adjusted for its distribution losses; load modifiers
+are not netted out of it, including :code:`load_component_modifier` projects
+linked to that load component. Validation reports load components that are not
+among the scenario's load components for the load zone, and load zones included
+both whole and by load component, which would count those load components
+twice.
+
 See the :code:`ra_toolkit_monte_carlo_w_weather_dependent_reserves`
 example.
 

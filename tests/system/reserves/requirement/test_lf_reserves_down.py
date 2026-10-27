@@ -158,7 +158,7 @@ class TestCosts(unittest.TestCase):
         self.assertDictEqual(expected_req, actual_req)
 
         # Param: lf_down_per_req
-        expected_perc_req = OrderedDict({"Zone1": 0.03, "Zone2": 0})
+        expected_perc_req = OrderedDict({"Zone1": 0.03, "Zone2": 0.1})
         actual_perc_req = OrderedDict(
             sorted(
                 {
@@ -175,6 +175,27 @@ class TestCosts(unittest.TestCase):
         )
         actual_ba_lzs = sorted([(ba, lz) for (ba, lz) in instance.LF_DOWN_BA_LZ])
         self.assertListEqual(expected_ba_lzs, actual_ba_lzs)
+
+        # Set: LF_DOWN_BA_LZ_LOAD_CMPNTS
+        self.assertListEqual(
+            [("Zone2", "Zone1", "all")], list(instance.LF_DOWN_BA_LZ_LOAD_CMPNTS)
+        )
+
+        # Expression: LF_Down_Requirement of Zone2, the by-timepoint
+        # requirement plus the percent requirement on load component "all"
+        # of Zone1, i.e. its static load adjusted for distribution losses
+        # (factor 0.05)
+        load_df = pd.read_csv(
+            os.path.join(TEST_DATA_DIRECTORY, "inputs", "load_mw.tab"), sep="\t"
+        )
+        zone1_load = load_df[
+            (load_df.LOAD_ZONES == "Zone1") & (load_df.load_component == "all")
+        ].set_index("timepoint")["load_mw"]
+        for tmp in instance.TMPS:
+            self.assertAlmostEqual(
+                instance.LF_Down_Requirement["Zone2", tmp].expr(),
+                expected_req[("Zone2", tmp)] + 0.1 * zone1_load[tmp] * 1.05,
+            )
 
 
 if __name__ == "__main__":

@@ -17,6 +17,11 @@ This operational type is linked to a specific load component that it modifies
 based on 1) the project capacity relative to the load component peak load and
 2) a load modification profile (fractional reduction or increase); positive
 values indicate a load reduction and negative values indicate a load increase.
+
+The modification applies to the load zone's load (the load balance and the
+requirements based on the load zone's load). It is not yet netted out of
+reserve requirements specified as a percentage of the linked load component,
+which use the load component's static load.
 """
 
 from pyomo.environ import Param, Set, Reals, Constraint, Var, Any
