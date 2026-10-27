@@ -41,11 +41,12 @@ applies to the load listed for the BA in
 :code:`inputs_system_lf_reserves_up_percent_lz_map`. A row with an empty
 :code:`load_component` includes the load zone's whole load, net of load
 modifiers. A row naming a load component includes only that load component's
-static load, adjusted for its distribution losses; load modifiers are not
-netted out of it, including :code:`load_component_modifier` projects linked to
-that load component. Validation reports load components that are not among the
-scenario's load components for the load zone, and load zones included both
-whole and by load component, which would count those load components twice.
+load: its static load, adjusted for its distribution losses, net of the load
+modifiers (:code:`load_modifier_flag` 1) of the :code:`load_component_modifier`
+and :code:`load_component_shift` operational types linked to it. Validation
+reports load components that are not among the scenario's load components for
+the load zone, and load zones included both whole and by load component, which
+would count those load components twice.
 
 See the :code:`2periods_new_build_2zones_loadcomponents_w_lf_up_percent_req`
 examples.

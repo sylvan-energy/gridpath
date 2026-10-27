@@ -763,10 +763,10 @@ The user must define the reserve balancing areas along with any penalties
 for violation of the reserve-balance constraints. For each balancing area,
 the reserve requirement for each timepoint must be specified. The
 requirement can also be specified as a percentage of load: of load zones'
-whole load, net of load modifiers, or of individual load components' static
-load, adjusted for distribution losses. Load modifiers, including projects of
-the ``load_component_modifier`` operational type, are not netted out of a
-load component's load. Only exogenously-specified reserves are implemented at
+whole load, net of load modifiers, or of individual load components' load:
+their static load, adjusted for distribution losses, net of the load modifiers
+of the ``load_component_modifier`` and ``load_component_shift`` operational
+types linked to them. Only exogenously-specified reserves are implemented at
 this stage. Each project
 that can provide the reserve type must then be assigned one or more
 balancing areas to whose reserve-balance constraints it can contribute. The

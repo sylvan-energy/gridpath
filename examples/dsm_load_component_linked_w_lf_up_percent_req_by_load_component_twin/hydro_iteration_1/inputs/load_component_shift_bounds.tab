@@ -1,0 +1,2 @@
+project	balancing_type_project	horizon	min_load_mw	max_load_mw
+DSM_Load_Component_Shift	day	1	30.0	60.0

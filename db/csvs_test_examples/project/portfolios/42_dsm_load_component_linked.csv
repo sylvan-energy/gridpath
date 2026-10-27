@@ -1,0 +1,5 @@
+project,specified,new_build,capacity_type
+Gen_Simple_LowCost,,,gen_spec
+Gen_Simple_HighCost,,,gen_spec
+DSM_Load_Component_Modifier,,,gen_new_lin
+DSM_Load_Component_Shift,,,gen_new_lin

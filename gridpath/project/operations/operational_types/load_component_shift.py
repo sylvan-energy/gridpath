@@ -16,8 +16,9 @@
 This operational type is linked to a specific load component that it modifies
 by removing the static load profile for this load component from the load
 balance constraint and adding a modified load profile to the load balance
-constraint that is determined as follows:
-1)
+constraint. With load_modifier_flag 1, the modification also applies to the
+linked load component's load in reserve requirements specified as a
+percentage of that load component.
 """
 
 import os.path
