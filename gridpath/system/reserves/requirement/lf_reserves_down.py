@@ -16,6 +16,7 @@ from gridpath.system.reserves.requirement.reserve_requirements import (
     generic_get_inputs_from_database,
     generic_add_model_components,
     generic_load_model_data,
+    generic_validate_inputs,
     generic_write_model_inputs,
 )
 
@@ -132,10 +133,20 @@ def validate_inputs(
     :param conn: database connection
     :return:
     """
-    pass
-    # Validation to be added
-    # lf_reserves_down = get_inputs_from_database(
-    #     scenario_id, subscenarios, subproblem, stage, conn)
+    generic_validate_inputs(
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        conn=conn,
+        reserve_type="lf_reserves_down",
+        reserve_type_ba_subscenario_id=subscenarios.LF_RESERVES_DOWN_BA_SCENARIO_ID,
+        reserve_type_req_subscenario_id=subscenarios.LF_RESERVES_DOWN_SCENARIO_ID,
+        gridpath_module=__name__,
+    )
 
 
 def write_model_inputs(

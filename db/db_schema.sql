@@ -5457,11 +5457,29 @@ CREATE TABLE inputs_system_lf_reserves_up
 (
     lf_reserves_up_scenario_id INTEGER,
     lf_reserves_up_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration          INTEGER NOT NULL DEFAULT 0,
     stage_id                   INTEGER,
     timepoint                  INTEGER,
     lf_reserves_up_mw          FLOAT,
-    PRIMARY KEY (lf_reserves_up_scenario_id, lf_reserves_up_ba, stage_id,
-                 timepoint),
+    PRIMARY KEY (lf_reserves_up_scenario_id, lf_reserves_up_ba,
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (lf_reserves_up_scenario_id) REFERENCES
+        subscenarios_system_lf_reserves_up (lf_reserves_up_scenario_id)
+);
+
+-- Whether a BA's by-timepoint lf_reserves_up requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_lf_reserves_up_iterations;
+CREATE TABLE inputs_system_lf_reserves_up_iterations
+(
+    lf_reserves_up_scenario_id INTEGER,
+    lf_reserves_up_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (lf_reserves_up_scenario_id, lf_reserves_up_ba),
     FOREIGN KEY (lf_reserves_up_scenario_id) REFERENCES
         subscenarios_system_lf_reserves_up (lf_reserves_up_scenario_id)
 );
@@ -5523,11 +5541,29 @@ CREATE TABLE inputs_system_lf_reserves_down
 (
     lf_reserves_down_scenario_id INTEGER,
     lf_reserves_down_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration            INTEGER NOT NULL DEFAULT 0,
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     lf_reserves_down_mw          FLOAT,
-    PRIMARY KEY (lf_reserves_down_scenario_id, lf_reserves_down_ba, stage_id,
-                 timepoint),
+    PRIMARY KEY (lf_reserves_down_scenario_id, lf_reserves_down_ba,
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (lf_reserves_down_scenario_id) REFERENCES
+        subscenarios_system_lf_reserves_down (lf_reserves_down_scenario_id)
+);
+
+-- Whether a BA's by-timepoint lf_reserves_down requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_lf_reserves_down_iterations;
+CREATE TABLE inputs_system_lf_reserves_down_iterations
+(
+    lf_reserves_down_scenario_id INTEGER,
+    lf_reserves_down_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (lf_reserves_down_scenario_id, lf_reserves_down_ba),
     FOREIGN KEY (lf_reserves_down_scenario_id) REFERENCES
         subscenarios_system_lf_reserves_down (lf_reserves_down_scenario_id)
 );
@@ -5588,11 +5624,29 @@ CREATE TABLE inputs_system_regulation_up
 (
     regulation_up_scenario_id INTEGER,
     regulation_up_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration         INTEGER NOT NULL DEFAULT 0,
     stage_id                  INTEGER,
     timepoint                 INTEGER,
     regulation_up_mw          FLOAT,
-    PRIMARY KEY (regulation_up_scenario_id, regulation_up_ba, stage_id,
-                 timepoint),
+    PRIMARY KEY (regulation_up_scenario_id, regulation_up_ba,
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (regulation_up_scenario_id) REFERENCES
+        subscenarios_system_regulation_up (regulation_up_scenario_id)
+);
+
+-- Whether a BA's by-timepoint regulation_up requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_regulation_up_iterations;
+CREATE TABLE inputs_system_regulation_up_iterations
+(
+    regulation_up_scenario_id INTEGER,
+    regulation_up_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (regulation_up_scenario_id, regulation_up_ba),
     FOREIGN KEY (regulation_up_scenario_id) REFERENCES
         subscenarios_system_regulation_up (regulation_up_scenario_id)
 );
@@ -5653,11 +5707,29 @@ CREATE TABLE inputs_system_regulation_down
 (
     regulation_down_scenario_id INTEGER,
     regulation_down_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration           INTEGER NOT NULL DEFAULT 0,
     stage_id                    INTEGER,
     timepoint                   INTEGER,
     regulation_down_mw          FLOAT,
-    PRIMARY KEY (regulation_down_scenario_id, regulation_down_ba, stage_id,
-                 timepoint),
+    PRIMARY KEY (regulation_down_scenario_id, regulation_down_ba,
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (regulation_down_scenario_id) REFERENCES
+        subscenarios_system_regulation_down (regulation_down_scenario_id)
+);
+
+-- Whether a BA's by-timepoint regulation_down requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_regulation_down_iterations;
+CREATE TABLE inputs_system_regulation_down_iterations
+(
+    regulation_down_scenario_id INTEGER,
+    regulation_down_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (regulation_down_scenario_id, regulation_down_ba),
     FOREIGN KEY (regulation_down_scenario_id) REFERENCES
         subscenarios_system_regulation_down (regulation_down_scenario_id)
 );
@@ -5718,13 +5790,30 @@ CREATE TABLE inputs_system_frequency_response
 (
     frequency_response_scenario_id INTEGER,
     frequency_response_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration              INTEGER NOT NULL DEFAULT 0,
     stage_id                       INTEGER,
     timepoint                      INTEGER,
     frequency_response_mw          FLOAT,
     frequency_response_partial_mw  FLOAT,
     PRIMARY KEY (frequency_response_scenario_id, frequency_response_ba,
-                 stage_id,
-                 timepoint),
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (frequency_response_scenario_id) REFERENCES
+        subscenarios_system_frequency_response (frequency_response_scenario_id)
+);
+
+-- Whether a BA's by-timepoint frequency_response requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_frequency_response_iterations;
+CREATE TABLE inputs_system_frequency_response_iterations
+(
+    frequency_response_scenario_id INTEGER,
+    frequency_response_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (frequency_response_scenario_id, frequency_response_ba),
     FOREIGN KEY (frequency_response_scenario_id) REFERENCES
         subscenarios_system_frequency_response (frequency_response_scenario_id)
 );
@@ -5787,11 +5876,29 @@ CREATE TABLE inputs_system_spinning_reserves
 (
     spinning_reserves_scenario_id INTEGER,
     spinning_reserves_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration             INTEGER NOT NULL DEFAULT 0,
     stage_id                      INTEGER,
     timepoint                     INTEGER,
     spinning_reserves_mw          FLOAT,
-    PRIMARY KEY (spinning_reserves_scenario_id, spinning_reserves_ba, stage_id,
-                 timepoint),
+    PRIMARY KEY (spinning_reserves_scenario_id, spinning_reserves_ba,
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (spinning_reserves_scenario_id) REFERENCES
+        subscenarios_system_spinning_reserves (spinning_reserves_scenario_id)
+);
+
+-- Whether a BA's by-timepoint spinning_reserves requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_spinning_reserves_iterations;
+CREATE TABLE inputs_system_spinning_reserves_iterations
+(
+    spinning_reserves_scenario_id INTEGER,
+    spinning_reserves_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (spinning_reserves_scenario_id, spinning_reserves_ba),
     FOREIGN KEY (spinning_reserves_scenario_id) REFERENCES
         subscenarios_system_spinning_reserves (spinning_reserves_scenario_id)
 );
@@ -5853,11 +5960,29 @@ CREATE TABLE inputs_system_inertia_reserves
 (
     inertia_reserves_scenario_id INTEGER,
     inertia_reserves_ba          VARCHAR(32),
+    -- 0 unless the BA's requirement varies by the weather iteration (see
+    -- the _iterations table below)
+    weather_iteration            INTEGER NOT NULL DEFAULT 0,
     stage_id                     INTEGER,
     timepoint                    INTEGER,
     inertia_reserves_mws         FLOAT,
-    PRIMARY KEY (inertia_reserves_scenario_id, inertia_reserves_ba, stage_id,
-                 timepoint),
+    PRIMARY KEY (inertia_reserves_scenario_id, inertia_reserves_ba,
+                 weather_iteration, stage_id, timepoint),
+    FOREIGN KEY (inertia_reserves_scenario_id) REFERENCES
+        subscenarios_system_inertia_reserves (inertia_reserves_scenario_id)
+);
+
+-- Whether a BA's by-timepoint inertia_reserves requirement varies by weather
+-- iteration (e.g. a requirement computed from each weather draw's load and
+-- renewable output); a BA without a row does not and its rows sit at
+-- weather_iteration 0
+DROP TABLE IF EXISTS inputs_system_inertia_reserves_iterations;
+CREATE TABLE inputs_system_inertia_reserves_iterations
+(
+    inertia_reserves_scenario_id INTEGER,
+    inertia_reserves_ba          VARCHAR(32),
+    varies_by_weather_iteration INTEGER,
+    PRIMARY KEY (inertia_reserves_scenario_id, inertia_reserves_ba),
     FOREIGN KEY (inertia_reserves_scenario_id) REFERENCES
         subscenarios_system_inertia_reserves (inertia_reserves_scenario_id)
 );

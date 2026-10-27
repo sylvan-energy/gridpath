@@ -2725,6 +2725,37 @@ class TestExamples(unittest.TestCase):
             scenario_name=scenario_name, skip_validation=True
         )
 
+    def test_example_ra_toolkit_monte_carlo_w_weather_dependent_reserves(self):
+        """
+        Check objective function values of
+        "ra_toolkit_monte_carlo_w_weather_dependent_reserves" example: the
+        RSG1 spinning reserve requirement is a by-timepoint MW profile keyed
+        by weather iteration (see
+        tests/test_reserve_requirement_weather_iteration_examples.py for the
+        proof that it matches its percent-of-load twin)
+        :return:
+        """
+        scenario_name = "ra_toolkit_monte_carlo_w_weather_dependent_reserves"
+        self.validate_and_test_example_generic(
+            scenario_name=scenario_name, skip_validation=True
+        )
+
+    def test_example_ra_toolkit_monte_carlo_w_weather_dependent_reserves_percent_twin(
+        self,
+    ):
+        """
+        Check objective function values of
+        "ra_toolkit_monte_carlo_w_weather_dependent_reserves_percent_twin"
+        example: the RSG1 spinning reserve requirement is 80% of load
+        :return:
+        """
+        scenario_name = (
+            "ra_toolkit_monte_carlo_w_weather_dependent_reserves_percent_twin"
+        )
+        self.validate_and_test_example_generic(
+            scenario_name=scenario_name, skip_validation=True
+        )
+
     def test_example_ra_toolkit_sync(self):
         """
         Check validation and objective function values of

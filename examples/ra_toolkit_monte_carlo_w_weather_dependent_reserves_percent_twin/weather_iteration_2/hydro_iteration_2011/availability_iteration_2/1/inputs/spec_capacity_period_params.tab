@@ -1,0 +1,7 @@
+project	period	specified_capacity_mw	specified_energy_mwh	shaping_capacity_mw	hyb_gen_specified_capacity_mw	hyb_stor_specified_capacity_mw	specified_stor_capacity_mwh	fuel_production_capacity_fuelunitperhour	fuel_release_capacity_fuelunitperhour	fuel_storage_capacity_fuelunit	fixed_cost_per_mw_yr	fixed_cost_per_energy_mwh_yr	fixed_cost_per_shaping_mw_yr	hyb_gen_fixed_cost_per_mw_yr	hyb_stor_fixed_cost_per_mw_yr	fixed_cost_per_stor_mwh_yr	fuel_production_capacity_fixed_cost_per_fuelunitperhour_yr	fuel_release_capacity_fixed_cost_per_fuelunitperhour_yr	fuel_storage_capacity_fixed_cost_per_fuelunit_yr
+Batteries	2026	1000.0					4000.0												
+Gas	2026	1000.0																	
+Hydro	2026	1000.0																	
+Solar	2026	1000.0																	
+Wind	2026	1000.0																	
+Hybrid	2026	1000.0			1500.0	500.0	2000.0												
