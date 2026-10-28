@@ -569,14 +569,60 @@ def get_unread_outage_rows(subscenarios, conn):
         a non-zero weather iteration of projects whose derates are not
         flagged to vary by it; such rows are never read
     """
-    return conn.execute(f"""
-        SELECT DISTINCT project, weather_iteration
-        FROM inputs_project_availability_exogenous_outage
-        JOIN ({get_outage_iteration_config_sql(subscenarios)}) AS cfg
+    # cfg must be the outer loop (CROSS JOIN fixes SQLite's join order, see
+    # get_outage_derate_sql) so only the unflagged projects' rows are
+    # searched; weather_iteration > 0 and < 0 are separate index ranges
+    # (SQLite searches "!= 0" by scanning all the project's rows)
+    return conn.execute(
+        "\nUNION\n".join(f"""
+        SELECT project, weather_iteration
+        FROM ({get_outage_iteration_config_sql(subscenarios)}) AS cfg
+        CROSS JOIN inputs_project_availability_exogenous_outage
         USING (project, exogenous_availability_outage_scenario_id)
-        WHERE NOT cfg.varies_by_weather_iteration AND weather_iteration != 0
-        ORDER BY project, weather_iteration
-        ;""").fetchall()
+        WHERE NOT cfg.varies_by_weather_iteration
+        AND weather_iteration {comparison} 0
+        """ for comparison in (">", "<")) + "ORDER BY project, weather_iteration;"
+    ).fetchall()
+
+
+def get_outage_derate_sql(
+    subscenarios, weather_iteration, availability_iteration, subproblem, stage
+):
+    """
+    :return: SQL selecting (project, timepoint, availability_derate_outage,
+        hyb_stor_cap_availability_derate_outage) for the subproblem and
+        stage's timepoints, at the run's availability iteration and at its
+        weather iteration for the projects whose derates vary by it and at
+        weather_iteration 0 otherwise
+    """
+    # cfg must be the outer loop: the weather iteration to read depends on
+    # cfg.varies_by_weather_iteration, so with the outage table outside it
+    # SQLite can search the outage table's primary key only by project and
+    # subscenario and reads every weather and availability iteration of each
+    # project, in every subproblem. CROSS JOIN is SQLite's way to fix the
+    # join order (a plain JOIN may be reordered).
+    return f"""
+        SELECT project, timepoint, availability_derate_outage,
+        hyb_stor_cap_availability_derate_outage
+        FROM ({get_outage_iteration_config_sql(subscenarios)}) AS cfg
+        CROSS JOIN inputs_project_availability_exogenous_outage
+        USING (project, exogenous_availability_outage_scenario_id)
+        -- Relevant temporal index
+        WHERE timepoint IN (
+            SELECT timepoint
+            FROM inputs_temporal
+            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
+            AND subproblem_id = {subproblem}
+            AND stage_id = {stage}
+        )
+        -- Get the correct iterations
+        AND weather_iteration = CASE WHEN cfg.varies_by_weather_iteration
+            THEN {weather_iteration} ELSE 0 END
+        AND availability_iteration = {availability_iteration}
+        -- Get the stage's data
+        AND stage_id = {stage}
+        ;
+    """
 
 
 def get_bt_hrz_derate_sql(
@@ -668,28 +714,13 @@ def get_inputs_from_database(
         weather_iteration=weather_iteration,
         conn=conn,
     )
-    ind_sql = f"""
-        SELECT project, timepoint, availability_derate_outage, 
-        hyb_stor_cap_availability_derate_outage
-        FROM inputs_project_availability_exogenous_outage
-        JOIN ({get_outage_iteration_config_sql(subscenarios)}) AS cfg
-        USING (project, exogenous_availability_outage_scenario_id)
-        -- Relevant temporal index
-        WHERE timepoint IN (
-            SELECT timepoint
-            FROM inputs_temporal
-            WHERE temporal_scenario_id = {subscenarios.TEMPORAL_SCENARIO_ID}
-            AND subproblem_id = {subproblem}
-            AND stage_id = {stage}
-        )
-        -- Get the correct iterations
-        AND weather_iteration = CASE WHEN cfg.varies_by_weather_iteration
-            THEN {weather_iteration} ELSE 0 END
-        AND availability_iteration = {availability_iteration}
-        -- Get the stage's data
-        AND stage_id = {stage}
-        ;
-    """
+    ind_sql = get_outage_derate_sql(
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+    )
 
     c1 = conn.cursor()
     outage_availabilities = c1.execute(ind_sql)

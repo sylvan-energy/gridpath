@@ -31,6 +31,7 @@ import unittest
 from gridpath.project.availability.availability_types.exogenous import (
     check_outage_iteration_config,
     get_inputs_from_database,
+    get_outage_derate_sql,
     get_unread_outage_rows,
 )
 
@@ -114,6 +115,21 @@ def build_fixture_db():
     return conn
 
 
+def outage_table_lookups(conn, sql):
+    """
+    :return: the EXPLAIN QUERY PLAN details of the outage table's lookups
+    """
+    return [
+        detail
+        for (*_, detail) in conn.execute(f"EXPLAIN QUERY PLAN {sql}")
+        if detail.split()[:2]
+        in (
+            ["SEARCH", "inputs_project_availability_exogenous_outage"],
+            ["SCAN", "inputs_project_availability_exogenous_outage"],
+        )
+    ]
+
+
 def get_outage_derates(conn, weather_iteration, avl_iteration):
     outage_availabilities = get_inputs_from_database(
         scenario_id=1,
@@ -190,6 +206,52 @@ class TestExogenousOutageIterations(unittest.TestCase):
         )
         # ... and the rows are indeed not read
         self.assertEqual(get_outage_derates(self.conn, 2, 1)[("Fixed", 1)], 0.9)
+
+        # Negative weather iterations are reported too
+        self.conn.execute(
+            "INSERT INTO inputs_project_availability_exogenous_outage "
+            "(project, exogenous_availability_outage_scenario_id, "
+            "weather_iteration, availability_iteration, stage_id, timepoint, "
+            "availability_derate_outage) "
+            "VALUES ('Unflagged', 1, -1, 1, 1, 1, 0.5);"
+        )
+        self.assertEqual(
+            get_unread_outage_rows(SubScenarios(), self.conn),
+            [("Fixed", 2), ("Unflagged", -1), ("Unflagged", 3)],
+        )
+
+    def test_outage_search_uses_iteration_keys(self):
+        """The outage table is searched by its primary key including the
+        weather and availability iterations: the weather iteration to read
+        depends on the project's flag, so with the flag looked up in an
+        inner loop SQLite reads every iteration of each project in every
+        subproblem (hundreds of times slower on a table with many draws)."""
+        lookups = outage_table_lookups(
+            self.conn,
+            get_outage_derate_sql(
+                subscenarios=SubScenarios(),
+                weather_iteration=2,
+                availability_iteration=1,
+                subproblem=1,
+                stage=1,
+            ),
+        )
+        self.assertEqual(len(lookups), 1, lookups)
+        self.assertIn("weather_iteration=?", lookups[0])
+        self.assertIn("availability_iteration=?", lookups[0])
+
+    def test_unread_rows_search_by_weather_iteration_range(self):
+        """The check for never-read rows searches only the non-zero weather
+        iterations of the outage table instead of every row."""
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+        get_unread_outage_rows(SubScenarios(), self.conn)
+        self.conn.set_trace_callback(None)
+
+        lookups = outage_table_lookups(self.conn, statements[0])
+        self.assertTrue(lookups)
+        for lookup in lookups:
+            self.assertRegex(lookup, r"weather_iteration[<>]\?")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ from types import SimpleNamespace
 
 from gridpath.system.reserves.requirement.reserve_requirements import (
     get_bas_missing_weather_slice,
+    get_tmp_requirement_sql,
     get_unread_requirement_rows,
 )
 
@@ -106,6 +107,22 @@ def make_db(reserve_type):
         VALUES (1, 'BA_WEATHER', 1);""")
 
     return conn
+
+
+def requirement_table_lookups(conn, reserve_type, sql):
+    """
+    :return: the EXPLAIN QUERY PLAN details of the requirement table's
+        lookups
+    """
+    return [
+        detail
+        for (*_, detail) in conn.execute(f"EXPLAIN QUERY PLAN {sql}")
+        if detail.split()[:2]
+        in (
+            ["SEARCH", f"inputs_system_{reserve_type}"],
+            ["SCAN", f"inputs_system_{reserve_type}"],
+        )
+    ]
 
 
 def make_subscenarios(reserve_type):
@@ -211,6 +228,54 @@ class TestReserveRequirementWeatherIteration(unittest.TestCase):
                     get_unread_requirement_rows(**req_kwargs(conn, reserve_type)),
                     [("BA_FLAT", 3)],
                 )
+                # Negative weather iterations are reported too
+                conn.execute(f"""INSERT INTO inputs_system_{reserve_type}
+                    ({reserve_type}_scenario_id, {reserve_type}_ba,
+                    weather_iteration, stage_id, timepoint,
+                    {requirement_column(reserve_type)})
+                    VALUES (1, 'BA_FLAT', -1, 1, 1, 5);""")
+                self.assertListEqual(
+                    get_unread_requirement_rows(**req_kwargs(conn, reserve_type)),
+                    [("BA_FLAT", -1), ("BA_FLAT", 3)],
+                )
+                conn.close()
+
+    def test_requirement_search_uses_weather_iteration(self):
+        """The requirement table is searched by its primary key including
+        the weather iteration (which depends on the BA's flag) rather than
+        reading every BA and weather iteration of the subscenario, and the
+        never-read-rows check searches only the non-zero weather
+        iterations."""
+        for reserve_type in RESERVE_TYPES:
+            with self.subTest(reserve_type=reserve_type):
+                conn = make_db(reserve_type)
+                lookups = requirement_table_lookups(
+                    conn,
+                    reserve_type,
+                    get_tmp_requirement_sql(
+                        subscenarios=make_subscenarios(reserve_type),
+                        weather_iteration=2,
+                        subproblem=1,
+                        stage=1,
+                        reserve_type=reserve_type,
+                        value_columns=requirement_column(reserve_type),
+                        reserve_type_ba_subscenario_id=1,
+                        reserve_type_req_subscenario_id=1,
+                    ),
+                )
+                self.assertEqual(len(lookups), 1, lookups)
+                self.assertIn(
+                    f"{reserve_type}_ba=? AND weather_iteration=?", lookups[0]
+                )
+
+                statements = []
+                conn.set_trace_callback(statements.append)
+                get_unread_requirement_rows(**req_kwargs(conn, reserve_type))
+                conn.set_trace_callback(None)
+                lookups = requirement_table_lookups(conn, reserve_type, statements[0])
+                self.assertTrue(lookups)
+                for lookup in lookups:
+                    self.assertRegex(lookup, r"weather_iteration[<>]\?")
                 conn.close()
 
     def test_missing_weather_slice(self):
