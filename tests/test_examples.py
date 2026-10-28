@@ -2315,6 +2315,47 @@ class TestExamples(unittest.TestCase):
         scenario_name = "test_markets_w_generic_policy_emissions_cap_imports_hourly"
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_markets_w_generic_policy_intensity_std_net_purchases(self):
+        """
+        Check validation and objective function value of
+        "test_markets_w_generic_policy_intensity_std_net_purchases" example:
+        an emissions intensity standard (12 t/MWh) over the base of the
+        projects' output plus the zone's net market purchases (generation
+        plus net purchases is the load, as overgeneration is not allowed).
+        The objective is the same as that of the
+        "test_markets_w_generic_policy_intensity_std_load_twin" example.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_intensity_std_net_purchases"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_generic_policy_intensity_std_load_twin(self):
+        """
+        Check validation and objective function value of
+        "test_markets_w_generic_policy_intensity_std_load_twin" example: the
+        "test_markets_w_generic_policy_intensity_std_net_purchases" example
+        with the standard expressed as a function of the zone's load instead
+        of a base; the objective is the same.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_intensity_std_load_twin"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_markets_w_generic_policy_intensity_std_gross_purchases(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "test_markets_w_generic_policy_intensity_std_gross_purchases" example:
+        an emissions intensity standard (5 t/MWh) over the base of the
+        projects' output plus the zone's gross market purchases, which count
+        toward the standard's emissions at 6 t/MWh; the zone sells in one
+        timepoint and buys in the other, and the sales do not reduce the base.
+        :return:
+        """
+        scenario_name = "test_markets_w_generic_policy_intensity_std_gross_purchases"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_tx_simple_net_prd_imports_generic_policy_emissions_cap(self):
         """
         Check validation and objective function value of "test_tx_simple_net_prd_imports_generic_policy_emissions_cap" example: the

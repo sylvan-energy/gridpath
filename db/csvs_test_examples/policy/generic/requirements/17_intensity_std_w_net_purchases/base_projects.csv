@@ -1,0 +1,6 @@
+policy_name,policy_zone,project,base_type,base_multiplier
+CarbonCap,Zone1,Coal,output,
+CarbonCap,Zone1,Gas_CCGT,output,
+CarbonCap,Zone1,Gas_CT,output,
+CarbonCap,Zone1,Nuclear,output,
+CarbonCap,Zone1,Wind,output,

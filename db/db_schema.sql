@@ -6438,6 +6438,29 @@ CREATE TABLE inputs_system_policy_requirements_base_projects
                  project, base_type)
 );
 
+-- Market transactions in the requirement's base: the energy a (load zone,
+-- market) pair buys net (net_purchases, negative when selling), buys
+-- (purchases) or sells (sales) over the requirement horizon, weighted by
+-- base_multiplier (NULL = 1). The gross types (purchases, sales) require the
+-- pair to count its import emissions toward the same policy zone
+-- (inputs_market_policy_zones, import_emissions compliance type) in a zone
+-- with the gross import-emissions basis, at an import intensity of at least
+-- the base coefficient times the pair's purchases and sales multipliers.
+DROP TABLE IF EXISTS inputs_system_policy_requirements_base_markets;
+CREATE TABLE inputs_system_policy_requirements_base_markets
+(
+    policy_requirement_scenario_id INTEGER,
+    policy_name                    TEXT,
+    policy_zone                    TEXT,
+    load_zone                      VARCHAR(32),
+    market                         VARCHAR(32),
+    base_type                      VARCHAR(16) NOT NULL
+        CHECK (base_type IN ('net_purchases', 'purchases', 'sales')),
+    base_multiplier                FLOAT,
+    PRIMARY KEY (policy_requirement_scenario_id, policy_name, policy_zone,
+                 load_zone, market, base_type)
+);
+
 -- Project, policy, zones
 -- Which projects count toward which policies and "zones"
 -- Projects are allowed to contribute to more than one policy and to
@@ -9288,6 +9311,35 @@ CREATE TABLE results_project_policy_requirement_base
                  availability_iteration, subproblem_id, stage_id,
                  policy_name, policy_zone, balancing_type_horizon, horizon,
                  project, base_type)
+);
+
+-- The base markets' quantities in each requirement horizon in MWh, as the
+-- model counted them and recomputed from the solved net position (_degen),
+-- before and after the pair's multiplier
+DROP TABLE IF EXISTS results_market_policy_requirement_base;
+CREATE TABLE results_market_policy_requirement_base
+(
+    scenario_id            INTEGER,
+    weather_iteration      INTEGER,
+    hydro_iteration        INTEGER,
+    availability_iteration INTEGER,
+    subproblem_id          INTEGER,
+    stage_id               INTEGER,
+    policy_name            TEXT,
+    policy_zone            TEXT,
+    balancing_type_horizon VARCHAR(64),
+    horizon                INTEGER,
+    load_zone              VARCHAR(32),
+    market                 VARCHAR(32),
+    base_type              TEXT,
+    base_multiplier        FLOAT,
+    base_in_hrz            FLOAT,
+    base_in_hrz_degen      FLOAT,
+    weighted_base_in_hrz   FLOAT,
+    PRIMARY KEY (scenario_id, weather_iteration, hydro_iteration,
+                 availability_iteration, subproblem_id, stage_id,
+                 policy_name, policy_zone, balancing_type_horizon, horizon,
+                 load_zone, market, base_type)
 );
 
 DROP TABLE IF EXISTS results_transmission_policy_imports;

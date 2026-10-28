@@ -1,0 +1,2 @@
+policy_name	policy_zone	load_zone	market	base_type	base_multiplier
+CarbonCap	Zone1	Zone1	Market_Hub	purchases	.

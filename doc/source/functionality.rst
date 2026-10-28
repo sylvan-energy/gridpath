@@ -913,7 +913,17 @@ requirement's *base projects*, each weighted by a multiplier. Like the reserve
 requirements, which can be a percentage of load plus a percentage of selected
 projects' output or capacity, the base is part of the requirement's definition
 and is specified separately from the project contributions: a project can
-drive the requirement without counting toward meeting it and vice versa. A
+drive the requirement without counting toward meeting it and vice versa. The
+base can also include the energy (load zone, market) pairs buy net
+(``net_purchases``), buy (``purchases``) or sell (``sales``) over the horizon,
+e.g. so that an emissions intensity standard applies to own generation plus
+market purchases. Net purchases can be used in any requirement. Gross
+purchases and sales reuse the variable that counts the pair's purchases
+toward the same zone's import emissions, so they require the pair to count
+its import emissions toward the zone (with the ``gross`` import-emissions
+basis) at an intensity of at least the base coefficient times the pair's
+purchases and sales multipliers: counting more purchases than the model
+actually makes then always adds more emissions than headroom. A
 horizon requirement is a floor by default (the contributions must be at least
 the requirement) and can be declared a ceiling instead
 (``policy_requirement_sense`` = ``max``), e.g. a cap on the generation of the

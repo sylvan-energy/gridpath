@@ -252,6 +252,7 @@ def all_modules_list():
         "system.policy.generic_policy.aggregate_transmission_policy_contributions",
         "system.policy.generic_policy.aggregate_transmission_import_emissions",
         "system.policy.generic_policy.aggregate_market_import_emissions",
+        "system.policy.generic_policy.policy_requirement_base_markets",
         "system.policy.generic_policy.aggregate_import_emissions",
         "system.policy.generic_policy.aggregate_project_carbon_credits",
         "system.policy.generic_policy.policy_target_balance",
@@ -595,6 +596,7 @@ def cross_feature_modules_list():
         ("markets", "policy"): [
             "system.markets.policy_import_emissions",
             "system.policy.generic_policy.aggregate_market_import_emissions",
+            "system.policy.generic_policy.policy_requirement_base_markets",
             "system.policy.generic_policy.aggregate_import_emissions",
         ],
         ("transmission", "period_energy_target"): [

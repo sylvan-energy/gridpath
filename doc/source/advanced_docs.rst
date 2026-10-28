@@ -498,6 +498,11 @@ gridpath.system.policy.generic_policy.policy_requirement_base
 
 .. automodule:: gridpath.system.policy.generic_policy.policy_requirement_base
 
+gridpath.system.policy.generic_policy.policy_requirement_base_markets
+-----------------------------------------------------------------------
+
+.. automodule:: gridpath.system.policy.generic_policy.policy_requirement_base_markets
+
 gridpath.system.policy.generic_policy.policy_target_balance
 -----------------------------------------------------------
 
