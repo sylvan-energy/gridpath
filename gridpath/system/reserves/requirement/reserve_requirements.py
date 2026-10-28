@@ -539,14 +539,19 @@ def get_tmp_requirement_sql(
         iteration for the BAs whose requirement varies by it and at
         weather_iteration 0 otherwise
     """
+    # cfg must be the outer loop so the requirement table's primary key is
+    # searched with the weather iteration, which depends on
+    # cfg.varies_by_weather_iteration; CROSS JOIN fixes SQLite's join order
+    # (see the outage derates in
+    # gridpath.project.availability.availability_types.exogenous)
     return f"""
         SELECT {reserve_type}_ba, timepoint, {value_columns}
-        FROM inputs_system_{reserve_type}
-        JOIN ({get_requirement_iteration_config_sql(
+        FROM ({get_requirement_iteration_config_sql(
             reserve_type,
             reserve_type_ba_subscenario_id,
             reserve_type_req_subscenario_id,
         )}) AS cfg
+        CROSS JOIN inputs_system_{reserve_type}
         USING ({reserve_type}_ba)
         INNER JOIN
         (SELECT stage_id, timepoint
@@ -624,19 +629,26 @@ def get_unread_requirement_rows(
         rows at a non-zero weather iteration of BAs whose requirement is not
         flagged to vary by it; such rows are never read
     """
-    return conn.execute(f"""
-        SELECT DISTINCT {reserve_type}_ba, weather_iteration
-        FROM inputs_system_{reserve_type}
-        JOIN ({get_requirement_iteration_config_sql(
+    # cfg must be the outer loop (see get_tmp_requirement_sql) so only the
+    # unflagged BAs' rows are searched; weather_iteration > 0 and < 0 are
+    # separate index ranges (SQLite searches "!= 0" by scanning all the BA's
+    # rows)
+    return conn.execute(
+        "\nUNION\n".join(f"""
+        SELECT {reserve_type}_ba, weather_iteration
+        FROM ({get_requirement_iteration_config_sql(
             reserve_type,
             reserve_type_ba_subscenario_id,
             reserve_type_req_subscenario_id,
         )}) AS cfg
+        CROSS JOIN inputs_system_{reserve_type}
         USING ({reserve_type}_ba)
         WHERE {reserve_type}_scenario_id = {reserve_type_req_subscenario_id}
-        AND NOT cfg.varies_by_weather_iteration AND weather_iteration != 0
-        ORDER BY {reserve_type}_ba, weather_iteration
-        ;""").fetchall()
+        AND NOT cfg.varies_by_weather_iteration
+        AND weather_iteration {comparison} 0
+        """ for comparison in (">", "<"))
+        + f"ORDER BY {reserve_type}_ba, weather_iteration;"
+    ).fetchall()
 
 
 def get_bas_missing_weather_slice(
