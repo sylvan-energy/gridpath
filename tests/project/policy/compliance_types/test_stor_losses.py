@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +19,8 @@ from importlib import import_module
 import os.path
 import sys
 import unittest
+
+from pyomo.repn import generate_standard_repn
 
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 from tests.project.operations.common_functions import get_project_operational_timepoints
@@ -132,6 +135,71 @@ class TestStorLossesComplianceType(unittest.TestCase):
             stage="",
         )
         instance = m.create_instance(data)
+
+    def test_contribution_is_net_discharge_for_each_storage_type(self):
+        """
+        The contribution is net discharge (discharge minus charge) expressed
+        through the operational type's own variables: Battery is a 'stor'
+        project, Battery_Stress_Hrz a 'stor_stress_hrz' project, which has no
+        discharge variable in average-condition horizons.
+        """
+        m, data = add_components_and_load_data(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=TEST_DATA_DIRECTORY,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        instance = m.create_instance(data)
+
+        def linear_terms(prj, tmp):
+            repn = generate_standard_repn(
+                instance.Policy_Contribution_in_Timepoint[prj, "RPS", "RPSZone1", tmp]
+            )
+            self.assertTrue(repn.is_linear())
+            self.assertEqual(0, repn.constant)
+            return {
+                var.name: coef for var, coef in zip(repn.linear_vars, repn.linear_coefs)
+            }
+
+        # stor: discharge minus charge in every timepoint
+        stor_tmps = [tmp for (prj, tmp) in instance.STOR_OPR_TMPS if prj == "Battery"]
+        self.assertTrue(stor_tmps)
+        for tmp in stor_tmps:
+            self.assertDictEqual(
+                {
+                    f"Stor_Discharge_MW[Battery,{tmp}]": 1,
+                    f"Stor_Charge_MW[Battery,{tmp}]": -1,
+                },
+                linear_terms("Battery", tmp),
+            )
+
+        # stor_stress_hrz: discharge minus charge in stress timepoints, charge
+        # only in average-condition timepoints
+        prj = "Battery_Stress_Hrz"
+        all_tmps = [t for (p, t) in instance.STOR_STRESS_HRZ_OPR_TMPS if p == prj]
+        stress_tmps = [
+            t for (p, t) in instance.STOR_STRESS_HRZ_STRESS_OPR_TMPS if p == prj
+        ]
+        average_tmps = [t for t in all_tmps if t not in stress_tmps]
+        self.assertTrue(stress_tmps)
+        self.assertTrue(average_tmps)
+        for tmp in stress_tmps:
+            self.assertDictEqual(
+                {
+                    f"StorStressHrz_Discharge_MW[{prj},{tmp}]": 1,
+                    f"StorStressHrz_Charge_MW[{prj},{tmp}]": -1,
+                },
+                linear_terms(prj, tmp),
+            )
+        for tmp in average_tmps:
+            self.assertDictEqual(
+                {f"StorStressHrz_Charge_MW[{prj},{tmp}]": -1},
+                linear_terms(prj, tmp),
+            )
 
 
 if __name__ == "__main__":
