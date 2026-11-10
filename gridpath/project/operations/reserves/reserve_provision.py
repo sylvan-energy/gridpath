@@ -36,6 +36,40 @@ from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.project import PROJECT_TIMEPOINT_DF
 
 
+def load_reserve_project_param_from_projects_file(
+    data_portal, projects_file, ba_column_name, column_name, param
+):
+    """
+    Load a per-project reserve input from a projects.tab column into a param
+    indexed by the reserve's projects. projects.tab lists every project in the
+    portfolio, so only the projects that provide the reserve (those with a
+    balancing area in ba_column_name) are loaded (a value for a project that
+    does not provide the reserve is ignored rather than failing the param's
+    index check); "." = the param's default. Nothing is loaded if
+    projects.tab has no such column.
+
+    :param data_portal: the Pyomo DataPortal
+    :param projects_file: path to projects.tab
+    :param ba_column_name: the projects.tab column with the reserve's
+        balancing area ("." = the project does not provide the reserve)
+    :param column_name: the projects.tab column
+    :param param: the Pyomo param indexed by the reserve's projects
+    """
+    projects_df = pd.read_csv(projects_file, sep="\t", dtype=str, keep_default_na=False)
+    if column_name not in projects_df.columns:
+        return
+
+    data_portal.data()[param.name] = {
+        prj: float(val)
+        for prj, ba, val in zip(
+            projects_df["project"],
+            projects_df[ba_column_name],
+            projects_df[column_name],
+        )
+        if ba != "." and val != "."
+    }
+
+
 def generic_record_dynamic_components(
     d,
     scenario_directory,
@@ -316,53 +350,38 @@ def generic_load_model_data(
     :return:
     """
 
-    columns_to_import = (
-        "project",
-        ba_column_name,
+    projects_file = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
+        "projects.tab",
     )
-    params_to_import = (getattr(m, reserve_balancing_area_param),)
-    projects_file_header = pd.read_csv(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "projects.tab",
-        ),
-        sep="\t",
-        header=None,
-        nrows=1,
-    ).values[0]
 
-    # Import reserve provision headroom/footroom de-rate parameter only if
-    # column is present
-    # Otherwise, the de-rate param goes to its default of 1
-    if derate_column_name in projects_file_header:
-        columns_to_import += (derate_column_name,)
-        params_to_import += (getattr(m, reserve_provision_derate_param),)
-
-    # Load the needed data
+    # The reserve's projects are those with a balancing area
     data_portal.load(
-        filename=os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "projects.tab",
-        ),
-        select=columns_to_import,
-        param=params_to_import,
+        filename=projects_file,
+        select=("project", ba_column_name),
+        param=(getattr(m, reserve_balancing_area_param),),
     )
 
     data_portal.data()[reserve_projects_set] = {
         None: list(data_portal.data()[reserve_balancing_area_param].keys())
     }
+
+    # Import reserve provision headroom/footroom de-rate parameter for the
+    # reserve's projects if the column is present; otherwise, the de-rate
+    # param goes to its default of 1
+    load_reserve_project_param_from_projects_file(
+        data_portal=data_portal,
+        projects_file=projects_file,
+        ba_column_name=ba_column_name,
+        column_name=derate_column_name,
+        param=getattr(m, reserve_provision_derate_param),
+    )
 
     # Load reserve provision subhourly energy adjustment (e.g. for storage
     # state of charge adjustment or delivered variable RPS energy adjustment)
