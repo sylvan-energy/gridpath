@@ -24,6 +24,22 @@ BA contributes that total to the BA directly. A project mapped to several BAs
 gets an allocation variable per BA that must sum to the total; the share of
 the total that may be allocated to each BA can be capped with the
 :code:`max_fraction_of_provision` input (defaults to 1, i.e. no cap).
+
+A project's provision of a reserve can also be limited by the reserve's
+response time with the optional :code:`<reserve>_ramp_rate` operational
+characteristic (e.g. :code:`regulation_up_ramp_rate`). Despite its name, this
+input has no time dimension: it is the maximum provision as a FRACTION OF THE
+PROJECT'S ONLINE CAPACITY, i.e. the project's ramp rate (as a fraction of
+capacity per minute) times the reserve product's response time (in minutes).
+For example, a project that can ramp 1% of its capacity per minute can provide
+up to 0.01 x 10 = 0.1 of its online capacity of a 10-minute product, so its
+ramp rate input for that reserve would be 0.1. Values are expected to be
+between 0 and 1; if not specified, provision is not limited. Note that this
+differs from the operational ramp rate inputs (e.g.
+:code:`ramp_up_when_on_rate`), which are fractions of capacity per minute.
+The reserve's per-project inputs (this limit and the
+:code:`<reserve>_derate`) only apply to the projects that can provide the
+reserve; values for other projects are ignored.
 """
 
 import csv
@@ -78,6 +94,39 @@ def project_bas_input_file_name(reserve_type):
     :return: the name of the .tab file with the project-BA map for the reserve
     """
     return f"project_{reserve_type}_bas.tab"
+
+
+def load_reserve_project_param_from_projects_file(
+    data_portal, projects_file, project_bas_file, column_name, param
+):
+    """
+    Load a per-project reserve input from a projects.tab column into a param
+    indexed by the reserve's projects. projects.tab lists every project in the
+    portfolio, so only the projects in the reserve's project-BA file are
+    loaded (a value for a project that does not provide the reserve is
+    ignored rather than failing the param's index check); "." = the param's
+    default. Nothing is loaded if projects.tab has no such column.
+
+    :param data_portal: the Pyomo DataPortal
+    :param projects_file: path to projects.tab
+    :param project_bas_file: path to the reserve's project-BA .tab file
+    :param column_name: the projects.tab column
+    :param param: the Pyomo param indexed by the reserve's projects
+    """
+    projects_df = pd.read_csv(projects_file, sep="\t", dtype=str, keep_default_na=False)
+    if column_name not in projects_df.columns:
+        return
+
+    reserve_projects = set(
+        pd.read_csv(project_bas_file, sep="\t", dtype=str, keep_default_na=False)[
+            "project"
+        ]
+    )
+    data_portal.data()[param.name] = {
+        prj: float(val)
+        for prj, val in zip(projects_df["project"], projects_df[column_name])
+        if prj in reserve_projects and val != "."
+    }
 
 
 def provision_by_ba_results_file_name(reserve_type):
@@ -602,16 +651,22 @@ def generic_load_model_data(
         "inputs",
         "projects.tab",
     )
-    projects_file_header = pd.read_csv(
-        projects_file, sep="\t", header=None, nrows=1
-    ).values[0]
-
-    if derate_column_name in projects_file_header:
-        data_portal.load(
-            filename=projects_file,
-            select=("project", derate_column_name),
-            param=getattr(m, reserve_provision_derate_param),
-        )
+    load_reserve_project_param_from_projects_file(
+        data_portal=data_portal,
+        projects_file=projects_file,
+        project_bas_file=os.path.join(
+            scenario_directory,
+            weather_iteration,
+            hydro_iteration,
+            availability_iteration,
+            subproblem,
+            stage,
+            "inputs",
+            project_bas_input_file,
+        ),
+        column_name=derate_column_name,
+        param=getattr(m, reserve_provision_derate_param),
+    )
 
     # Load reserve provision subhourly energy adjustment (e.g. for storage
     # state of charge adjustment or delivered variable RPS energy adjustment)

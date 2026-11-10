@@ -2486,12 +2486,12 @@ CREATE TABLE inputs_project_operational_chars
     frequency_response_derate                             FLOAT,
     spinning_reserves_derate                              FLOAT,
     inertia_reserves_derate                               FLOAT,
-    lf_reserves_up_ramp_rate                              FLOAT,
-    lf_reserves_down_ramp_rate                            FLOAT,
-    regulation_up_ramp_rate                               FLOAT,
-    regulation_down_ramp_rate                             FLOAT,
-    frequency_response_ramp_rate                          FLOAT,
-    spinning_reserves_ramp_rate                           FLOAT,
+    lf_reserves_up_ramp_rate                              FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    lf_reserves_down_ramp_rate                            FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    regulation_up_ramp_rate                               FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    regulation_down_ramp_rate                             FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    frequency_response_ramp_rate                          FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    spinning_reserves_ramp_rate                           FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
     inertia_constant_sec                                  FLOAT,
     powerunithour_per_fuelunit                            FLOAT,
     cap_factor_limits_scenario_id                         INTEGER,
