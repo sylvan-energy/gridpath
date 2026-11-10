@@ -2515,6 +2515,7 @@ CREATE TABLE inputs_project_operational_chars
     energy_budget_balancing_type                          VARCHAR(32),  -- balancing type of the horizons over which energy budgets (e.g. hydro) apply; default in model: balancing_type_project
     market                                                VARCHAR(32),  -- market whose price the marginal cost is compared to (gen_simple_strike_price)
     dispatch_at_equal_cost                                INTEGER,      -- generate when the marginal cost equals the market price (gen_simple_strike_price); default in model: 0
+    reserves_max_power_fraction                           FLOAT,        -- fraction of available capacity power plus upward reserves may reach (gen_hydro, gen_hydro_must_take); default: the horizon max_power_fraction
     PRIMARY KEY (project_operational_chars_scenario_id, project),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),
