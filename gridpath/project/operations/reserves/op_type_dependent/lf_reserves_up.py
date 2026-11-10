@@ -14,7 +14,12 @@
 
 """
 Add project-level components for upward load-following reserves that also
-depend on operational type
+depend on operational type.
+
+The optional :code:`lf_reserves_up_ramp_rate` input limits the project's
+provision to that fraction of its online capacity (unitless: the project's
+ramp rate as a fraction of capacity per minute times the product's response
+time in minutes, e.g. 0.01/min x 10 min = 0.1). Not limited if not specified.
 """
 
 import csv
@@ -29,9 +34,8 @@ from gridpath.project.operations.reserves.op_type_dependent.reserve_limits_by_op
 )
 
 # Inputs
-RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE = (
-    "lf_reserves_up_ramp_rate_limit"
-)
+# The column get_inputs writes to projects.tab (same as the opchar column)
+RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE = "lf_reserves_up_ramp_rate"
 # Model components
 RESERVE_PROVISION_VARIABLE_NAME = "Provide_LF_Reserves_Up_MW"
 RESERVE_PROVISION_RAMP_RATE_LIMIT_CONSTRAINT_NAME = (
@@ -109,6 +113,7 @@ def load_model_data(
         stage=stage,
         ramp_rate_limit_column_name=RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE,
         reserve_provision_ramp_rate_limit_param=RESERVE_PROVISION_RAMP_RATE_LIMIT_PARAM_NAME,
+        ba_column_name="lf_reserves_up_ba",
     )
 
 
@@ -258,7 +263,7 @@ def write_model_inputs(
 
         # Append column header
         header = next(reader)
-        header.append("lf_reserves_up_ramp_rate")
+        header.append(RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE)
         new_rows.append(header)
 
         # Append correct values
