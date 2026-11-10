@@ -1066,7 +1066,8 @@ def get_inputs_from_database(
         efficiency_factor, energy_requirement_factor, 
         losses_factor_in_energy_target, losses_factor_curtailment, 	
         upward_reserves_to_soc_depletion, reserves_setpoint_duration_hours,
-        energy_budget_balancing_type, market, dispatch_at_equal_cost
+        energy_budget_balancing_type, market, dispatch_at_equal_cost,
+        reserves_max_power_fraction
         -- Get only the subset of projects in the portfolio with their 
         -- capacity types based on the project_portfolio_scenario_id 
         FROM
@@ -1481,6 +1482,7 @@ def write_model_inputs(
         "energy_budget_balancing_type",
         "market",
         "dispatch_at_equal_cost",
+        "reserves_max_power_fraction",
     ]
 
     append_to_input_file(
@@ -2083,6 +2085,7 @@ def validate_inputs(
         "energy_budget_balancing_type",
         "market",
         "dispatch_at_equal_cost",
+        "reserves_max_power_fraction",
     ]
 
     sql = """SELECT {}

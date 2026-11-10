@@ -353,6 +353,7 @@ def make_opchar_sql_str(
     energy_budget_balancing_type="NULL",
     market="NULL",
     dispatch_at_equal_cost="NULL",
+    reserves_max_power_fraction="NULL",
 ):
     """ """
 
@@ -470,7 +471,8 @@ def make_opchar_sql_str(
      {reserves_setpoint_duration_hours} AS reserves_setpoint_duration_hours,
      {energy_budget_balancing_type} AS energy_budget_balancing_type,
      {market} AS market,
-     {dispatch_at_equal_cost} AS dispatch_at_equal_cost
+     {dispatch_at_equal_cost} AS dispatch_at_equal_cost,
+     {reserves_max_power_fraction} AS reserves_max_power_fraction
     """
 
     return opchar_sql_str

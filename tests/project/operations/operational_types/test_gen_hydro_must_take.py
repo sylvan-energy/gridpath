@@ -19,6 +19,10 @@ import os.path
 import sys
 import unittest
 
+from pyomo.core.expr.visitor import identify_variables
+from pyomo.environ import value
+
+from gridpath.project.common_functions import get_energy_budget_balancing_type
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 from tests.project.operations.common_functions import get_project_operational_timepoints
 
@@ -54,6 +58,23 @@ try:
     )
 except ImportError:
     print("ERROR! Couldn't import module " + NAME_OF_MODULE_BEING_TESTED + " to test.")
+
+
+def rhs_at_zero_vars(constraint):
+    """
+    The right-hand side of a less-than-or-equal constraint: its upper bound
+    minus the constant part of its body (Pyomo may fold a param-valued
+    right-hand side into the body).
+    """
+    assert constraint.lower is None
+    body_vars = list(identify_variables(constraint.body))
+    saved = [v.value for v in body_vars]
+    for v in body_vars:
+        v.set_value(0, skip_validation=True)
+    rhs = value(constraint.upper) - value(constraint.body)
+    for v, val in zip(body_vars, saved):
+        v.set_value(val, skip_validation=True)
+    return rhs
 
 
 class TestGenHydroMustTake(unittest.TestCase):
@@ -312,6 +333,106 @@ class TestGenHydroMustTake(unittest.TestCase):
                 idx for idx in instance.GenHydroMustTake_Budget_Alloc_Max_Constraint
             ),
         )
+
+    def build_instance(self, extra_prereq_modules=()):
+        prereq_modules = IMPORTED_PREREQ_MODULES + [
+            import_module("." + mdl, package="gridpath") for mdl in extra_prereq_modules
+        ]
+        m, data = add_components_and_load_data(
+            prereq_modules=prereq_modules,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=TEST_DATA_DIRECTORY,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        return m.create_instance(data)
+
+    def test_reserves_max_power_fraction_loaded(self):
+        """
+        The fraction is sparse (no default): only specified values load.
+        """
+        instance = self.build_instance()
+        self.assertDictEqual(
+            {"Hydro_NonCurtailable": 0.95},
+            {
+                p: instance.gen_hydro_must_take_reserves_max_power_fraction[p]
+                for p in instance.GEN_HYDRO_MUST_TAKE
+                if p in instance.gen_hydro_must_take_reserves_max_power_fraction
+            },
+        )
+
+    def test_max_power_plus_reserves_skipped_without_reserves(self):
+        """
+        With no reserve module loaded, the project has no upward reserve
+        variables, so the power-plus-reserves constraint is skipped and the
+        max power constraint limits power output alone.
+        """
+        instance = self.build_instance()
+        self.assertEqual(
+            len(instance.GenHydroMustTake_Max_Power_Plus_Reserves_Constraint), 0
+        )
+        self.assertEqual(
+            len(instance.GenHydroMustTake_Max_Power_Constraint),
+            len(instance.GEN_HYDRO_MUST_TAKE_OPR_TMPS),
+        )
+
+    def test_max_power_plus_reserves_with_reserves(self):
+        """
+        With an upward reserve module loaded, the max power constraint limits
+        power output only (by the horizon's max_power_fraction) and the
+        power-plus-reserves constraint limits power output plus upward
+        reserves by the reserves max power fraction, in every timepoint.
+        """
+        instance = self.build_instance(
+            extra_prereq_modules=[
+                "geography.load_following_up_balancing_areas",
+                "project.operations.reserves.lf_reserves_up",
+            ]
+        )
+        self.assertIn("Hydro_NonCurtailable", instance.LF_RESERVES_UP_PROJECTS)
+        opr_tmps = sorted(instance.GEN_HYDRO_MUST_TAKE_OPR_TMPS)
+        self.assertListEqual(
+            opr_tmps,
+            sorted(instance.GenHydroMustTake_Max_Power_Plus_Reserves_Constraint.keys()),
+        )
+
+        bt = get_energy_budget_balancing_type(
+            instance,
+            "Hydro_NonCurtailable",
+            instance.gen_hydro_must_take_energy_budget_balancing_type,
+        )
+        for prj, tmp in opr_tmps:
+            available_mw = value(
+                instance.Capacity_MW[prj, instance.period[tmp]]
+                * instance.Availability_Derate[prj, tmp]
+            )
+            max_power = instance.GenHydroMustTake_Max_Power_Constraint[prj, tmp]
+            self.assertNotIn(
+                "Provide_LF_Reserves_Up_MW",
+                {v.parent_component().name for v in identify_variables(max_power.body)},
+            )
+            self.assertAlmostEqual(
+                rhs_at_zero_vars(max_power),
+                instance.gen_hydro_must_take_max_power_fraction[
+                    prj, bt, instance.horizon[tmp, bt]
+                ]
+                * available_mw,
+            )
+
+            plus_reserves = (
+                instance.GenHydroMustTake_Max_Power_Plus_Reserves_Constraint[prj, tmp]
+            )
+            self.assertSetEqual(
+                {"Provide_LF_Reserves_Up_MW", "GenHydroMustTake_Gross_Power_MW"},
+                {
+                    v.parent_component().name
+                    for v in identify_variables(plus_reserves.body)
+                },
+            )
+            self.assertAlmostEqual(rhs_at_zero_vars(plus_reserves), 0.95 * available_mw)
 
 
 if __name__ == "__main__":

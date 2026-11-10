@@ -205,6 +205,19 @@ def add_model_components(
     |                                                                         |
     | Auxiliary consumption as a fraction of gross power output.              |
     +-------------------------------------------------------------------------+
+    | | :code:`gen_hydro_must_take_reserves_max_power_fraction`               |
+    | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE`                           |
+    | | *Within*: :code:`NonNegativeReals`                                    |
+    | | *Default*: :code:`gen_hydro_must_take_max_power_fraction`             |
+    |                                                                         |
+    | The fraction of the project's available capacity that its power output  |
+    | plus upward reserves may not exceed. When specified, the horizon's      |
+    | :code:`gen_hydro_must_take_max_power_fraction` limits power output      |
+    | only, and this fraction limits power output plus upward reserves (e.g., |
+    | 1 lets the project provide reserves up to its full available capacity). |
+    | When not specified, power output plus upward reserves may not exceed    |
+    | the :code:`gen_hydro_must_take_max_power_fraction`.                     |
+    +-------------------------------------------------------------------------+
     | | :code:`gen_hydro_must_take_budget_alloc_min_fraction`                 |
     | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE_BUDGET_ALLOC_BT_HRZS`      |
     | | *Within*: :code:`PercentFraction`                                     |
@@ -308,9 +321,18 @@ def add_model_components(
     | | :code:`GenHydroMustTake_Max_Power_Constraint`                         |
     | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE_OPR_BT_HRZS`               |
     |                                                                         |
+    | Limits the power plus upward reserves (only the power if                |
+    | :code:`gen_hydro_must_take_reserves_max_power_fraction` is specified)   |
+    | based on the :code:`gen_hydro_must_take_max_power_fraction` and the     |
+    | available capacity.                                                     |
+    +-------------------------------------------------------------------------+
+    | | :code:`GenHydroMustTake_Max_Power_Plus_Reserves_Constraint`           |
+    | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE_OPR_TMPS`                  |
+    |                                                                         |
     | Limits the power plus upward reserves based on the                      |
-    | :code:`gen_hydro_must_take_max_power_fraction` and the available        |
-    | capacity.                                                               |
+    | :code:`gen_hydro_must_take_reserves_max_power_fraction` and the         |
+    | available capacity. Only enforced for projects with the fraction        |
+    | specified and reserve variables.                                        |
     +-------------------------------------------------------------------------+
     | | :code:`GenHydroMustTake_Min_Power_Constraint`                         |
     | | *Defined over*: :code:`GEN_HYDRO_MUST_TAKE_OPR_BT_HRZS`               |
@@ -442,6 +464,12 @@ def add_model_components(
         m.GEN_HYDRO_MUST_TAKE, within=PercentFraction, default=0
     )
 
+    # No default: if not specified, upward reserves are limited together with
+    # power output by the horizon's max_power_fraction
+    m.gen_hydro_must_take_reserves_max_power_fraction = Param(
+        m.GEN_HYDRO_MUST_TAKE, within=NonNegativeReals
+    )
+
     # Linked Params
     ###########################################################################
 
@@ -505,6 +533,17 @@ def add_model_components(
         m.GEN_HYDRO_MUST_TAKE_OPR_TMPS, rule=max_power_rule
     )
 
+    def max_power_plus_reserves_constraint_rule(mod, g, tmp):
+        # Without upward reserve variables, the max power constraint (which
+        # then limits power output only) is all that is needed
+        if not getattr(d, headroom_variables)[g]:
+            return Constraint.Skip
+        return max_power_plus_reserves_rule(mod, g, tmp)
+
+    m.GenHydroMustTake_Max_Power_Plus_Reserves_Constraint = Constraint(
+        m.GEN_HYDRO_MUST_TAKE_OPR_TMPS, rule=max_power_plus_reserves_constraint_rule
+    )
+
     m.GenHydroMustTake_Min_Power_Constraint = Constraint(
         m.GEN_HYDRO_MUST_TAKE_OPR_TMPS, rule=min_power_rule
     )
@@ -543,6 +582,10 @@ def max_power_rule(mod, g, tmp):
     Power plus upward reserves shall not exceed the maximum power output.
     The maximum power output (fraction) is a user input that is specified
     by horizon. If the unit is unavailable, it will be further de-rated.
+    If the project's :code:`gen_hydro_must_take_reserves_max_power_fraction`
+    is specified, this constraint limits power only, and power plus upward
+    reserves are limited by the
+    GenHydroMustTake_Max_Power_Plus_Reserves_Constraint instead.
 
     Example: The maximum power is 90% of the installed capacity in horizon
     1, which represents a winter week. If the installed capacity during the
@@ -553,10 +596,41 @@ def max_power_rule(mod, g, tmp):
     bt = get_energy_budget_balancing_type(
         mod, g, mod.gen_hydro_must_take_energy_budget_balancing_type
     )
+    power = mod.GenHydroMustTake_Gross_Power_MW[g, tmp]
+    if g not in mod.gen_hydro_must_take_reserves_max_power_fraction:
+        power = power + mod.GenHydroMustTake_Upwards_Reserves_MW[g, tmp]
+    return (
+        power
+        <= mod.gen_hydro_must_take_max_power_fraction[g, bt, mod.horizon[tmp, bt]]
+        * mod.Capacity_MW[g, mod.period[tmp]]
+        * mod.Availability_Derate[g, tmp]
+    )
+
+
+def max_power_plus_reserves_rule(mod, g, tmp):
+    """
+    **Constraint Name**: GenHydroMustTake_Max_Power_Plus_Reserves_Constraint
+    **Enforced Over**: GEN_HYDRO_MUST_TAKE_OPR_TMPS
+
+    Power plus upward reserves shall not exceed the
+    :code:`gen_hydro_must_take_reserves_max_power_fraction` times the
+    available capacity. Skipped if the fraction is not specified (the
+    GenHydroMustTake_Max_Power_Constraint then limits power plus upward
+    reserves). The constraint is also skipped if the project has no upward
+    reserve variables, in which case the
+    GenHydroMustTake_Max_Power_Constraint limits the power output.
+
+    Example: The maximum power is 90% of the installed capacity in horizon
+    1 and the project's reserves max power fraction is 100%. With 1,000 MW
+    of available capacity, the project's power output may not exceed 900
+    MW and its power output plus upward reserves may not exceed 1,000 MW.
+    """
+    if g not in mod.gen_hydro_must_take_reserves_max_power_fraction:
+        return Constraint.Skip
     return (
         mod.GenHydroMustTake_Gross_Power_MW[g, tmp]
         + mod.GenHydroMustTake_Upwards_Reserves_MW[g, tmp]
-        <= mod.gen_hydro_must_take_max_power_fraction[g, bt, mod.horizon[tmp, bt]]
+        <= mod.gen_hydro_must_take_reserves_max_power_fraction[g]
         * mod.Capacity_MW[g, mod.period[tmp]]
         * mod.Availability_Derate[g, tmp]
     )

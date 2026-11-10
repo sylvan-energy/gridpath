@@ -267,3 +267,6 @@ dsm_load_component_linked_w_lf_up_percent_req_by_load_component_twin,"{('', 'hyd
 test_markets_w_generic_policy_intensity_std_net_purchases,"{('', '', '', 1): {1: -11495430733120.504}}","{('', '', '', 1): {1: -11495430733120.504}}",,,
 test_markets_w_generic_policy_intensity_std_load_twin,"{('', '', '', 1): {1: -11495430733120.504}}","{('', '', '', 1): {1: -11495430733120.504}}",,,
 test_markets_w_generic_policy_intensity_std_gross_purchases,"{('', '', '', 1): {1: -29020459312746.617}}","{('', '', '', 1): {1: -29020459312746.617}}",,,
+test_w_hydro_max_power_below_one,"{('', '', '', 1): {1: -229508887.7170269}}","{('', '', '', 1): {1: -229508887.7170269}}",,,
+test_w_hydro_max_power_below_one_reserves_max_power_fraction_twin,"{('', '', '', 1): {1: -229508887.7170269}}","{('', '', '', 1): {1: -229508887.7170269}}",,,
+test_w_hydro_reserves_to_available_capacity,"{('', '', '', 1): {1: -214913822.5257869}}","{('', '', '', 1): {1: -214913822.5257869}}",,,

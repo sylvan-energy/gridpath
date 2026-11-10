@@ -1665,7 +1665,87 @@ def validate_hydro_opchars(
         ),
     )
 
+    validate_hydro_reserves_max_power_fraction(
+        scenario_id=scenario_id,
+        subscenarios=subscenarios,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem=subproblem,
+        stage=stage,
+        conn=conn,
+        op_type=op_type,
+        hydro_chars_df=df,
+    )
+
     return hydro_opchar_fraction_error
+
+
+def validate_hydro_reserves_max_power_fraction(
+    scenario_id,
+    subscenarios,
+    weather_iteration,
+    hydro_iteration,
+    availability_iteration,
+    subproblem,
+    stage,
+    conn,
+    op_type,
+    hydro_chars_df,
+):
+    """
+    Flag (Low) a reserves_max_power_fraction outside [0, 1] and one below
+    the project's max_power_fraction in any horizon: power output plus upward
+    reserves are then limited more tightly than power output alone would be
+    under the horizon's max_power_fraction. Both are allowed, but likely
+    unintended.
+
+    :param hydro_chars_df: the project's hydro opchars (project, horizon,
+        max_power_fraction, ...) as validated in validate_hydro_opchars
+    """
+    opchar_df = get_optype_inputs_from_db(scenario_id, subscenarios, conn, op_type)
+    opchar_df = opchar_df[["project", "reserves_max_power_fraction"]].dropna()
+    if opchar_df.empty:
+        return
+
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_project_operational_chars",
+        severity="Low",
+        errors=validate_values(opchar_df, "reserves_max_power_fraction", min=0, max=1),
+    )
+
+    merged = hydro_chars_df.merge(opchar_df, on="project")
+    below = merged[merged["reserves_max_power_fraction"] < merged["max_power_fraction"]]
+    errors = []
+    if not below.empty:
+        errors.append(
+            "(project, horizon)(s) {}: reserves_max_power_fraction is below "
+            "the max_power_fraction, so power output plus upward reserves "
+            "are limited below the max_power_fraction.".format(
+                sorted(set(zip(below["project"], below["horizon"].astype(int))))
+            )
+        )
+    write_validation_to_database(
+        conn=conn,
+        scenario_id=scenario_id,
+        weather_iteration=weather_iteration,
+        hydro_iteration=hydro_iteration,
+        availability_iteration=availability_iteration,
+        subproblem_id=subproblem,
+        stage_id=stage,
+        gridpath_module=__name__,
+        db_table="inputs_project_operational_chars",
+        severity="Low",
+        errors=errors,
+    )
 
 
 def load_startup_chars(
@@ -1830,6 +1910,7 @@ def get_optype_inputs_from_db(scenario_id, subscenarios, conn, op_type):
         "energy_budget_balancing_type",
         "market",
         "dispatch_at_equal_cost",
+        "reserves_max_power_fraction",
     ]
 
     sql = """SELECT {}
