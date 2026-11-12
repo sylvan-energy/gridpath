@@ -30,10 +30,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install sqlite3 3.45.0 on Linux
-      if: startsWith(runner.os, 'Linux')
-      run: |
-        bash ./.github/workflows/upgrade_sqlite_on_linux.sh
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -43,6 +39,10 @@ jobs:
         # pinned (the root requirements.txt is a freeze snapshot, not what
         # the install step uses)
         cache-dependency-path: pyproject.toml
+    - name: Check the SQLite version
+      # The Data Toolkit queries use unixepoch(), added in SQLite 3.38
+      run: |
+        python -c "import sqlite3, sys; print(sqlite3.sqlite_version); sys.exit(sqlite3.sqlite_version_info < (3, 38))"
     - name: Install Python dependencies
       run: |
         python -m pip install .[coverage,parallel_tests] --upgrade pip
