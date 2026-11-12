@@ -59,9 +59,41 @@ subscenario ID. This is done by ending the CSV filename for the subscenario
 ID with a dash followed by the default subscenario ID. For example,
 *3_base_with_change-1.csv* indicates that the subscenario ID 3 should use
 values from the default subscenario ID 1 except for the values specified in the
-3_base_with_change-1.csv.
+3_base_with_change-1.csv. Rows are matched on the primary key of the input
+table: a row of the CSV replaces the row of the default subscenario ID with
+the same key (or is added if there is none), and every other row of the
+default subscenario ID is copied. The default subscenario ID must be loaded
+first, so it must be lower than the IDs based on it.
+
+To remove rows of the default subscenario ID, add a ``remove_row`` column as
+the last column of the CSV and enter 1 in it for each row to remove (leave it
+blank for the other rows). A row to remove gives values in the primary-key
+columns only: all rows of the default subscenario ID with those values are
+left out. A primary-key column left blank matches any value, so a row with
+only the project filled in removes that project in all periods; at least one
+primary-key column must be filled in. For example, with a default subscenario
+ID that has rows for Coal and Gas in 2020 and 2030, the following CSV leaves
+out Coal altogether and Gas in 2020, and changes the capacity of Gas in 2030:
+
+.. code-block:: text
+
+    project,period,specified_capacity_mw,remove_row
+    Coal,,,1
+    Gas,2020,,1
+    Gas,2030,60,
+
+Removal applies only to the rows taken from the default subscenario ID: rows
+of the CSV that are not flagged are always loaded, so a project's rows can be
+replaced as a block by removing the project and listing its new rows. A row
+to remove that matches no row of the default subscenario ID is an error, as
+is a flagged row with values outside the primary-key columns. Because a blank
+matches any value, a row whose primary key contains an empty (NULL) value
+cannot be removed on its own, only together with the rows that share its
+other key values. The ``remove_row`` column can only be used in a CSV that is
+based on a default subscenario ID.
+
 .. warning:: This functionality is new and hasn't been extensively used and
-tested yet, so please proceed with caution.
+    tested yet, so please proceed with caution.
 
 A few subscenarios consist of multiple tables data for which is located
 inside CSVs in the same directory. For these subscenarios, the directory
