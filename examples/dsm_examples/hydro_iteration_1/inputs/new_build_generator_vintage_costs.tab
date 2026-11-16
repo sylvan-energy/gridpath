@@ -1,7 +1,7 @@
 project	vintage	operational_lifetime_yrs	fixed_cost_per_mw_yr	financial_lifetime_yrs	annualized_real_cost_per_mw_yr
-DSM_Flat_Load_Reduction	2026	1.0	0.0	1.0	1.0
 DSM_EE	2026	1.0	0.0	1.0	1.0
 DSM_EV	2026	1.0	0.0	1.0	1.0
-DSM_Load_Shed	2026	1.0	0.0	1.0	1.0
+DSM_Flat_Load_Reduction	2026	1.0	0.0	1.0	1.0
 DSM_Load_Component_Modifier	2026	1.0	0.0	1.0	1.0
 DSM_Load_Component_Shift	2026	1.0	0.0	1.0	1.0
+DSM_Load_Shed	2026	1.0	0.0	1.0	1.0
