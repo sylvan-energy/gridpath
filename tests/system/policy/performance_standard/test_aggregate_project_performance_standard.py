@@ -19,6 +19,9 @@ import os.path
 import sys
 import unittest
 
+from pyomo.core.expr.visitor import identify_variables
+from pyomo.environ import value
+
 from tests.common_functions import create_abstract_model, add_components_and_load_data
 
 TEST_DATA_DIRECTORY = os.path.join(
@@ -34,6 +37,7 @@ PREREQUISITE_MODULE_NAMES = [
     "geography.markets",
     "system.markets.prices",
     "geography.performance_standard_zones",
+    "project",
     "system.policy.performance_standard.performance_standard",
     "geography.water_network",
     "system.water.water_system_params",
@@ -43,7 +47,6 @@ PREREQUISITE_MODULE_NAMES = [
     "system.water.reservoirs",
     "system.water.water_node_balance",
     "system.water.powerhouses",
-    "project",
     "project.capacity.capacity",
     "project.availability.availability",
     "project.fuels",
@@ -127,6 +130,40 @@ class TestAggregateProjectPerformanceStandard(unittest.TestCase):
             stage="",
         )
         instance = m.create_instance(data)
+        for (
+            z,
+            p,
+        ) in instance.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD:
+            with self.subTest(zone=z, period=p):
+                energy = instance.Total_Performance_Standard_Project_Energy[z, p]
+                capacity = instance.Total_Performance_Standard_Project_Capacity[z, p]
+                for expression in (energy, capacity):
+                    for variable in identify_variables(expression.expr):
+                        variable.set_value(1)
+                expected_energy = sum(
+                    value(instance.Bulk_Power_Provision_MW[prj, tmp])
+                    * value(instance.hrs_in_tmp[tmp])
+                    * value(instance.tmp_weight[tmp])
+                    * value(instance.performance_standard_tco2_per_mwh[z, prj, p])
+                    for prj, tmp in instance.PERFORMANCE_STANDARD_OPR_TMPS
+                    if prj
+                    in instance.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[
+                        z
+                    ]
+                    and tmp in instance.TMPS_IN_PRD[p]
+                )
+                expected_capacity = sum(
+                    value(instance.Capacity_MW[prj, prd])
+                    * value(instance.performance_standard_tco2_per_mw[z, prj, p])
+                    for prj, prd in instance.PERFORMANCE_STANDARD_OPR_PRDS
+                    if prj
+                    in instance.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[
+                        z
+                    ]
+                    and prd == p
+                )
+                self.assertAlmostEqual(expected_energy, value(energy))
+                self.assertAlmostEqual(expected_capacity, value(capacity))
 
 
 if __name__ == "__main__":

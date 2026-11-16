@@ -125,3 +125,4 @@ __MACOSX
 /pudl_download/
 /eia930a_download/
 /raw_data/
+.history/*

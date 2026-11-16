@@ -34,6 +34,7 @@ PREREQUISITE_MODULE_NAMES = [
     "geography.markets",
     "system.markets.prices",
     "geography.performance_standard_zones",
+    "project",
     "system.policy.performance_standard.performance_standard",
     "geography.water_network",
     "system.water.water_system_params",
@@ -43,7 +44,6 @@ PREREQUISITE_MODULE_NAMES = [
     "system.water.reservoirs",
     "system.water.water_node_balance",
     "system.water.powerhouses",
-    "project",
     "project.capacity.capacity",
     "project.availability.availability",
     "project.fuels",
@@ -128,6 +128,15 @@ class TestPerformanceStandardBalance(unittest.TestCase):
             stage="",
         )
         instance = m.create_instance(data)
+        expected = set(
+            instance.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD
+        )
+        self.assertSetEqual(
+            expected, set(instance.Performance_Standard_Energy_Unit_Constraint)
+        )
+        self.assertSetEqual(
+            expected, set(instance.Performance_Standard_Power_Unit_Constraint)
+        )
 
 
 if __name__ == "__main__":

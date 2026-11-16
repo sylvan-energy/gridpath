@@ -17,6 +17,7 @@ import pandas as pd
 from gridpath.auxiliary.db_interface import import_csv
 
 PERFORMANCE_STANDARD_Z_PRD_DF = "performance_standard_z_prd_df"
+PERFORMANCE_STANDARD_Z_PRJ_PRD_DF = "performance_standard_z_prj_prd_df"
 
 
 def export_results(
@@ -61,6 +62,32 @@ def export_results(
 
     # Add the dataframe to the dynamic components to pass to other modules
     setattr(d, PERFORMANCE_STANDARD_Z_PRD_DF, df)
+    
+    # Zone-project-period DF
+    df = pd.DataFrame(
+        columns=[
+            "performance_standard_zone",
+            "project",
+            "period",
+            "discount_factor",
+            "number_years_represented",
+        ],
+        data=[
+            [
+                z,
+                prj,
+                p,
+                m.discount_factor[p],
+                m.number_years_represented[p],
+            ]
+            for (z, prj, p) in m.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD
+        ],
+    ).set_index(["performance_standard_zone", "project", "period"])
+
+    df.sort_index(inplace=True)
+
+    # Add the dataframe to the dynamic components to pass to other modules
+    setattr(d, PERFORMANCE_STANDARD_Z_PRJ_PRD_DF, df)
 
 
 def import_results_into_database(

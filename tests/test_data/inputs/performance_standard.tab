@@ -1,5 +1,7 @@
-performance_standard_zone	period	performance_standard_tco2_per_mwh	performance_standard_tco2_per_mw
-PS_Zone1	2020	0.1	876
-PS_Zone1	2030	0.1	876
-PS_Zone2	2020	0.1	876
-PS_Zone2	2030	0.1	876
+performance_standard_zone	project	period	performance_standard_tco2_per_mwh	performance_standard_tco2_per_mw
+PS_Zone1	Gas_CCGT	2020	0.1	876
+PS_Zone1	Gas_CCGT	2030	0.15	1314
+PS_Zone2	Gas_CCGT	2020	0.2	1752
+PS_Zone2	Gas_CCGT	2030	0.25	2190
+PS_Zone2	Gas_CT	2020	0.3	2628
+PS_Zone2	Gas_CT	2030	0.35	3066

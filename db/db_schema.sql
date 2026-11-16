@@ -6337,13 +6337,15 @@ CREATE TABLE inputs_system_performance_standard
 (
     performance_standard_scenario_id  INTEGER,
     performance_standard_zone         VARCHAR(32),
+    project                           VARCHAR(64),
     period                            INTEGER,
     subproblem_id                     INTEGER,
     stage_id                          INTEGER,
     performance_standard_tco2_per_mwh FLOAT,
     performance_standard_tco2_per_mw  FLOAT,
-    PRIMARY KEY (performance_standard_scenario_id, performance_standard_zone,
-                 period,
+    PRIMARY KEY (performance_standard_scenario_id, performance_standard_zone, project,
+                period,
+                 
                  subproblem_id, stage_id),
     FOREIGN KEY (performance_standard_scenario_id) REFERENCES
         subscenarios_system_performance_standard (performance_standard_scenario_id)
@@ -9042,17 +9044,35 @@ CREATE TABLE results_system_performance_standard
     probability                                 FLOAT,
     probability_weighted_discount_factor        FLOAT,
     number_years_represented                    FLOAT,
-    performance_standard_tco2_per_mwh           FLOAT,
-    performance_standard_tco2_per_mw            FLOAT,
     performance_standard_project_emissions_tco2 FLOAT,
     project_credits                             FLOAT,
-    performance_standard_project_energy_mwh     FLOAT,
-    performance_standard_project_capacity_mw    FLOAT,
+    performance_standard_project_energy_tco2    FLOAT,
+    performance_standard_project_capacity_tco2  FLOAT,
     performance_standard_energy_overage_tco2    FLOAT,
     performance_standard_power_overage_tco2     FLOAT,
     performance_standard_energy_unit_dual       FLOAT,
     performance_standard_power_unit_dual        FLOAT,
     PRIMARY KEY (scenario_id, performance_standard_zone,
+                 weather_iteration, hydro_iteration, availability_iteration,
+                 subproblem_id, stage_id, period)
+);
+
+-- Performance standard parameter
+DROP TABLE IF EXISTS results_system_performance_standard_project;
+CREATE TABLE results_system_performance_standard_project
+(
+    scenario_id                                 INTEGER,
+    performance_standard_zone                   VARCHAR(64),
+    project                                     VARCHAR(64),
+    period                                      INTEGER,
+    weather_iteration                           INTEGER,
+    hydro_iteration                             INTEGER,
+    availability_iteration                      INTEGER,
+    subproblem_id                               INTEGER,
+    stage_id                                    INTEGER,
+    performance_standard_tco2_per_mwh           FLOAT,
+    performance_standard_tco2_per_mw            FLOAT,
+    PRIMARY KEY (scenario_id, performance_standard_zone, project,
                  weather_iteration, hydro_iteration, availability_iteration,
                  subproblem_id, stage_id, period)
 );

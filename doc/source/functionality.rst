@@ -895,6 +895,13 @@ Performance Standard
 GridPath can optionally impose a performance standard requirement, i.e. limiting the
 emissions intensity of energy produced by a set of projects.
 
+Performance-standard parameters use the index order ``performance_standard_zone``,
+``project``, ``period`` in database inputs, ``performance_standard.tab``, and
+``system_performance_standard_project.csv`` results. Zone-level balances remain
+indexed by zone and period. Energy- and capacity-based allowances are weighted by
+each project's standard before being aggregated, and are reported in tonnes of
+CO2 rather than MWh or MW.
+
 .. _generic-policy-section-ref:
 
 Generic Policy

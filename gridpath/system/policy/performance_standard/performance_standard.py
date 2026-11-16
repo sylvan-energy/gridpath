@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Performance standard for each performance_standard zone
+Performance standards indexed by performance standard zone, project, and period.
 """
 
 import csv
@@ -23,8 +23,8 @@ import pandas as pd
 from pyomo.environ import Set, Param, NonNegativeReals, value
 
 from gridpath.auxiliary.db_interface import directories_to_db_values
-from gridpath.common_functions import create_results_df, update_results_df
-from gridpath.system.policy.performance_standard import PERFORMANCE_STANDARD_Z_PRD_DF
+from gridpath.common_functions import create_results_df
+from gridpath.system.policy.performance_standard import PERFORMANCE_STANDARD_Z_PRJ_PRD_DF
 
 Infinity = float("inf")
 
@@ -45,17 +45,29 @@ def add_model_components(
     :param d:
     :return:
     """
-
-    m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD = Set(
-        dimen=2, within=m.PERFORMANCE_STANDARD_ZONES * m.PERIODS
+    
+    m.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD = Set(
+        dimen=3, within=m.PERFORMANCE_STANDARD_ZONES * m.PROJECTS * m.PERIODS
     )
+    
+    m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD = Set(
+        dimen=2,
+        within=m.PERFORMANCE_STANDARD_ZONES * m.PERIODS,
+        initialize=lambda mod: list(
+            set([(z, p)
+            for z, prj, p
+            in mod.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD])
+        ),
+    )
+    
     m.performance_standard_tco2_per_mwh = Param(
-        m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD,
+        m.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD,
         within=NonNegativeReals,
         default=Infinity,
     )
+    
     m.performance_standard_tco2_per_mw = Param(
-        m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD,
+        m.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD,
         within=NonNegativeReals,
         default=Infinity,
     )
@@ -93,7 +105,7 @@ def load_model_data(
             "inputs",
             "performance_standard.tab",
         ),
-        index=m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD,
+        index=m.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD,
         param=(m.performance_standard_tco2_per_mwh, m.performance_standard_tco2_per_mw),
     )
 
@@ -117,33 +129,36 @@ def get_inputs_from_database(
     """
 
     c = conn.cursor()
-    performance_standard = c.execute(
-        """SELECT performance_standard_zone, period, performance_standard_tco2_per_mwh, performance_standard_tco2_per_mw
-        FROM inputs_system_performance_standard
-        JOIN
-        (SELECT period
-        FROM inputs_temporal_periods
-        WHERE temporal_scenario_id = {}) as relevant_periods
-        USING (period)
-        JOIN
-        (SELECT performance_standard_zone
-        FROM inputs_geography_performance_standard_zones
-        WHERE performance_standard_zone_scenario_id = {}) as relevant_zones
-        using (performance_standard_zone)
-        WHERE performance_standard_scenario_id = {}
-        AND subproblem_id = {}
-        AND stage_id = {};
-        """.format(
+    return c.execute(
+        """SELECT ps.performance_standard_zone,
+                  ps.project,
+                  ps.period,
+                  ps.performance_standard_tco2_per_mwh,
+                  ps.performance_standard_tco2_per_mw
+        FROM inputs_system_performance_standard AS ps
+        JOIN inputs_temporal_periods AS periods
+          ON periods.temporal_scenario_id = ?
+         AND periods.period = ps.period
+        JOIN inputs_geography_performance_standard_zones AS zones
+          ON zones.performance_standard_zone_scenario_id = ?
+         AND zones.performance_standard_zone = ps.performance_standard_zone
+        JOIN inputs_project_portfolios AS portfolio
+          ON portfolio.project_portfolio_scenario_id = ?
+         AND portfolio.project = ps.project
+        WHERE ps.performance_standard_scenario_id = ?
+          AND ps.subproblem_id = ?
+          AND ps.stage_id = ?
+        ORDER BY ps.performance_standard_zone, ps.project, ps.period;
+        """,
+        (
             subscenarios.TEMPORAL_SCENARIO_ID,
             subscenarios.PERFORMANCE_STANDARD_ZONE_SCENARIO_ID,
+            subscenarios.PROJECT_PORTFOLIO_SCENARIO_ID,
             subscenarios.PERFORMANCE_STANDARD_SCENARIO_ID,
             subproblem,
             stage,
         )
     )
-
-    return performance_standard
-
 
 def validate_inputs(
     scenario_id,
@@ -231,6 +246,7 @@ def write_model_inputs(
         writer.writerow(
             [
                 "performance_standard_zone",
+                "project",
                 "period",
                 "performance_standard_tco2_per_mwh",
                 "performance_standard_tco2_per_mw",
@@ -267,16 +283,23 @@ def export_results(
     data = [
         [
             z,
+            prj,
             p,
-            float(m.performance_standard_tco2_per_mwh[z, p]),
-            float(m.performance_standard_tco2_per_mw[z, p]),
+            float(m.performance_standard_tco2_per_mwh[z, prj, p]),
+            float(m.performance_standard_tco2_per_mw[z, prj, p]),
         ]
-        for (z, p) in m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD
+        for (
+            z,
+            prj,
+            p,
+        ) in m.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD
     ]
     results_df = create_results_df(
-        index_columns=["performance_standard_zone", "period"],
+        index_columns=["performance_standard_zone", "project", "period"],
         results_columns=results_columns,
         data=data,
     )
 
-    update_results_df(getattr(d, PERFORMANCE_STANDARD_Z_PRD_DF), results_df)
+    for c in results_columns:
+        getattr(d, PERFORMANCE_STANDARD_Z_PRJ_PRD_DF)[c] = None
+    getattr(d, PERFORMANCE_STANDARD_Z_PRJ_PRD_DF).update(results_df)

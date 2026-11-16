@@ -16,6 +16,7 @@
 import os.path
 
 from gridpath.system.policy.performance_standard import PERFORMANCE_STANDARD_Z_PRD_DF
+from gridpath.system.policy.performance_standard import PERFORMANCE_STANDARD_Z_PRJ_PRD_DF
 
 
 def export_results(
@@ -43,6 +44,21 @@ def export_results(
             stage,
             "results",
             "system_performance_standard.csv",
+        ),
+        sep=",",
+        index=True,
+    )
+    
+    getattr(d, PERFORMANCE_STANDARD_Z_PRJ_PRD_DF).to_csv(
+        os.path.join(
+            scenario_directory,
+            weather_iteration,
+            hydro_iteration,
+            availability_iteration,
+            subproblem,
+            stage,
+            "results",
+            "system_performance_standard_project.csv",
         ),
         sep=",",
         index=True,

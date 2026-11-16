@@ -2,6 +2,6 @@ project	period	specified_capacity_mw	specified_energy_mwh	shaping_capacity_mw	hy
 Coal	2020	6.0																	
 Gas_CCGT	2020	6.0																	
 Gas_CT	2020	6.0																	
-Hydro	2020	6.0																	
 Nuclear	2020	6.0																	
 Wind	2020	2.0																	
+Hydro	2020	6.0																	

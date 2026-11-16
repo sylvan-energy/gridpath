@@ -17,13 +17,16 @@ Aggregate carbon emissions and energy from the project-timepoint level to
 the performance zone - period level.
 """
 
-from pyomo.environ import Expression, value
+
+from pyomo.environ import Expression, value, Constraint
 
 from gridpath.auxiliary.dynamic_components import (
     performance_standard_balance_emission_components,
 )
 from gridpath.common_functions import create_results_df, update_results_df
 from gridpath.system.policy.performance_standard import PERFORMANCE_STANDARD_Z_PRD_DF
+
+Infinity = float("inf")
 
 
 def add_model_components(
@@ -52,6 +55,7 @@ def add_model_components(
         :param p:
         :return:
         """
+        
         return sum(
             mod.Project_Carbon_Emissions[g, tmp]
             * mod.hrs_in_tmp[tmp]
@@ -75,14 +79,26 @@ def add_model_components(
         :param p:
         :return:
         """
-        return sum(
-            mod.Bulk_Power_Provision_MW[g, tmp]
-            * mod.hrs_in_tmp[tmp]
-            * mod.tmp_weight[tmp]
-            for (g, tmp) in mod.PERFORMANCE_STANDARD_OPR_TMPS
-            if g in mod.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[z]
-            and tmp in mod.TMPS_IN_PRD[p]
-        )
+        
+        if all(
+            mod.performance_standard_tco2_per_mwh[z, prj, p] == Infinity
+            for prj in mod.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[z]
+        ):
+            return Constraint.Skip
+        
+        else:
+        
+            return sum(
+                sum(
+                    mod.Bulk_Power_Provision_MW[g, tmp]
+                    * mod.hrs_in_tmp[tmp]
+                    * mod.tmp_weight[tmp]
+                    for prj, tmp in mod.PERFORMANCE_STANDARD_OPR_TMPS
+                    if prj == g and tmp in mod.TMPS_IN_PRD[p]
+                ) * mod.performance_standard_tco2_per_mwh[z, g, p]
+                for g in mod.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[z]
+                if mod.performance_standard_tco2_per_mwh[z, g, p] != Infinity
+            )
 
     # We'll multiply this by the standard in the balance constraint
     # Note this is NOT added to the dynamic components
@@ -93,19 +109,30 @@ def add_model_components(
 
     def total_performance_standard_capacity_rule(mod, z, p):
         """
-        Calculate total capacity from all performance standard projects in performance
-        standard zone
+        Calculate total covered emissions from capacity from all performance standard projects in performance
+        standard zone 
         :param mod:
         :param z:
         :param p:
         :return:
         """
-        return sum(
-            mod.Capacity_MW[prj, prd]
-            for (prj, prd) in mod.PERFORMANCE_STANDARD_OPR_PRDS
-            if prj in mod.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[z]
-            and prd == p
-        )
+        # Skip this calculation if all projects in the zone have an infinite performance standard coefficient
+        if all(
+            mod.performance_standard_tco2_per_mw[z, prj, p] == Infinity
+            for prj in mod.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[z]
+        ):
+            return Constraint.Skip
+        else:
+            return sum(
+                mod.Capacity_MW[prj, prd] * mod.performance_standard_tco2_per_mw[z, prj, prd]
+                for (prj, prd) in mod.PERFORMANCE_STANDARD_OPR_PRDS
+                if prj in mod.PERFORMANCE_STANDARD_PRJS_BY_PERFORMANCE_STANDARD_ZONE[z]
+                and prd == p
+                # Skip this project in the sum if its performance standard coefficient is undefined. Note that this
+                # requires renewable projects in a zone to also have a defined performance standard coefficient
+                # in order that capacity be counted.
+                and mod.performance_standard_tco2_per_mw[z, prj, prd] != Infinity
+            )
 
     # We'll multiply this by the standard in the balance constraint
     # Note this is NOT added to the dynamic components
@@ -150,16 +177,24 @@ def export_results(
     """
     results_columns = [
         "performance_standard_project_emissions_tco2",
-        "performance_standard_project_energy_mwh",
-        "performance_standard_project_capacity_mw",
+        "performance_standard_project_energy_tco2",
+        "performance_standard_project_capacity_tco2",
     ]
     data = [
         [
             z,
             p,
             value(m.Total_Performance_Standard_Project_Emissions[z, p]),
-            value(m.Total_Performance_Standard_Project_Energy[z, p]),
-            value(m.Total_Performance_Standard_Project_Capacity[z, p]),
+            (
+                value(m.Total_Performance_Standard_Project_Energy[z, p])
+                if (z, p) in m.Total_Performance_Standard_Project_Energy
+                else None
+            ),
+            (
+            value(m.Total_Performance_Standard_Project_Capacity[z, p])
+                if (z, p) in m.Total_Performance_Standard_Project_Capacity
+                else None
+            ),
         ]
         for (z, p) in m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD
     ]
