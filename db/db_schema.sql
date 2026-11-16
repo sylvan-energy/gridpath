@@ -2486,12 +2486,12 @@ CREATE TABLE inputs_project_operational_chars
     frequency_response_derate                             FLOAT,
     spinning_reserves_derate                              FLOAT,
     inertia_reserves_derate                               FLOAT,
-    lf_reserves_up_ramp_rate                              FLOAT,
-    lf_reserves_down_ramp_rate                            FLOAT,
-    regulation_up_ramp_rate                               FLOAT,
-    regulation_down_ramp_rate                             FLOAT,
-    frequency_response_ramp_rate                          FLOAT,
-    spinning_reserves_ramp_rate                           FLOAT,
+    lf_reserves_up_ramp_rate                              FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    lf_reserves_down_ramp_rate                            FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    regulation_up_ramp_rate                               FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    regulation_down_ramp_rate                             FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    frequency_response_ramp_rate                          FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
+    spinning_reserves_ramp_rate                           FLOAT, -- max provision as a fraction of online capacity (unitless: ramp rate per minute x response time in minutes); NULL = no limit
     inertia_constant_sec                                  FLOAT,
     powerunithour_per_fuelunit                            FLOAT,
     cap_factor_limits_scenario_id                         INTEGER,
@@ -2515,6 +2515,7 @@ CREATE TABLE inputs_project_operational_chars
     energy_budget_balancing_type                          VARCHAR(32),  -- balancing type of the horizons over which energy budgets (e.g. hydro) apply; default in model: balancing_type_project
     market                                                VARCHAR(32),  -- market whose price the marginal cost is compared to (gen_simple_strike_price)
     dispatch_at_equal_cost                                INTEGER,      -- generate when the marginal cost equals the market price (gen_simple_strike_price); default in model: 0
+    reserves_max_power_fraction                           FLOAT,        -- fraction of available capacity power plus upward reserves may reach (gen_hydro, gen_hydro_must_take); default: the horizon max_power_fraction
     PRIMARY KEY (project_operational_chars_scenario_id, project),
     FOREIGN KEY (project_operational_chars_scenario_id) REFERENCES
         subscenarios_project_operational_chars (project_operational_chars_scenario_id),

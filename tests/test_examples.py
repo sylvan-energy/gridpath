@@ -3314,6 +3314,45 @@ class TestExamples(unittest.TestCase):
         )
         self.validate_and_test_example_generic(scenario_name=scenario_name)
 
+    def test_example_test_w_hydro_max_power_below_one(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_max_power_below_one" example: test_w_hydro with a hydro
+        max_power_fraction of 0.8, which also limits power output plus upward
+        reserves
+        :return:
+        """
+        scenario_name = "test_w_hydro_max_power_below_one"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_w_hydro_max_power_below_one_reserves_max_power_fraction_twin(
+        self,
+    ):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_max_power_below_one_reserves_max_power_fraction_twin"
+        example: a reserves_max_power_fraction equal to the max_power_fraction
+        (0.8) shares its objective with test_w_hydro_max_power_below_one
+        :return:
+        """
+        scenario_name = (
+            "test_w_hydro_max_power_below_one_reserves_max_power_fraction_twin"
+        )
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
+    def test_example_test_w_hydro_reserves_to_available_capacity(self):
+        """
+        Check validation and objective function value of
+        "test_w_hydro_reserves_to_available_capacity" example: power output
+        is limited to 0.8 of the available capacity, but power output plus
+        upward reserves may reach the full available capacity
+        (reserves_max_power_fraction of 1); the reserve headroom binds, so
+        the objective improves over test_w_hydro_max_power_below_one
+        :return:
+        """
+        scenario_name = "test_w_hydro_reserves_to_available_capacity"
+        self.validate_and_test_example_generic(scenario_name=scenario_name)
+
     def test_example_test_w_hydro_ramp_limits(self):
         """
         Check validation and objective function value of

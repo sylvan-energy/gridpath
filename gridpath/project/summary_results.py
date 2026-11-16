@@ -1,4 +1,5 @@
 # Copyright 2016-2024 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +32,55 @@ def export_summary_results(
     m,
     d,
 ):
-    """ """
+    """
+    Export the project-period summary: delivered bulk energy, the equivalent
+    capacity factor and the capacity components of every project in every
+    operational period.
+
+    Each project-period sums over the project's own operational timepoints in
+    the period (:code:`TMPS_IN_PRD`), so the export is linear in the number of
+    project-timepoints. :code:`PRJ_OPR_TMPS` is built from
+    :code:`PRJ_OPR_PRDS` and :code:`TMPS_IN_PRD`, so every such (project,
+    timepoint) pair is a valid index.
+    """
+    # Represented hours per period, computed once per period
+    hrs_in_prd = {
+        prd: sum(m.hrs_in_tmp[tmp] * m.tmp_weight[tmp] for tmp in m.TMPS_IN_PRD[prd])
+        for prd in m.PERIODS
+    }
+
+    rows = []
+    for prj, prd in m.PRJ_OPR_PRDS:
+        delivered_mwh = sum(
+            value(m.Bulk_Power_Provision_MW[prj, tmp])
+            * m.hrs_in_tmp[tmp]
+            * m.tmp_weight[tmp]
+            for tmp in m.TMPS_IN_PRD[prd]
+        )
+        capacity_mw = value(m.Capacity_MW[prj, prd])
+        cap_factor_equivalent = (
+            delivered_mwh / (capacity_mw * hrs_in_prd[prd]) if capacity_mw > 0 else None
+        )
+        rows.append(
+            [
+                prj,
+                prd,
+                m.capacity_type[prj],
+                m.operational_type[prj],
+                m.technology[prj],
+                m.load_zone[prj],
+                delivered_mwh,
+                cap_factor_equivalent,
+                capacity_mw,
+                value(m.Energy_MWh[prj, prd]),
+                value(m.Hyb_Gen_Capacity_MW[prj, prd]),
+                value(m.Hyb_Stor_Capacity_MW[prj, prd]),
+                value(m.Energy_Storage_Capacity_MWh[prj, prd]),
+                value(m.Fuel_Production_Capacity_FuelUnitPerHour[prj, prd]),
+                value(m.Fuel_Release_Capacity_FuelUnitPerHour[prj, prd]),
+                value(m.Fuel_Storage_Capacity_FuelUnit[prj, prd]),
+            ]
+        )
 
     project_summary_df = pd.DataFrame(
         columns=[
@@ -52,50 +101,7 @@ def export_summary_results(
             "fuel_rel_capacity_fuelunitperhour",
             "fuel_stor_capacity_fuelunit",
         ],
-        data=[
-            [
-                prj,
-                prd,
-                m.capacity_type[prj],
-                m.operational_type[prj],
-                m.technology[prj],
-                m.load_zone[prj],
-                sum(
-                    value(m.Bulk_Power_Provision_MW[_prj, tmp])
-                    * m.hrs_in_tmp[tmp]
-                    * m.tmp_weight[tmp]
-                    for (_prj, tmp) in m.PRJ_OPR_TMPS
-                    if _prj == prj and m.period[tmp] == prd
-                ),
-                (
-                    sum(
-                        (
-                            value(m.Bulk_Power_Provision_MW[_prj, tmp])
-                            / value(m.Capacity_MW[prj, prd])
-                        )
-                        * m.hrs_in_tmp[tmp]
-                        * m.tmp_weight[tmp]
-                        for (_prj, tmp) in m.PRJ_OPR_TMPS
-                        if _prj == prj and m.period[tmp] == prd
-                    )
-                    / sum(
-                        m.hrs_in_tmp[tmp] * m.tmp_weight[tmp]
-                        for tmp in m.TMPS_IN_PRD[prd]
-                    )
-                    if value(m.Capacity_MW[prj, prd]) > 0
-                    else None
-                ),
-                value(m.Capacity_MW[prj, prd]),
-                value(m.Energy_MWh[prj, prd]),
-                value(m.Hyb_Gen_Capacity_MW[prj, prd]),
-                value(m.Hyb_Stor_Capacity_MW[prj, prd]),
-                value(m.Energy_Storage_Capacity_MWh[prj, prd]),
-                value(m.Fuel_Production_Capacity_FuelUnitPerHour[prj, prd]),
-                value(m.Fuel_Release_Capacity_FuelUnitPerHour[prj, prd]),
-                value(m.Fuel_Storage_Capacity_FuelUnit[prj, prd]),
-            ]
-            for (prj, prd) in m.PRJ_OPR_PRDS
-        ],
+        data=rows,
     ).set_index(["project", "period"])
 
     project_summary_df.sort_index(inplace=True)

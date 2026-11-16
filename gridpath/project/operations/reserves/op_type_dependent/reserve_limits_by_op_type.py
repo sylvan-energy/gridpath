@@ -18,12 +18,14 @@
 # TODO: move this functionality to the optype modules
 
 import os.path
-import pandas as pd
 from pyomo.environ import Param, NonNegativeReals, Constraint
 
 from gridpath.auxiliary.auxiliary import get_required_subtype_modules
 from gridpath.project.operations.common_functions import load_operational_type_modules
 import gridpath.project.operations.operational_types as op_type
+from gridpath.project.operations.reserves.reserve_provision import (
+    load_reserve_project_param_from_projects_file,
+)
 
 
 def generic_add_model_components(
@@ -61,8 +63,11 @@ def generic_add_model_components(
     # therefore limited by its ramp rate, e.g. if it can ramp up 60 MW an hour,
     # then it will only be able to provide 10 MW of upward reserve for a
     # reserve product with a 10-minute response requirement \
-    # Here, this derate param is specified as a function of "online" generator
-    # capacity
+    # The param is that maximum provision as a fraction of the "online"
+    # generator capacity, so it has no time dimension: the ramp rate as a
+    # fraction of capacity per minute times the response time in minutes
+    # (e.g. 0.01/min x 10 min = 0.1); unlike the operational ramp rates,
+    # which are per minute
     # Defaults to infinity if not specified
     setattr(
         m,
@@ -141,6 +146,7 @@ def generic_load_model_data(
     stage,
     ramp_rate_limit_column_name,
     reserve_provision_ramp_rate_limit_param,
+    project_bas_input_file,
 ):
     """
 
@@ -152,46 +158,25 @@ def generic_load_model_data(
     :param stage:
     :param ramp_rate_limit_column_name:
     :param reserve_provision_ramp_rate_limit_param:
+    :param project_bas_input_file: the reserve's project-BA .tab file name
     :return:
     """
 
-    columns_to_import = ("project",)
-    params_to_import = ()
-    projects_file_header = pd.read_csv(
-        os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "projects.tab",
-        ),
-        sep="\t",
-        header=None,
-        nrows=1,
-    ).values[0]
-
-    # Import reserve provision ramp rate limit parameter only if
-    # column is present
-    # Otherwise, the ramp rate limit param goes to its default of infinity
-    if ramp_rate_limit_column_name in projects_file_header:
-        columns_to_import += (ramp_rate_limit_column_name,)
-        params_to_import += (getattr(m, reserve_provision_ramp_rate_limit_param),)
-
-    # Load the needed data
-    data_portal.load(
-        filename=os.path.join(
-            scenario_directory,
-            weather_iteration,
-            hydro_iteration,
-            availability_iteration,
-            subproblem,
-            stage,
-            "inputs",
-            "projects.tab",
-        ),
-        select=columns_to_import,
-        param=params_to_import,
+    # Ramp rate limits of the reserve's projects; projects without one (or
+    # without the column in projects.tab) get the default of infinity
+    inputs_directory = os.path.join(
+        scenario_directory,
+        weather_iteration,
+        hydro_iteration,
+        availability_iteration,
+        subproblem,
+        stage,
+        "inputs",
+    )
+    load_reserve_project_param_from_projects_file(
+        data_portal=data_portal,
+        projects_file=os.path.join(inputs_directory, "projects.tab"),
+        project_bas_file=os.path.join(inputs_directory, project_bas_input_file),
+        column_name=ramp_rate_limit_column_name,
+        param=getattr(m, reserve_provision_ramp_rate_limit_param),
     )

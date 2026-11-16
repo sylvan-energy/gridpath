@@ -31,3 +31,4 @@ reserves_setpoint_duration_hours,float,,,,,,,,,,,,optional,,optional,,,,,,,,,,,,
 energy_budget_balancing_type,str,,,,,,optional,optional,,,,,optional,,,,,,,,,,,optional,,optional,
 market,str,,,,,,,,,,,,,,,,,,,,,,,,,,required
 dispatch_at_equal_cost,int,,,,,,,,,,,,,,,,,,,,,,,,,,optional
+reserves_max_power_fraction,float,,,,,,optional,optional,,,,,,,,,,,,,,,,,,,

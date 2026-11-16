@@ -16,6 +16,7 @@
 Common functions for data-loading utilities and port script.
 """
 
+import io
 import math
 import os
 import pandas as pd
@@ -24,6 +25,10 @@ import warnings
 
 from db.common_functions import spin_on_database_lock
 import db.utilities.custom_functions as custom
+
+# Optional CSV column flagging rows to remove from the default subscenario
+# ID a subscenario ID is based on; it is not a database column
+REMOVE_ROW_COLUMN = "remove_row"
 
 # ### Functions for converting CSVs to lists of tuples for DB insertion ### #
 
@@ -112,7 +117,7 @@ def get_subscenario_data(csv_file, cols_to_exclude_str, **kwargs):
     """
     :param csv_file: str, path to CSV file
     :param cols_to_exclude_str:
-    :return: list of header strings, list of tuples
+    :return: list of header strings, list of tuples, list of dictionaries
 
     Get the CSV headers and convert the data from a CSV into a list of tuples
     for later insertion into an input table.
@@ -121,6 +126,11 @@ def get_subscenario_data(csv_file, cols_to_exclude_str, **kwargs):
     each tuple in the list of tuples to import (e.g. subscenario_id, project
     and subscenario_id, etc.) Note that the kwargs must be given in the
     order in which they appear in the database table we'll be inserting into.
+
+    Rows flagged in the optional ``remove_row`` column are not data: they
+    are returned separately, each as a dictionary of column name to the cell
+    string (blank cells left out), and the column itself is dropped from the
+    headers.
     """
 
     kwd_tuple = tuple()
@@ -129,6 +139,9 @@ def get_subscenario_data(csv_file, cols_to_exclude_str, **kwargs):
 
     # Read the CSV
     df = pd.read_csv(csv_file, delimiter=",", low_memory=False, on_bad_lines="warn")
+    rows_to_remove = []
+    if REMOVE_ROW_COLUMN in df.columns:
+        df, rows_to_remove = split_rows_to_remove(csv_file=csv_file)
     csv_columns = df.columns.tolist()
 
     # Exclude some columns if directed to do so
@@ -143,7 +156,55 @@ def get_subscenario_data(csv_file, cols_to_exclude_str, **kwargs):
     # Convert to tuples
     tuples_for_import = [kwd_tuple + tuple(x) for x in df.to_records(index=False)]
 
-    return csv_columns, tuples_for_import
+    rows_to_remove = [
+        {c: v for c, v in row.items() if c in csv_columns} for row in rows_to_remove
+    ]
+
+    return csv_columns, tuples_for_import, rows_to_remove
+
+
+def split_rows_to_remove(csv_file):
+    """
+    :param csv_file: str, path to CSV file
+    :return: dataframe of the data rows (without the ``remove_row`` column),
+        list of dictionaries (one per flagged row: column name to cell
+        string, blank cells left out)
+
+    Separate the rows flagged with 1 in the ``remove_row`` column from the
+    data rows. The data rows are parsed again on their own, so that the
+    blank cells of the flagged rows do not change the types inferred for
+    the data (e.g. a blank cell would turn an integer column into floats).
+    """
+    str_df = pd.read_csv(
+        csv_file,
+        delimiter=",",
+        dtype=str,
+        keep_default_na=False,
+        on_bad_lines="skip",
+    )
+    flags = str_df[REMOVE_ROW_COLUMN].str.strip()
+    is_flagged = flags.isin(["1", "1.0"])
+    unknown_flags = sorted(set(flags[~is_flagged]) - {"", "0", "0.0"})
+    if unknown_flags:
+        raise ValueError(
+            f"The {REMOVE_ROW_COLUMN} column of {csv_file} must be 1 (remove "
+            f"the row from the default subscenario ID) or blank; found "
+            f"{unknown_flags}."
+        )
+
+    data_str_df = str_df.loc[~is_flagged].drop(columns=[REMOVE_ROW_COLUMN])
+    df = pd.read_csv(
+        io.StringIO(data_str_df.to_csv(index=False)),
+        delimiter=",",
+        low_memory=False,
+    )
+
+    rows_to_remove = [
+        {c: v for c, v in row.items() if c != REMOVE_ROW_COLUMN and v.strip() != ""}
+        for row in str_df.loc[is_flagged].to_dict("records")
+    ]
+
+    return df, rows_to_remove
 
 
 def csv_to_subscenario_for_insertion(
@@ -154,8 +215,10 @@ def csv_to_subscenario_for_insertion(
     :param inputs_dir: string; the directory where the CSV is located
     :param csv_file: string; the name of the CSV file
     :param sub_input_flag: boolean; whether this is a project-level subscenario
-    :return: list of tuples (the subscenario info), list of tuples (the
-        subscenario data), list of strings (the CSV headers)
+    :return: list of tuples (the subscenario info), list of strings (the
+        CSV headers), list of tuples (the subscenario data), the default
+        subscenario ID (or None), list of dictionaries (the rows to remove
+        from the default subscenario ID)
 
     This function reads in a CSV file and converts it into two lists of
     tuples, the first one containing the subscenario ID, name,
@@ -174,6 +237,7 @@ def csv_to_subscenario_for_insertion(
     if not isinstance(csv_file, str) and math.isnan(csv_file):
         csv_headers = None
         data_tuples = None
+        rows_to_remove = []
     else:
         # Get the CSV headers (for later validation) and subscenario data
         csv_file_path = os.path.join(inputs_dir, csv_file)
@@ -182,7 +246,7 @@ def csv_to_subscenario_for_insertion(
             # We only need the subscenario ID as keyword argument to
             # get_subscenario_data()
             subscenario_id = subsc_tuples[0][0]
-            csv_headers, data_tuples = get_subscenario_data(
+            csv_headers, data_tuples, rows_to_remove = get_subscenario_data(
                 csv_file=csv_file_path,
                 cols_to_exclude_str=cols_to_exclude_str,
                 subscenario_id=subscenario_id,
@@ -196,14 +260,20 @@ def csv_to_subscenario_for_insertion(
             # Make sure to give project as keyword argument first, then the
             # subscenario ID, as this is the order in the database tables,
             # so we need to create the correct tuple
-            csv_headers, data_tuples = get_subscenario_data(
+            csv_headers, data_tuples, rows_to_remove = get_subscenario_data(
                 csv_file=csv_file_path,
                 cols_to_exclude_str=cols_to_exclude_str,
                 project=project,
                 subscenario_id=subscenario_id,
             )
 
-    return subsc_tuples, csv_headers, data_tuples, default_subscenario_id
+    return (
+        subsc_tuples,
+        csv_headers,
+        data_tuples,
+        default_subscenario_id,
+        rows_to_remove,
+    )
 
 
 def get_subscenario_description(input_dir, csv_filename):
@@ -264,15 +334,28 @@ def get_subscenario_data_and_insert_into_db(
     if not quiet:
         print("   ...importing data from {}".format(csv_file))
 
-    subscenario_tuples, csv_headers, inputs_tuples, default_subscenario_id = (
-        csv_to_subscenario_for_insertion(
-            dir_subsc=dir_subsc,
-            inputs_dir=inputs_dir,
-            csv_file=csv_file,
-            sub_input_flag=use_project_method,
-            cols_to_exclude_str=cols_to_exclude_str,
-        )
+    (
+        subscenario_tuples,
+        csv_headers,
+        inputs_tuples,
+        default_subscenario_id,
+        rows_to_remove,
+    ) = csv_to_subscenario_for_insertion(
+        dir_subsc=dir_subsc,
+        inputs_dir=inputs_dir,
+        csv_file=csv_file,
+        sub_input_flag=use_project_method,
+        cols_to_exclude_str=cols_to_exclude_str,
     )
+
+    if rows_to_remove and default_subscenario_id is None:
+        raise ValueError(
+            f"{os.path.join(inputs_dir, csv_file)} flags rows in the "
+            f"{REMOVE_ROW_COLUMN} column, but is not based on a default "
+            f"subscenario ID to remove them from. Rows can be removed only in "
+            f"a subscenario whose name ends with a dash and the default "
+            f"subscenario ID (e.g. 3_base_with_change-1.csv)."
+        )
 
     generic_insert_subscenario(
         conn=conn,
@@ -296,6 +379,7 @@ def get_subscenario_data_and_insert_into_db(
             subscenario_id=subscenario_tuples[0][0],
             default_subscenario_id=default_subscenario_id,
             quiet=quiet,
+            rows_to_remove=rows_to_remove,
         )
 
     # If a custom method is requested, run it here to finalize the subscenario
@@ -1286,14 +1370,32 @@ def verify_sub_input_flag_project_alignment(project, sub_input_flag, subscenario
 
 
 def update_subscenario_id_with_defaults(
-    conn, table, subscenario, subscenario_id, default_subscenario_id, quiet
+    conn,
+    table,
+    subscenario,
+    subscenario_id,
+    default_subscenario_id,
+    quiet,
+    rows_to_remove=None,
 ):
     """
+    :param conn: database connection object
+    :param table: str
     :param subscenario: str
-    :param default_subscenario_id: int
     :param subscenario_id: int
+    :param default_subscenario_id: int
+    :param quiet: boolean
+    :param rows_to_remove: list of dictionaries (column name to value), one
+        for each row flagged for removal in the subscenario's CSV
 
-    Add the data from the default subscenario ID to the data for the subscenario ID
+    Add the data from the default subscenario ID to the data for the
+    subscenario ID: every row of the default subscenario ID is copied unless
+    the subscenario ID has a row with the same primary key or the row is
+    matched by one of the rows to remove.
+
+    A row to remove matches the rows of the default subscenario ID that have
+    the same values in the primary-key columns it specifies; a primary-key
+    column it leaves blank matches any value.
     """
     if not quiet:
         print(
@@ -1315,51 +1417,139 @@ def update_subscenario_id_with_defaults(
             f"ID is loaded before loading other subscenario IDs."
         )
 
-    # Get primary key columns excluding the subscenario column
-    primary_key_column_list_wo_subscenario_column = [i[0] for i in c.execute(f"""
-    SELECT name FROM pragma_table_info('inputs_{table}') WHERE pk != 0;
-    """).fetchall()]
-    primary_key_column_list_wo_subscenario_column.remove(subscenario)
+    # Get the columns and the primary key columns excluding the subscenario
+    # column
+    table_info = c.execute(f"""
+    SELECT name, type, pk FROM pragma_table_info('inputs_{table}');
+    """).fetchall()
+    column_types = {name: column_type for (name, column_type, pk) in table_info}
+    key_columns = [
+        name
+        for (name, column_type, pk) in table_info
+        if pk != 0 and name != subscenario
+    ]
+    if not key_columns:
+        raise ValueError(
+            f"Table inputs_{table} has no primary key besides {subscenario}, "
+            f"so a subscenario ID cannot be based on a default subscenario ID."
+        )
+    columns_to_copy = [name for name in column_types if name != subscenario]
+    columns_to_copy_str = ", ".join(columns_to_copy)
 
-    primary_key_columns_wo_subscenario_str = ", ".join(
-        primary_key_column_list_wo_subscenario_column
-    )
+    # A NULL is a legitimate value in some primary-key columns, so compare
+    # with IS: with = (or NOT IN) a NULL never matches and default rows would
+    # be dropped silently
+    same_key_str = " AND ".join([f"own.{k} IS dflt.{k}" for k in key_columns])
 
-    # Get the non-primary-key columns
-    data_columns = [i[0] for i in c.execute(f"""
-    SELECT name FROM pragma_table_info('inputs_{table}') WHERE pk = 0;
-    """).fetchall()]
+    not_removed_str = ""
+    if rows_to_remove:
+        removal_table = create_rows_to_remove_table(
+            cursor=c,
+            table=table,
+            subscenario=subscenario,
+            default_subscenario_id=default_subscenario_id,
+            key_columns=key_columns,
+            column_types=column_types,
+            rows_to_remove=rows_to_remove,
+        )
+        removed_match_str = " AND ".join(
+            [f"(rmv.{k} IS NULL OR rmv.{k} = dflt.{k})" for k in key_columns]
+        )
+        not_removed_str = f"""
+        AND NOT EXISTS (
+            SELECT 1 FROM {removal_table} AS rmv
+            WHERE {removed_match_str}
+        )"""
 
-    data_columns_str = ", ".join(data_columns)
-
-    # Insert default values from the default subscenario ID for all primary
-    # key values that do not exist in the subscenario ID
+    # Insert the rows of the default subscenario ID whose primary key values
+    # do not exist in the subscenario ID and that are not to be removed
     insert_sql = f"""
     INSERT INTO inputs_{table}
-    ({subscenario}, {primary_key_columns_wo_subscenario_str}, {data_columns_str})
-    SELECT {subscenario_id}, {primary_key_columns_wo_subscenario_str}, {data_columns_str}
-    FROM inputs_{table}
-     WHERE {subscenario} = {default_subscenario_id}
-        AND ({primary_key_columns_wo_subscenario_str}) NOT IN (
-            SELECT {primary_key_columns_wo_subscenario_str}
-            FROM inputs_{table}
-            WHERE {subscenario} = {subscenario_id}
-        );"""
+    ({subscenario}, {columns_to_copy_str})
+    SELECT {subscenario_id}, {columns_to_copy_str}
+    FROM inputs_{table} AS dflt
+    WHERE {subscenario} = {default_subscenario_id}
+        AND NOT EXISTS (
+            SELECT 1 FROM inputs_{table} AS own
+            WHERE own.{subscenario} = {subscenario_id}
+            AND {same_key_str}
+        ){not_removed_str};"""
 
     spin_on_database_lock(conn=conn, cursor=c, sql=insert_sql, data=[], many=False)
 
-    # all_default_values = [
-    #     i
-    #     for i in c.execute(
-    #         f"""
-    #     SELECT * FROM inputs_{table}
-    #     WHERE {subscenario} = {default_subscenario_id}
-    #     AND {primary_key_columns_wo_subscenario_str} NOT IN (
-    #         SELECT {primary_key_columns_wo_subscenario_str}
-    #         FROM inputs_{table}
-    #         WHERE {subscenario} = {subscenario_id}
-    #     );"""
-    #     ).fetchall()
-    # ]
+    if rows_to_remove:
+        c.execute(f"DROP TABLE {removal_table};")
 
-    # print(all_default_values)
+
+def create_rows_to_remove_table(
+    cursor,
+    table,
+    subscenario,
+    default_subscenario_id,
+    key_columns,
+    column_types,
+    rows_to_remove,
+):
+    """
+    :param cursor: database cursor object
+    :param table: str
+    :param subscenario: str
+    :param default_subscenario_id: int
+    :param key_columns: list of str; the primary-key columns of the table
+        other than the subscenario column
+    :param column_types: dictionary; the declared type of each table column
+    :param rows_to_remove: list of dictionaries (column name to value)
+    :return: str; the name of the temporary table
+
+    Check the rows to remove and put them in a temporary table with the
+    primary-key columns of the input table (NULL = any value). The columns
+    are declared with the types of the input table, so that the values, read
+    from the CSV as strings, compare like the stored ones.
+    """
+    for row in rows_to_remove:
+        data_cells = sorted(set(row) - set(key_columns))
+        if data_cells:
+            raise ValueError(
+                f"A row flagged in the {REMOVE_ROW_COLUMN} column for "
+                f"inputs_{table} ({row}) has values in {data_cells}. A row "
+                f"to remove can have values only in the primary-key columns "
+                f"{key_columns}; to change a row of the default subscenario "
+                f"ID, do not flag it."
+            )
+        if not row:
+            raise ValueError(
+                f"A row flagged in the {REMOVE_ROW_COLUMN} column for "
+                f"inputs_{table} is entirely blank. Specify at least one of "
+                f"the primary-key columns {key_columns}."
+            )
+
+    removal_table = "temp.rows_to_remove_from_default_subscenario"
+    cursor.execute(f"DROP TABLE IF EXISTS {removal_table};")
+    column_definitions_str = ", ".join([f"{k} {column_types[k]}" for k in key_columns])
+    cursor.execute(f"CREATE TABLE {removal_table} ({column_definitions_str});")
+    cursor.executemany(
+        f"""INSERT INTO {removal_table} ({", ".join(key_columns)})
+        VALUES ({", ".join(["?"] * len(key_columns))});""",
+        [tuple(row.get(k) for k in key_columns) for row in rows_to_remove],
+    )
+
+    # A row to remove that matches nothing is most likely a typo
+    match_str = " AND ".join(
+        [f"(rmv.{k} IS NULL OR rmv.{k} = dflt.{k})" for k in key_columns]
+    )
+    unmatched = cursor.execute(f"""
+        SELECT {", ".join(key_columns)} FROM {removal_table} AS rmv
+        WHERE NOT EXISTS (
+            SELECT 1 FROM inputs_{table} AS dflt
+            WHERE dflt.{subscenario} = {default_subscenario_id}
+            AND {match_str}
+        );""").fetchall()
+    if unmatched:
+        raise ValueError(
+            f"Rows flagged in the {REMOVE_ROW_COLUMN} column match no row of "
+            f"default subscenario ID {default_subscenario_id} in "
+            f"inputs_{table}. Columns {key_columns}, values (None = any): "
+            f"{unmatched}."
+        )
+
+    return removal_table

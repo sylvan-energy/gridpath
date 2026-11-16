@@ -14,7 +14,12 @@
 
 """
 Add project-level components for downward regulation reserves that also
-depend on operational type
+depend on operational type.
+
+The optional :code:`regulation_down_ramp_rate` input limits the project's
+provision to that fraction of its online capacity (unitless: the project's
+ramp rate as a fraction of capacity per minute times the product's response
+time in minutes, e.g. 0.01/min x 10 min = 0.1). Not limited if not specified.
 """
 
 import csv
@@ -23,14 +28,18 @@ import os.path
 from gridpath.auxiliary.auxiliary import cursor_to_df
 from gridpath.auxiliary.db_interface import directories_to_db_values
 from gridpath.auxiliary.validations import write_validation_to_database, validate_values
+from gridpath.project.operations.reserves.reserve_provision import (
+    project_bas_input_file_name,
+)
 from gridpath.project.operations.reserves.op_type_dependent.reserve_limits_by_op_type import (
     generic_add_model_components,
     generic_load_model_data,
 )
 
 # Inputs
+# The column get_inputs writes to projects.tab (same as the opchar column)
 RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE = (
-    "regulation_down_ramp_rate_limit"
+    "regulation_down_ramp_rate"
 )
 # Model components
 RESERVE_PROVISION_VARIABLE_NAME = "Provide_Regulation_Down_MW"
@@ -109,6 +118,7 @@ def load_model_data(
         stage=stage,
         ramp_rate_limit_column_name=RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE,
         reserve_provision_ramp_rate_limit_param=RESERVE_PROVISION_RAMP_RATE_LIMIT_PARAM_NAME,
+        project_bas_input_file=project_bas_input_file_name("regulation_down"),
     )
 
 
@@ -258,7 +268,7 @@ def write_model_inputs(
 
         # Append column header
         header = next(reader)
-        header.append("regulation_down_ramp_rate")
+        header.append(RESERVE_PROVISION_RAMP_RATE_LIMIT_COLUMN_NAME_IN_INPUT_FILE)
         new_rows.append(header)
 
         # Append correct values

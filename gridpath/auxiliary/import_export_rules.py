@@ -86,17 +86,17 @@ import_export_rules = {
     # results and import results only if system_load_zone_timepoint.csv is found
     "USE": {
         "export": export_rule_use,
-        "export_summary": True,
+        "export_summary": lambda instance, quiet: True,
         "import": sys_lz_tmp_csv_based_rule,
     },
     "USE_import_only": {
-        "export": True,
-        "export_summary": True,
+        "export": lambda instance, quiet: True,
+        "export_summary": lambda instance, quiet: True,
         "import": sys_lz_tmp_csv_based_rule,
     },
     "summary_only": {
         "export": lambda instance, quiet: False,
-        "export_summary": lambda instance: True,
+        "export_summary": lambda instance, quiet: True,
         "import": lambda results_directory, quiet: True,
     },
 }
