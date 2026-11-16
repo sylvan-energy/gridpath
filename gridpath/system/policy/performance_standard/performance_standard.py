@@ -51,13 +51,13 @@ def add_model_components(
     )
     
     m.PERFORMANCE_STANDARD_ZONE_PERIODS_WITH_PERFORMANCE_STANDARD = Set(
-    dimen=2,
-    within=m.PERFORMANCE_STANDARD_ZONES * m.PERIODS,
-    initialize=lambda mod: (
-        (z, p)
-        for z, prj, p
-        in mod.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD
-    ),
+        dimen=2,
+        within=m.PERFORMANCE_STANDARD_ZONES * m.PERIODS,
+        initialize=lambda mod: list(
+            set([(z, p)
+            for z, prj, p
+            in mod.PERFORMANCE_STANDARD_ZONE_PERIODS_PROJECTS_WITH_PERFORMANCE_STANDARD])
+        ),
     )
     
     m.performance_standard_tco2_per_mwh = Param(
