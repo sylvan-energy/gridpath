@@ -257,13 +257,7 @@ def add_model_components(
     | | *Defined over*: :code:`GEN_HYDRO_LINKED_TMPS`                         |
     | | *Within*: :code:`Reals`                                               |
     |                                                                         |
-    | The project's power provision in the linked timepoints.                 |
-    +-------------------------------------------------------------------------+
-    | | :code:`gen_hydro_linked_curtailment`                                  |
-    | | *Defined over*: :code:`GEN_HYDRO_LINKED_TMPS`                         |
-    | | *Within*: :code:`NonNegativeReals`                                    |
-    |                                                                         |
-    | The project's curtailment in the linked timepoints.                     |
+    | The project's gross power in the linked timepoints.                     |
     +-------------------------------------------------------------------------+
     | | :code:`gen_hydro_linked_upwards_reserves`                             |
     | | *Defined over*: :code:`GEN_HYDRO_LINKED_TMPS`                         |
@@ -467,10 +461,6 @@ def add_model_components(
     ###########################################################################
 
     m.gen_hydro_linked_power = Param(m.GEN_HYDRO_LINKED_TMPS, within=Reals)
-
-    m.gen_hydro_linked_curtailment = Param(
-        m.GEN_HYDRO_LINKED_TMPS, within=NonNegativeReals
-    )
 
     m.gen_hydro_linked_upwards_reserves = Param(
         m.GEN_HYDRO_LINKED_TMPS, within=NonNegativeReals
@@ -720,9 +710,10 @@ def ramp_up_rule(mod, g, tmp):
     **Constraint Name**: GenHydro_Ramp_Up_Constraint
     **Enforced Over**: GEN_HYDRO_OPR_TMPS
 
-    Difference between power generation of consecutive timepoints, adjusted
+    Difference between gross power of consecutive timepoints, adjusted
     for reserve provision in current and previous timepoint, has to obey
-    ramp up rate limits.
+    ramp up rate limits. The limit applies to gross power (i.e. before
+    curtailment) in both timepoints.
 
     We assume that a unit has to reach its setpoint at the start of the
     timepoint; as such, the ramping between 2 timepoints is assumed to
@@ -745,7 +736,6 @@ def ramp_up_rule(mod, g, tmp):
         ):
             prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
             prev_tmp_power = mod.gen_hydro_linked_power[g, 0]
-            prev_tmp_curtailment = mod.gen_hydro_linked_curtailment[g, 0]
             prev_tmp_downwards_reserves = mod.gen_hydro_linked_downwards_reserves[g, 0]
         else:
             prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
@@ -757,9 +747,6 @@ def ramp_up_rule(mod, g, tmp):
             prev_tmp_downwards_reserves = mod.GenHydro_Downwards_Reserves_MW[
                 g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
             ]
-            prev_tmp_curtailment = mod.GenHydro_Curtail_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
         if mod.gen_hydro_ramp_up_when_on_rate[g] == float("inf"):
             return Constraint.Skip
         else:
@@ -767,7 +754,7 @@ def ramp_up_rule(mod, g, tmp):
                 mod.GenHydro_Gross_Power_MW[g, tmp]
                 + mod.GenHydro_Upwards_Reserves_MW[g, tmp]
             ) - (
-                prev_tmp_power + prev_tmp_curtailment - prev_tmp_downwards_reserves
+                prev_tmp_power - prev_tmp_downwards_reserves
             ) <= mod.gen_hydro_ramp_up_when_on_rate[
                 g
             ] * 60 * prev_tmp_hrs_in_tmp * mod.Capacity_MW[
@@ -782,9 +769,10 @@ def ramp_down_rule(mod, g, tmp):
     **Constraint Name**: GenHydro_Ramp_Down_Constraint
     **Enforced Over**: GEN_HYDRO_OPR_TMPS
 
-    Difference between power generation of consecutive timepoints, adjusted
+    Difference between gross power of consecutive timepoints, adjusted
     for reserve provision in current and previous timepoint, has to obey
-    ramp down rate limits.
+    ramp down rate limits. The limit applies to gross power (i.e. before
+    curtailment) in both timepoints.
 
     We assume that a unit has to reach its setpoint at the start of the
     timepoint; as such, the ramping between 2 timepoints is assumed to
@@ -807,7 +795,6 @@ def ramp_down_rule(mod, g, tmp):
         ):
             prev_tmp_hrs_in_tmp = mod.hrs_in_linked_tmp[0]
             prev_tmp_power = mod.gen_hydro_linked_power[g, 0]
-            prev_tmp_curtailment = mod.gen_hydro_linked_curtailment[g, 0]
             prev_tmp_upwards_reserves = mod.gen_hydro_linked_upwards_reserves[g, 0]
         else:
             prev_tmp_hrs_in_tmp = mod.hrs_in_tmp[
@@ -819,9 +806,6 @@ def ramp_down_rule(mod, g, tmp):
             prev_tmp_upwards_reserves = mod.GenHydro_Upwards_Reserves_MW[
                 g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
             ]
-            prev_tmp_curtailment = mod.GenHydro_Curtail_MW[
-                g, mod.prev_tmp[tmp, mod.balancing_type_project[g]]
-            ]
 
         if mod.gen_hydro_ramp_down_when_on_rate[g] == float("inf"):
             return Constraint.Skip
@@ -830,7 +814,7 @@ def ramp_down_rule(mod, g, tmp):
                 mod.GenHydro_Gross_Power_MW[g, tmp]
                 - mod.GenHydro_Downwards_Reserves_MW[g, tmp]
             ) - (
-                prev_tmp_power + prev_tmp_curtailment + prev_tmp_upwards_reserves
+                prev_tmp_power + prev_tmp_upwards_reserves
             ) >= -mod.gen_hydro_ramp_down_when_on_rate[
                 g
             ] * 60 * prev_tmp_hrs_in_tmp * mod.Capacity_MW[
@@ -1026,7 +1010,6 @@ def load_model_data(
             index=m.GEN_HYDRO_LINKED_TMPS,
             param=(
                 m.gen_hydro_linked_power,
-                m.gen_hydro_linked_curtailment,
                 m.gen_hydro_linked_upwards_reserves,
                 m.gen_hydro_linked_downwards_reserves,
             ),
@@ -1124,7 +1107,6 @@ def export_results(
                     "project",
                     "linked_timepoint",
                     "linked_provide_power",
-                    "linked_curtailment",
                     "linked_upward_reserves",
                     "linked_downward_reserves",
                 ]
@@ -1136,7 +1118,6 @@ def export_results(
                             p,
                             tmp_linked_tmp_dict[tmp],
                             max(value(mod.GenHydro_Gross_Power_MW[p, tmp]), 0),
-                            max(value(mod.GenHydro_Curtail_MW[p, tmp]), 0),
                             max(value(mod.GenHydro_Upwards_Reserves_MW[p, tmp]), 0),
                             max(value(mod.GenHydro_Downwards_Reserves_MW[p, tmp]), 0),
                         ]
