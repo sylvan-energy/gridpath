@@ -36,6 +36,9 @@ from gridpath.auxiliary.validations import (
 )
 from gridpath.common_functions import create_results_df
 import gridpath.project.policy.compliance_types as compliance_type_init
+from gridpath.project.policy.compliance_types.stor_losses import (
+    STOR_LOSSES_OPERATIONAL_TYPES,
+)
 
 SUPPORTED_COMPLIANCE_TYPES = [
     "f_output",
@@ -498,7 +501,8 @@ def validate_inputs(
 ):
     """
     Get inputs from database and validate the inputs: the compliance type
-    must be supported.
+    must be supported, and the stor_losses compliance type can only be
+    assigned to projects of the operational types it supports.
     :param subscenarios: SubScenarios object with all subscenario info
     :param subproblem:
     :param stage:
@@ -521,6 +525,15 @@ def validate_inputs(
 
     errors = validate_columns(df, "compliance_type", valids=SUPPORTED_COMPLIANCE_TYPES)
 
+    c = conn.cursor()
+    operational_type_by_project = dict(c.execute(f"""SELECT project, operational_type
+            FROM inputs_project_operational_chars
+            WHERE project_operational_chars_scenario_id =
+            {subscenarios.PROJECT_OPERATIONAL_CHARS_SCENARIO_ID};""").fetchall())
+    errors += validate_stor_losses_operational_types(
+        df=df, operational_type_by_project=operational_type_by_project
+    )
+
     write_validation_to_database(
         conn=conn,
         scenario_id=scenario_id,
@@ -534,6 +547,37 @@ def validate_inputs(
         severity="High",
         errors=errors,
     )
+
+
+def validate_stor_losses_operational_types(df, operational_type_by_project):
+    """
+    Check that the stor_losses compliance type is assigned only to projects
+    of the operational types it supports.
+
+    :param df: DataFrame with the project policy zones, including the
+        project, policy_name, policy_zone and compliance_type columns
+    :param operational_type_by_project: dictionary of the operational type
+        by project
+    :return: list of error messages, one per offending row
+    """
+    errors = []
+    stor_losses_df = df[df["compliance_type"] == "stor_losses"]
+    for prj, policy, zone in zip(
+        stor_losses_df["project"],
+        stor_losses_df["policy_name"],
+        stor_losses_df["policy_zone"],
+    ):
+        operational_type = operational_type_by_project.get(prj)
+        if operational_type not in STOR_LOSSES_OPERATIONAL_TYPES:
+            errors.append(
+                f"project:{prj}, policy:{policy}, policy_zone:{zone} ~ "
+                f"the stor_losses compliance type supports only the "
+                f"following operational types: "
+                f"{', '.join(STOR_LOSSES_OPERATIONAL_TYPES)}; the project's "
+                f"operational type is {operational_type}."
+            )
+
+    return errors
 
 
 def write_model_inputs(

@@ -16,6 +16,9 @@
 
 from pyomo.environ import Set
 
+# Operational types that can be assigned this compliance type
+STOR_LOSSES_OPERATIONAL_TYPES = ["stor"]
+
 
 def add_model_components(
     m,
@@ -36,9 +39,22 @@ def add_model_components(
 def contribution_in_timepoint(mod, prj, policy, zone, tmp):
     """
     A storage project's contribution is its net discharge (discharge minus
-    charge), i.e. its losses count against the policy. Net discharge is the
-    project's power provision, which the operational type defines, so this
-    works for any storage-like operational type (``stor``,
-    ``stor_stress_hrz``, ...) without referring to a type's own variables.
+    charge), i.e. its losses count against the policy. This keeps
+    simultaneous charging and discharging from acting as artificial load.
+
+    Only the operational types in STOR_LOSSES_OPERATIONAL_TYPES are
+    supported.
     """
-    return mod.Project_Power_Provision_MW[prj, tmp]
+    if mod.operational_type[prj] not in STOR_LOSSES_OPERATIONAL_TYPES:
+        raise ValueError(get_unsupported_operational_type_message(mod, prj))
+
+    return mod.Stor_Discharge_MW[prj, tmp] - mod.Stor_Charge_MW[prj, tmp]
+
+
+def get_unsupported_operational_type_message(mod, prj):
+    return (
+        f"Project {prj} of the {mod.operational_type[prj]} operational type "
+        f"is assigned the stor_losses policy compliance type, which supports "
+        f"only the following operational types: "
+        f"{', '.join(STOR_LOSSES_OPERATIONAL_TYPES)}."
+    )

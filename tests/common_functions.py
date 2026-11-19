@@ -191,6 +191,25 @@ def _edit_tab_file(path, edit_row):
         csv.writer(f, delimiter="\t", lineterminator=terminator).writerows(rows)
 
 
+def stage_test_data_with_appended_rows(test_case, test_data_dir, tab_file, rows):
+    """
+    Copy *test_data_dir* to a temporary directory (removed when *test_case*
+    finishes) and append *rows* (lists of cell values) to its
+    inputs/*tab_file*. Returns the staged directory.
+    """
+    staged_dir = _stage_test_data(test_case, test_data_dir)
+    path = os.path.join(staged_dir, "inputs", tab_file)
+    with open(path, newline="") as f:
+        raw = f.read()
+    terminator = "\r\n" if "\r\n" in raw else "\n"
+    with open(path, "a", newline="") as f:
+        if raw and not raw.endswith(("\n", "\r")):
+            f.write(terminator)
+        csv.writer(f, delimiter="\t", lineterminator=terminator).writerows(rows)
+
+    return staged_dir
+
+
 def stage_test_data_with_blanked_cells(
     test_case, test_data_dir, tab_file, where, blank
 ):

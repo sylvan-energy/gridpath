@@ -9,4 +9,3 @@ Gas_CCGT	SLICE_OF_DAY	SODZone1	sod_flat_block	.	.	.	.
 Battery	SLICE_OF_DAY	SODZone1	sod_stor	.	.	.	0.7
 Nuclear_Flexible	SLICE_OF_DAY	SODZone1	sod_flat_block	.	.	.	.
 Gas_CT	Carbon	CarbonZone1	emissions	.	.	.	.
-Battery_Stress_Hrz	RPS	RPSZone1	stor_losses	.	.	.	.
