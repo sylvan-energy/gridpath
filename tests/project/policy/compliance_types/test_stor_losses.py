@@ -1,4 +1,5 @@
 # Copyright 2016-2023 Blue Marble Analytics LLC.
+# Copyright 2026 Sylvan Energy Analytics LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,11 +16,20 @@
 
 from collections import OrderedDict
 from importlib import import_module
+import logging
 import os.path
 import sys
 import unittest
 
-from tests.common_functions import create_abstract_model, add_components_and_load_data
+import pandas as pd
+from pyomo.common.log import LoggingIntercept
+from pyomo.repn import generate_standard_repn
+
+from tests.common_functions import (
+    create_abstract_model,
+    add_components_and_load_data,
+    stage_test_data_with_appended_rows,
+)
 from tests.project.operations.common_functions import get_project_operational_timepoints
 
 TEST_DATA_DIRECTORY = os.path.join(
@@ -132,6 +142,107 @@ class TestStorLossesComplianceType(unittest.TestCase):
             stage="",
         )
         instance = m.create_instance(data)
+
+    def test_contribution_is_net_discharge(self):
+        """
+        The contribution of a 'stor' project is its discharge minus its
+        charge in every timepoint.
+        """
+        m, data = add_components_and_load_data(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=TEST_DATA_DIRECTORY,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        instance = m.create_instance(data)
+
+        stor_tmps = [tmp for (prj, tmp) in instance.STOR_OPR_TMPS if prj == "Battery"]
+        self.assertTrue(stor_tmps)
+        for tmp in stor_tmps:
+            repn = generate_standard_repn(
+                instance.Policy_Contribution_in_Timepoint[
+                    "Battery", "RPS", "RPSZone1", tmp
+                ]
+            )
+            self.assertTrue(repn.is_linear())
+            self.assertEqual(0, repn.constant)
+            self.assertDictEqual(
+                {
+                    f"Stor_Discharge_MW[Battery,{tmp}]": 1,
+                    f"Stor_Charge_MW[Battery,{tmp}]": -1,
+                },
+                {
+                    var.name: coef
+                    for var, coef in zip(repn.linear_vars, repn.linear_coefs)
+                },
+            )
+
+    def test_unsupported_operational_type_fails_at_model_build(self):
+        """
+        Assigning the compliance type to a project of an operational type it
+        does not support (here 'stor_stress_hrz') raises an error naming the
+        project when the model is built.
+        """
+        staged_dir = stage_test_data_with_appended_rows(
+            self,
+            TEST_DATA_DIRECTORY,
+            "project_policy_zones.tab",
+            [["Battery_Stress_Hrz", "RPS", "RPSZone1", "stor_losses"] + ["."] * 4],
+        )
+        m, data = add_components_and_load_data(
+            prereq_modules=IMPORTED_PREREQ_MODULES,
+            module_to_test=MODULE_BEING_TESTED,
+            test_data_dir=staged_dir,
+            weather_iteration="",
+            hydro_iteration="",
+            availability_iteration="",
+            subproblem="",
+            stage="",
+        )
+        # Pyomo logs the rule's exception before re-raising it
+        with LoggingIntercept(module="pyomo.core", level=logging.ERROR):
+            with self.assertRaisesRegex(
+                ValueError, "Battery_Stress_Hrz of the stor_stress_hrz operational"
+            ):
+                m.create_instance(data)
+
+    def test_validate_stor_losses_operational_types(self):
+        """
+        Validation reports each stor_losses row whose project is not of a
+        supported operational type (or has no operational type), and no
+        other row.
+        """
+        df = pd.DataFrame(
+            columns=["project", "policy_name", "policy_zone", "compliance_type"],
+            data=[
+                ["Battery", "RPS", "RPSZone1", "stor_losses"],
+                ["Battery_Stress_Hrz", "RPS", "RPSZone1", "stor_losses"],
+                ["Unknown", "RPS", "RPSZone2", "stor_losses"],
+                ["Wind", "RPS", "RPSZone1", "f_output"],
+            ],
+        )
+        errors = MODULE_BEING_TESTED.validate_stor_losses_operational_types(
+            df=df,
+            operational_type_by_project={
+                "Battery": "stor",
+                "Battery_Stress_Hrz": "stor_stress_hrz",
+                "Wind": "gen_var",
+            },
+        )
+        self.assertEqual(2, len(errors))
+        self.assertTrue(
+            errors[0].startswith(
+                "project:Battery_Stress_Hrz, policy:RPS, policy_zone:RPSZone1"
+            )
+        )
+        self.assertIn("operational type is stor_stress_hrz", errors[0])
+        self.assertTrue(
+            errors[1].startswith("project:Unknown, policy:RPS, policy_zone:RPSZone2")
+        )
 
 
 if __name__ == "__main__":
