@@ -351,6 +351,47 @@ class TestGenHydro(unittest.TestCase):
             )
             self.assertAlmostEqual(rhs_at_zero_vars(plus_reserves), 1.0 * available_mw)
 
+    def test_ramp_constraints_compare_gross_power_only(self):
+        """
+        The ramp constraints limit the change in gross power between
+        consecutive timepoints: gross power enters with opposite unit
+        coefficients in the two timepoints and curtailment does not enter.
+        """
+        instance = self.build_instance()
+        for constraint_name in [
+            "GenHydro_Ramp_Up_Constraint",
+            "GenHydro_Ramp_Down_Constraint",
+        ]:
+            constraint = getattr(instance, constraint_name)
+            self.assertGreater(len(constraint), 0)
+            for prj, tmp in constraint.keys():
+                body = constraint[prj, tmp].body
+                body_vars = list(identify_variables(body))
+                self.assertSetEqual(
+                    {"GenHydro_Gross_Power_MW"},
+                    {v.parent_component().name for v in body_vars},
+                )
+                prev_tmp = instance.prev_tmp[tmp, instance.balancing_type_project[prj]]
+                self.assertSetEqual(
+                    {(prj, tmp), (prj, prev_tmp)}, {v.index() for v in body_vars}
+                )
+
+                # Coefficients: change in the body per unit of each variable
+                # (Pyomo may store either written side as the body, so only
+                # the relative sign is fixed)
+                for v in body_vars:
+                    v.set_value(0, skip_validation=True)
+                base = value(body)
+                coefficients = {}
+                for v in body_vars:
+                    v.set_value(1, skip_validation=True)
+                    coefficients[v.index()] = value(body) - base
+                    v.set_value(0, skip_validation=True)
+                self.assertAlmostEqual(abs(coefficients[prj, tmp]), 1)
+                self.assertAlmostEqual(
+                    coefficients[prj, tmp], -coefficients[prj, prev_tmp]
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
