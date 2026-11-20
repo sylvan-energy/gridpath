@@ -1,0 +1,4 @@
+weather,hydro,availability
+loop,ordered,random_remove
+1,2019,1
+2,2020,2
